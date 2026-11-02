@@ -9,4 +9,5 @@ asarUnpack:
   - '**/*.node'
 mac:
   target: dir
-  identity: null
+  identity: '-'
+  hardenedRuntime: false
