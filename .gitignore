@@ -4,3 +4,5 @@ dist
 .turbo
 *.log
 .DS_Store
+.env
+.env.*
