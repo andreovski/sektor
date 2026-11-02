@@ -2,11 +2,12 @@ import Database from 'better-sqlite3-multiple-ciphers';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 
 import meta from './migrations/0001_meta.sql?raw';
+import finance from './migrations/0002_finance.sql?raw';
 import * as schema from './schema';
 
 // Migrações embutidas no bundle: o app empacotado não depende de arquivos soltos. A ordem do
 // array é a versão guardada em `user_version`.
-const MIGRATIONS = [meta];
+const MIGRATIONS = [meta, finance];
 
 export interface DbHandle {
   raw: Database.Database;
