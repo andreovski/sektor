@@ -1,10 +1,17 @@
-import { type App, appMeta, createApp, openDatabase, stageRestore } from '@sektor/core';
+import { type App, appMeta, AppError, createApp, openDatabase, stageRestore } from '@sektor/core';
 import { eq } from 'drizzle-orm';
 import { mkdtempSync, openSync, readdirSync, readSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { CoreCommand, CoreEvent, CoreReply, RpcRequest, RpcResponse } from './protocol';
+import type {
+  CoreCommand,
+  CoreEvent,
+  CoreGoogleConnect,
+  CoreReply,
+  RpcRequest,
+  RpcResponse,
+} from './protocol';
 
 // Núcleo do app: único processo que abre o banco e fala com a rede.
 const parent = process.parentPort;
@@ -12,6 +19,12 @@ const MINUTE = 60_000;
 let app: App | null = null;
 let dbPath = '';
 let dbKey = '';
+
+// Vêm de `.env.local` em tempo de build. Só existem aqui e no main, nunca na tela.
+const GOOGLE =
+  __GOOGLE_CLIENT_ID__ && __GOOGLE_CLIENT_SECRET__
+    ? { clientId: __GOOGLE_CLIENT_ID__, clientSecret: __GOOGLE_CLIENT_SECRET__ }
+    : null;
 
 const emit = (event: CoreEvent) => parent.postMessage(event);
 
@@ -36,9 +49,11 @@ function init(command: Extract<CoreCommand, { type: 'init' }>) {
       },
     },
     notify: (title, body) => emit({ type: 'notify', title, body }),
+    google: GOOGLE,
   });
   emit({ type: 'ready' });
   tick();
+  app.syncGoogle().catch((error) => console.error('[google]', (error as Error).message));
   setInterval(tick, MINUTE);
 }
 
@@ -116,6 +131,17 @@ function reply(id: number, run: () => unknown) {
   emit(answer);
 }
 
+function connectGoogle({ id, code, verifier, redirectUri }: CoreGoogleConnect) {
+  app!.connectGoogle({ code, verifier, redirectUri }).then(
+    (value) => emit({ type: 'reply', id, ok: true, value }),
+    (error) => {
+      if (!(error instanceof AppError)) console.error('[google]', (error as Error).message);
+      const message = error instanceof AppError ? error.message : 'Algo deu errado. Tente de novo.';
+      emit({ type: 'reply', id, ok: false, message });
+    }
+  );
+}
+
 parent.on('message', (event) => {
   const command = event.data as CoreCommand;
   try {
@@ -123,6 +149,8 @@ parent.on('message', (event) => {
     else if (command.type === 'smoke') smoke(command.wrongKeyHex);
     else if (command.type === 'backup-folder') {
       reply(command.id, () => app!.chooseBackupFolder(command.folder));
+    } else if (command.type === 'google-connect') {
+      connectGoogle(command);
     } else if (command.type === 'stage-restore') {
       const { id, type: _type, ...options } = command;
       reply(id, () => stageRestore(options));

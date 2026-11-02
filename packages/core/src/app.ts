@@ -13,6 +13,13 @@ import { handlers as finance, jobs as financeJobs } from './modules/finance';
 import { handlers as financePlus, jobs as financePlusJobs } from './modules/financePlus';
 import { handlers as focus, jobs as focusJobs } from './modules/focus';
 import { handlers as goals, jobs as goalsJobs } from './modules/goals';
+import {
+  connectAccount,
+  handlers as google,
+  jobs as googleJobs,
+  schedulePush,
+  syncAll,
+} from './modules/google';
 import { handlers as habits, jobs as habitsJobs } from './modules/habits';
 import { handlers as health, jobs as healthJobs } from './modules/health';
 import { handlers as reminders, jobs as remindersJobs } from './modules/reminders';
@@ -26,6 +33,13 @@ export interface AppCtx extends Ctx {
   keys: KeyStore;
   secrets: Secrets;
   notify(title: string, body: string): void;
+  /** Credenciais do app no Google. Sem elas, nada do Google roda. */
+  google?: GoogleConfig | null;
+}
+
+export interface GoogleConfig {
+  clientId: string;
+  clientSecret: string;
 }
 
 export interface Secrets {
@@ -51,6 +65,7 @@ const buildHandlers = (ctx: AppCtx, store: DbStore, systemTimeZone: string) => (
   ...health(ctx),
   ...focus(ctx),
   ...review(ctx),
+  ...google(ctx),
   ...backup(ctx, store, systemTimeZone),
 });
 
@@ -67,6 +82,7 @@ const JOBS: Job[] = [
   ...healthJobs,
   ...focusJobs,
   ...reviewJobs,
+  ...googleJobs,
 ];
 
 export interface AppOptions {
@@ -75,6 +91,7 @@ export interface AppOptions {
   timeZone: string;
   secrets: Secrets;
   notify(title: string, body: string): void;
+  google?: GoogleConfig | null;
 }
 
 export interface App {
@@ -85,6 +102,10 @@ export interface App {
   tick(): Promise<void>;
   /** Fora do RPC: o caminho vem do diálogo do main, nunca da tela. */
   chooseBackupFolder(folder: string): { folder: string; recoveryPassword: string | null };
+  /** Fora do RPC: o código do login vem do main, nunca da tela. */
+  connectGoogle(input: { code: string; verifier: string; redirectUri: string }): Promise<{ email: string }>;
+  /** Ao abrir o app, sem esperar o intervalo do job. */
+  syncGoogle(): Promise<void>;
 }
 
 export type RpcResult =
@@ -92,6 +113,10 @@ export type RpcResult =
   | { ok: false; status: number; message: string };
 
 const SECRET_NAME = 'pluggy';
+
+/** Escritas que o Google precisa saber: saem na hora, sem esperar os 5 minutos do job. */
+const GOOGLE_WRITES =
+  /^(events\.(create|update|delete)|tasks\.(create|capture|update|complete|reopen|delete)|taskLists\.(create|update|delete))$/;
 
 // O intervalo de 60 s do relógio oscila alguns ms. A folga faz um job de 60 s rodar em todo tick.
 const TICK_SLACK_MS = 5_000;
@@ -113,6 +138,7 @@ export function createApp(options: AppOptions): App {
     keys,
     secrets: options.secrets,
     notify: options.notify,
+    google: options.google ?? null,
   };
   ctx.timeZone = savedTimeZone(ctx) ?? options.timeZone;
   ensureCategories(ctx);
@@ -131,7 +157,9 @@ export function createApp(options: AppOptions): App {
       const handler = handlers[method];
       if (!handler) return { ok: false, status: 404, message: `Método ${method} não existe.` };
       try {
-        return { ok: true, value: await handler((input ?? {}) as never) };
+        const value = await handler((input ?? {}) as never);
+        if (GOOGLE_WRITES.test(method)) schedulePush(ctx);
+        return { ok: true, value };
       } catch (error) {
         if (error instanceof AppError) {
           return { ok: false, status: error.status, message: error.message };
@@ -167,5 +195,7 @@ export function createApp(options: AppOptions): App {
       }
     },
     chooseBackupFolder: (folder) => chooseFolder(ctx, store, folder),
+    connectGoogle: (input) => connectAccount(ctx, input),
+    syncGoogle: () => syncAll(ctx),
   };
 }

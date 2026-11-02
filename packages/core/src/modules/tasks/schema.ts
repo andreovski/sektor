@@ -16,6 +16,11 @@ export const taskLists = sqliteTable('task_lists', {
   color: text('color', { enum: TONES }),
   sortOrder: integer('sort_order').notNull().default(0),
   isInbox: integer('is_inbox', { mode: 'boolean' }).notNull().default(false),
+  source: text('source', { enum: ['LOCAL', 'GOOGLE'] }).notNull().default('LOCAL'),
+  externalId: text('external_id'),
+  syncState: text('sync_state', { enum: ['SYNCED', 'PENDING', 'ERROR'] })
+    .notNull()
+    .default('PENDING'),
 });
 
 export const projects = sqliteTable('projects', {
@@ -51,6 +56,15 @@ export const tasks = sqliteTable('tasks', {
   nextTaskId: text('next_task_id'),
   sortOrder: integer('sort_order').notNull().default(0),
   completedAt: integer('completed_at'),
+  source: text('source', { enum: ['LOCAL', 'GOOGLE'] }).notNull().default('LOCAL'),
+  externalId: text('external_id'),
+  externalEtag: text('external_etag'),
+  /** Onde o `externalId` vive hoje no Google, para notar que a tarefa trocou de lista ou de mãe. */
+  externalListId: text('external_list_id'),
+  externalParentId: text('external_parent_id'),
+  syncState: text('sync_state', { enum: ['SYNCED', 'PENDING', 'ERROR'] })
+    .notNull()
+    .default('PENDING'),
 });
 
 export const taskTags = sqliteTable('task_tags', {

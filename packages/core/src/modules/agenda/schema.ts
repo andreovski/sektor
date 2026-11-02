@@ -11,7 +11,7 @@ const base = {
 export const CALENDAR_SOURCES = ['LOCAL', 'ICS', 'GOOGLE', 'MICROSOFT'] as const;
 export type CalendarSource = (typeof CALENDAR_SOURCES)[number];
 
-// GOOGLE e MICROSOFT ainda não têm quem grave: a tabela já nasce com a origem e os ids de fora.
+// MICROSOFT ainda não tem quem grave. No Google, `externalAccount` é a linha de `google_accounts`.
 export const calendars = sqliteTable(
   'agenda_calendars',
   {
@@ -29,11 +29,14 @@ export const calendars = sqliteTable(
     syncWindowStart: text('sync_window_start'),
     syncedAt: integer('synced_at'),
     lastError: text('last_error'),
+    isPrimary: integer('is_primary', { mode: 'boolean' }).notNull().default(false),
+    /** Calendário do Google em que a conta só pode ler. */
+    readOnly: integer('read_only', { mode: 'boolean' }).notNull().default(false),
   },
   (t) => [
     check('agenda_calendars_source', sql`${t.source} IN ('LOCAL','ICS','GOOGLE','MICROSOFT')`),
     uniqueIndex('agenda_calendars_external')
-      .on(t.source, t.externalId)
+      .on(t.source, t.externalAccount, t.externalId)
       .where(sql`${t.deletedAt} IS NULL AND ${t.externalId} IS NOT NULL`),
   ]
 );
@@ -69,6 +72,10 @@ export const events = sqliteTable(
     syncState: text('sync_state', { enum: ['SYNCED', 'PENDING', 'ERROR'] })
       .notNull()
       .default('SYNCED'),
+    /** Fuso em que a série do Google se repete. Vazio, vale o da pessoa. */
+    timeZone: text('time_zone'),
+    /** Linhas de `recurrence` que não são a RRULE (EXDATE, RDATE), em JSON, para voltarem no envio. */
+    recurrenceExtra: text('recurrence_extra', { mode: 'json' }).$type<string[]>(),
   },
   (t) => [
     check('agenda_events_status', sql`${t.status} IN ('CONFIRMED','CANCELLED')`),

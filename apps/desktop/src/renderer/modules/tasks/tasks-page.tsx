@@ -28,6 +28,7 @@ import { useState } from 'react';
 
 import { todayString } from '../../lib/format';
 import { useRpc } from '../../lib/rpc';
+import { useGoogleRefresh } from '../settings/google';
 import { cn, EmptyState, Input, PageHeader, SectionLabel, Segmented, Select } from '../../ui';
 
 import { CaptureField } from './capture-field';
@@ -100,6 +101,7 @@ export function TasksPage() {
   const [creating, setCreating] = useState(false);
   const [listDialog, setListDialog] = useState<{ list: TaskListResponse | null } | null>(null);
 
+  useGoogleRefresh();
   const lists = useRpc('taskLists.list');
   const counts = useRpc('tasks.counts');
   const tags = useRpc('tasks.tags');

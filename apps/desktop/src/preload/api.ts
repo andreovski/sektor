@@ -14,6 +14,11 @@ export type RestoreResult =
   | { status: 'needs-password' }
   | { status: 'error'; message: string };
 
+export type GoogleLoginResult =
+  | { status: 'ok'; email: string }
+  | { status: 'canceled' | 'denied' | 'timeout' | 'not-configured' }
+  | { status: 'error'; message: string };
+
 export interface SektorApi {
   info(): Promise<{ version: string; dataDir: string }>;
   failure(): Promise<CoreFailure | null>;
@@ -24,6 +29,9 @@ export interface SektorApi {
   restore(password?: string): Promise<RestoreResult>;
   openDataDir(): Promise<void>;
   relaunch(): Promise<void>;
+  /** Abre o navegador e espera a volta. `hint` sugere a conta. */
+  googleLogin(hint?: string): Promise<GoogleLoginResult>;
+  googleCancelLogin(): Promise<void>;
 }
 
 declare global {

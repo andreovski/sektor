@@ -331,6 +331,66 @@ await test('8. cofre perdeu a chave: a tela de erro restaura com a senha', async
   await again.app.close();
 });
 
+await test('Google: conectar abre o navegador, confere o state e cancela fechando a porta', async () => {
+  const { app, page } = await launch(newDir());
+  await go(page, '/ajustes');
+  await page.getByRole('heading', { name: 'Ajustes' }).waitFor({ timeout: 5000 });
+  const button = page.getByRole('button', { name: 'Conectar conta Google' });
+  await page
+    .getByText('O Google não está configurado neste build.')
+    .or(button)
+    .first()
+    .waitFor({ timeout: 5000 });
+  if (!(await button.isVisible())) {
+    await page.screenshot({ path: '/tmp/sektor-google-off.png', fullPage: true });
+    await app.close();
+    return;
+  }
+  await app.evaluate(({ shell }) => {
+    shell.openExternal = async (url) => {
+      globalThis.opened = url;
+    };
+  });
+  await button.click();
+  await page.getByText('Continue no navegador').waitFor({ timeout: 5000 });
+  await page.screenshot({ path: '/tmp/sektor-google.png', fullPage: true });
+  const opened = new URL(await app.evaluate(() => globalThis.opened));
+  assert.equal(opened.host, 'accounts.google.com');
+  assert.equal(opened.searchParams.get('code_challenge_method'), 'S256');
+  const callback = opened.searchParams.get('redirect_uri');
+  assert.match(callback, /^http:\/\/127\.0\.0\.1:\d+\/callback$/);
+  assert.equal((await fetch(`${callback}?code=x&state=errado`)).status, 400);
+  await page.getByRole('button', { name: 'Cancelar' }).click();
+  await button.waitFor({ timeout: 5000 });
+  await assert.rejects(fetch(callback));
+  await app.close();
+});
+
+await test('Google: a tela não enxerga as credenciais', async () => {
+  const { app, page } = await launch(newDir());
+  const seen = await page.evaluate(() => [
+    typeof globalThis.__GOOGLE_CLIENT_SECRET__,
+    typeof window.sektor.googleLogin,
+    typeof window.sektor.googleClientSecret,
+  ]);
+  assert.deepEqual(seen, ['undefined', 'function', 'undefined']);
+  await app.close();
+});
+
+await test('Google: página de fora não abre o login', async () => {
+  const { app, page } = await launch(newDir());
+  await app.evaluate(({ BrowserWindow }) => {
+    void BrowserWindow.getAllWindows()[0].loadURL('data:text/html,<title>FORA</title>');
+  });
+  await page.waitForFunction(() => document.title === 'FORA');
+  assert.equal(await page.evaluate(() => typeof window.sektor?.googleLogin), 'function');
+  const refused = await page.evaluate(() =>
+    window.sektor.googleLogin().then(() => 'abriu', (e) => e.message)
+  );
+  assert.match(refused, /Origem não autorizada/);
+  await app.close();
+});
+
 rmSync(root, { recursive: true, force: true });
 rmSync('/tmp/x.html', { force: true });
 const failed = results.filter((line) => line.startsWith('FALHA'));

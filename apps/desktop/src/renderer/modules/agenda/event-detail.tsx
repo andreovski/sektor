@@ -26,7 +26,7 @@ export function EventDetail({
   const [confirming, setConfirming] = useState(false);
   const remove = useRpcMutation('events.delete');
   const [dateLine, timeLine] = whenLines(event, TIME_ZONE);
-  const readOnly = event.source !== 'LOCAL';
+  const readOnly = calendar?.readOnly ?? event.source !== 'LOCAL';
 
   const destroy = (scope: 'single' | 'all') =>
     remove.mutate(
@@ -76,8 +76,9 @@ export function EventDetail({
 
         {readOnly ? (
           <p className="text-xs text-muted">
-            Vem de uma agenda por link e é só de leitura. Mude na agenda de origem: a mudança chega
-            aqui em até 15 minutos.
+            {event.source === 'GOOGLE'
+              ? 'Vem de um calendário do Google em que esta conta só pode ler.'
+              : 'Vem de uma agenda por link e é só de leitura. Mude na agenda de origem: a mudança chega aqui em até 15 minutos.'}
           </p>
         ) : confirming ? (
           <div className="flex flex-col gap-2">

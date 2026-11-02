@@ -17,6 +17,7 @@ import type { CoreCommand, CoreEvent } from '../core/protocol';
 import type { CoreFailure, FolderChoice, RestoreResult } from '../preload/api';
 
 import { ask, forkCore } from './core-process';
+import { cancelGoogleLogin, googleLogin } from './google-login';
 import { databaseKey, dbPath, loadSecrets, saveSecrets, seal, useTestVault } from './key';
 import { setAppMenu } from './menu';
 import { applyPendingRestore, scheduleRestore, stagePath } from './restore';
@@ -128,6 +129,11 @@ async function runRestore(password?: string): Promise<RestoreResult> {
   }
 }
 
+function liveCore() {
+  if (!core || failure) throw new Error('O núcleo não está no ar.');
+  return core;
+}
+
 function registerIpc() {
   const handle = <A, R>(channel: string, run: (event: IpcMainInvokeEvent, arg: A) => R) => {
     ipcMain.handle(channel, (event, arg: A) => {
@@ -166,6 +172,11 @@ function registerIpc() {
     return restoreFile;
   });
   handle('backup:restore', (_event, password?: string) => runRestore(password));
+  handle('google:login', (_event, hint?: string) => {
+    if (!core || failure) throw new Error('O núcleo não está no ar.');
+    return googleLogin(core, typeof hint === 'string' ? hint : undefined);
+  });
+  handle('google:cancel-login', () => cancelGoogleLogin());
 }
 
 /** Prova sem cofre: banco e chave temporários, e a janela de verdade, que o asar precisa abrir. */

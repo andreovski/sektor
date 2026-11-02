@@ -80,7 +80,7 @@ export function expandSeries(
       new Date(master.startAt!),
       range.from,
       range.to,
-      timeZone,
+      master.timeZone ?? timeZone,
       duration
     );
     for (const instant of starts) {

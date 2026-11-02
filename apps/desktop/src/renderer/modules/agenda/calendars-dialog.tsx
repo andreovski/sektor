@@ -11,7 +11,7 @@ import { toneVar } from './shared';
 
 type Tone = (typeof TONES)[number];
 
-function TonePicker({ value, onChange }: { value: string; onChange(tone: Tone): void }) {
+export function TonePicker({ value, onChange }: { value: string; onChange(tone: Tone): void }) {
   return (
     <div className="flex gap-1.5" role="radiogroup" aria-label="Cor">
       {TONES.map((tone) => (
@@ -44,6 +44,7 @@ function syncedText(calendar: CalendarResponse) {
 function CalendarRow({ calendar }: { calendar: CalendarResponse }) {
   const update = useRpcMutation('calendars.update');
   const remove = useRpcMutation('calendars.delete');
+  const setDefault = useRpcMutation('calendars.setDefault');
   const sync = useRpcMutation('calendars.sync');
   const replace = useRpcMutation('calendars.replaceIcsUrl');
   const [confirming, setConfirming] = useState(false);
@@ -76,7 +77,9 @@ function CalendarRow({ calendar }: { calendar: CalendarResponse }) {
             <RefreshCw size={13} className={cn(sync.isPending && 'animate-spin')} />
           </Button>
         )}
-        {confirming ? (
+        {calendar.source === 'GOOGLE' ? (
+          <span className="text-[11px] text-subtle">Google</span>
+        ) : confirming ? (
           <>
             <Button size="sm" variant="ghost" onClick={() => setConfirming(false)}>
               Não
@@ -105,6 +108,15 @@ function CalendarRow({ calendar }: { calendar: CalendarResponse }) {
           value={calendar.color}
           onChange={(color) => update.mutate({ id: calendar.id, color })}
         />
+        {calendar.isDefault ? (
+          <span className="text-[11px] text-subtle">Padrão</span>
+        ) : (
+          !calendar.readOnly && (
+            <Button size="sm" variant="ghost" onClick={() => setDefault.mutate({ id: calendar.id })}>
+              Usar como padrão
+            </Button>
+          )
+        )}
         {calendar.source === 'ICS' && (
           <>
             <span className="text-[11px] text-subtle">{syncedText(calendar)}</span>

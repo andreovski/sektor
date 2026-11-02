@@ -1,12 +1,12 @@
 import {
   addDays,
   diffInDays,
-  eventOccurrences,
   startOfDayInZone,
 } from '@sektor/finance-engine';
 import { and, eq, inArray, isNotNull, isNull, or, gt, lt } from 'drizzle-orm';
 
 import type { AppCtx } from '../../app';
+import { appMeta } from '../../db/schema';
 import { AppError, notFound, stamp } from '../../services/context';
 import {
   deleteOwnerReminders,
@@ -17,6 +17,7 @@ import {
 
 import type { CreateEvent, EventScope, Tone, UpdateEvent } from './contract';
 import { type Range, endOf, expandSeries, occurrenceOf, startOf } from './expand';
+import { assertRRule } from './rrule';
 import { type CalendarRow, calendars, type EventRow, events } from './schema';
 import { compareOccurrences, type EventOccurrence } from './view';
 
@@ -45,7 +46,12 @@ export function ensureLocalCalendar(ctx: Ctx): CalendarRow {
     .get();
 }
 
-function toCalendar(row: CalendarRow) {
+const DEFAULT_KEY = 'agenda.defaultCalendar';
+
+const canWrite = (row: CalendarRow) =>
+  row.source === 'LOCAL' || (row.source === 'GOOGLE' && !row.readOnly);
+
+function toCalendar(row: CalendarRow, defaultId: string | null) {
   return {
     id: row.id,
     name: row.name,
@@ -55,21 +61,50 @@ function toCalendar(row: CalendarRow) {
     selected: row.selected,
     syncedAt: row.syncedAt ? new Date(row.syncedAt).toISOString() : null,
     lastError: row.lastError,
-    readOnly: row.source !== 'LOCAL',
+    readOnly: !canWrite(row),
+    isDefault: row.id === defaultId,
   };
 }
 
 export type CalendarResponse = ReturnType<typeof toCalendar>;
 
+/** O calendário que recebe evento novo: o escolhido ou, sem escolha, o primeiro local. */
+export function defaultCalendar(ctx: Ctx): CalendarRow {
+  const key = eq(appMeta.key, DEFAULT_KEY);
+  const chosen = ctx.db.select().from(appMeta).where(key).get()?.value;
+  const row = chosen
+    ? ctx.db
+        .select()
+        .from(calendars)
+        .where(and(eq(calendars.id, chosen), liveCalendar))
+        .get()
+    : undefined;
+  return row && canWrite(row) ? row : ensureLocalCalendar(ctx);
+}
+
+export function setDefaultCalendar(ctx: Ctx, id: string | null) {
+  if (!id) {
+    ctx.db.delete(appMeta).where(eq(appMeta.key, DEFAULT_KEY)).run();
+    return;
+  }
+  if (!canWrite(findCalendar(ctx, id))) throw readOnly();
+  const updatedAt = Date.now();
+  ctx.db
+    .insert(appMeta)
+    .values({ key: DEFAULT_KEY, value: id, updatedAt })
+    .onConflictDoUpdate({ target: appMeta.key, set: { value: id, updatedAt } })
+    .run();
+}
+
 export function listCalendars(ctx: Ctx) {
-  ensureLocalCalendar(ctx);
+  const defaultId = defaultCalendar(ctx).id;
   return ctx.db
     .select()
     .from(calendars)
     .where(liveCalendar)
     .orderBy(calendars.createdAt)
     .all()
-    .map(toCalendar);
+    .map((row) => toCalendar(row, defaultId));
 }
 
 export function createCalendar(ctx: Ctx, body: { name: string; color: Tone }) {
@@ -78,7 +113,8 @@ export function createCalendar(ctx: Ctx, body: { name: string; color: Tone }) {
       .insert(calendars)
       .values({ ...stamp(), ...body, source: 'LOCAL' })
       .returning()
-      .get()
+      .get(),
+    defaultCalendar(ctx).id
   );
 }
 
@@ -97,13 +133,16 @@ export function updateCalendar(
   id: string,
   body: { name?: string; color?: Tone; selected?: boolean }
 ) {
-  findCalendar(ctx, id);
+  const row = findCalendar(ctx, id);
+  if (row.source === 'GOOGLE' && body.name !== undefined) {
+    throw new AppError(400, 'O nome desta agenda vem do Google: mude por lá.');
+  }
   ctx.db
     .update(calendars)
     .set({ ...body, updatedAt: Date.now() })
     .where(eq(calendars.id, id))
     .run();
-  return toCalendar(findCalendar(ctx, id));
+  return toCalendar(findCalendar(ctx, id), defaultCalendar(ctx).id);
 }
 
 /** Apaga os eventos do calendário. Sobra a linha do calendário, para quem chama decidir. */
@@ -124,6 +163,9 @@ export function deleteCalendarEvents(ctx: Ctx, calendarId: string) {
 
 export function deleteCalendar(ctx: Ctx, id: string) {
   const row = findCalendar(ctx, id);
+  if (row.source === 'GOOGLE') {
+    throw new AppError(400, 'Esta agenda vem do Google: desmarque-a ou desconecte a conta em Ajustes.');
+  }
   const locals = ctx.db
     .select({ id: calendars.id })
     .from(calendars)
@@ -227,16 +269,6 @@ export function listOccurrences(ctx: Ctx, query: { from: string; to: string }): 
 
 // ---------------------------------------------------------------- eventos
 
-function assertRRule(rrule: string | null | undefined) {
-  if (!rrule) return;
-  try {
-    const now = new Date();
-    eventOccurrences(rrule, now, now, new Date(now.getTime() + 86_400_000), 'UTC');
-  } catch {
-    throw new AppError(400, 'Regra de repetição inválida.');
-  }
-}
-
 /** As quatro colunas de horário. Dia inteiro: o fim fica ao menos no dia seguinte. */
 function timesOf(allDay: boolean, startAt: string, endAt: string) {
   if (allDay) {
@@ -255,6 +287,14 @@ function timesOf(allDay: boolean, startAt: string, endAt: string) {
     startDate: null,
     endDate: null,
   };
+}
+
+/** Mudança em evento do Google: fica pendente até o envio, e nesse meio tempo vence o que vier de lá. */
+const dirty = (source: CalendarRow['source']) =>
+  source === 'GOOGLE' ? { syncState: 'PENDING' as const } : {};
+
+function assertEditable(ctx: Ctx, event: EventRow) {
+  if (!canWrite(findCalendar(ctx, event.calendarId))) throw readOnly();
 }
 
 function findEvent(ctx: Ctx, id: string) {
@@ -287,8 +327,8 @@ function toEvent(ctx: Ctx, row: EventRow) {
 export const getEvent = (ctx: Ctx, id: string) => toEvent(ctx, findEvent(ctx, id));
 
 export function createEvent(ctx: Ctx, body: CreateEvent) {
-  const calendar = body.calendarId ? findCalendar(ctx, body.calendarId) : ensureLocalCalendar(ctx);
-  if (calendar.source !== 'LOCAL') throw readOnly();
+  const calendar = body.calendarId ? findCalendar(ctx, body.calendarId) : defaultCalendar(ctx);
+  if (!canWrite(calendar)) throw readOnly();
   assertRRule(body.rrule);
   const allDay = body.allDay ?? false;
   const row = ctx.db
@@ -303,6 +343,8 @@ export function createEvent(ctx: Ctx, body: CreateEvent) {
       ...timesOf(allDay, body.startAt, body.endAt),
       color: body.color ?? null,
       rrule: body.rrule ?? null,
+      source: calendar.source,
+      ...dirty(calendar.source),
     })
     .returning()
     .get();
@@ -358,7 +400,14 @@ function updateSingle(ctx: Ctx, event: EventRow, body: UpdateEvent, occurrence: 
   const row = existing
     ? ctx.db
         .update(events)
-        .set({ ...textFields(body), allDay, ...times, status: 'CONFIRMED', updatedAt: Date.now() })
+        .set({
+          ...textFields(body),
+          allDay,
+          ...times,
+          status: 'CONFIRMED',
+          updatedAt: Date.now(),
+          ...dirty(event.source),
+        })
         .where(eq(events.id, existing.id))
         .returning()
         .get()
@@ -377,6 +426,7 @@ function updateSingle(ctx: Ctx, event: EventRow, body: UpdateEvent, occurrence: 
           ...times,
           recurringEventId: event.id,
           originalStart: original,
+          ...dirty(event.source),
         })
         .returning()
         .get();
@@ -407,21 +457,50 @@ function moveOverrides(ctx: Ctx, event: EventRow, next: { startAt: number | null
     } else {
       ctx.db
         .update(events)
-        .set({ originalStart: moved, updatedAt: Date.now() })
+        .set({ originalStart: moved, updatedAt: Date.now(), ...dirty(event.source) })
         .where(eq(events.id, override.id))
         .run();
     }
   }
 }
 
-export function updateEvent(ctx: Ctx, id: string, body: UpdateEvent & { scope?: EventScope }) {
-  const event = findEvent(ctx, id);
-  if (event.source !== 'LOCAL') throw readOnly();
-  if (body.calendarId !== undefined && body.calendarId !== event.calendarId) {
-    const target = findCalendar(ctx, body.calendarId);
-    if (target.source !== 'LOCAL') throw readOnly();
+/**
+ * Troca de calendário. No Google o evento não muda de calendário por uma edição comum: o antigo vira
+ * uma linha apagada pendente, que apaga lá, e este nasce de novo no destino.
+ */
+function moveToCalendar(ctx: Ctx, event: EventRow, target: CalendarRow) {
+  if (event.source === 'GOOGLE' && event.externalId) {
+    ctx.db
+      .insert(events)
+      .values({ ...event, ...stamp(), deletedAt: Date.now(), syncState: 'PENDING' })
+      .run();
   }
+  const moved = {
+    calendarId: target.id,
+    source: target.source,
+    externalId: null,
+    externalEtag: null,
+    updatedAt: Date.now(),
+    syncState: target.source === 'GOOGLE' ? ('PENDING' as const) : ('SYNCED' as const),
+  };
+  ctx.db
+    .update(events)
+    .set(moved)
+    .where(and(eq(events.recurringEventId, event.id), isNull(events.deletedAt)))
+    .run();
+  return ctx.db.update(events).set(moved).where(eq(events.id, event.id)).returning().get();
+}
+
+export function updateEvent(ctx: Ctx, id: string, body: UpdateEvent & { scope?: EventScope }) {
+  const found = findEvent(ctx, id);
+  assertEditable(ctx, found);
+  const target =
+    body.calendarId !== undefined && body.calendarId !== found.calendarId
+      ? findCalendar(ctx, body.calendarId)
+      : null;
+  if (target && !canWrite(target)) throw readOnly();
   assertRRule(body.rrule);
+  const event = target ? moveToCalendar(ctx, found, target) : found;
 
   if (event.rrule && body.scope === 'single') {
     return updateSingle(ctx, event, body, body.occurrenceStart ?? '');
@@ -443,7 +522,7 @@ export function updateEvent(ctx: Ctx, id: string, body: UpdateEvent & { scope?: 
     // Deixou de repetir: as exceções somem junto com a série.
     ctx.db
       .update(events)
-      .set({ deletedAt: Date.now(), updatedAt: Date.now() })
+      .set({ deletedAt: Date.now(), updatedAt: Date.now(), syncState: 'SYNCED' })
       .where(and(eq(events.recurringEventId, id), isNull(events.deletedAt)))
       .run();
   } else if (event.rrule && times) {
@@ -460,9 +539,9 @@ export function updateEvent(ctx: Ctx, id: string, body: UpdateEvent & { scope?: 
       ...textFields(body),
       allDay,
       ...(times ?? {}),
-      ...(body.calendarId !== undefined && { calendarId: body.calendarId }),
       ...(body.rrule !== undefined && { rrule: body.rrule }),
       updatedAt: Date.now(),
+      ...dirty(event.source),
     })
     .where(eq(events.id, id))
     .returning()
@@ -478,7 +557,7 @@ export function deleteEvent(
   query: { scope?: EventScope; occurrenceStart?: string }
 ) {
   const event = findEvent(ctx, id);
-  if (event.source !== 'LOCAL') throw readOnly();
+  assertEditable(ctx, event);
 
   if (event.rrule && query.scope === 'single') {
     const original = assertOccurrence(event, query.occurrenceStart);
@@ -486,7 +565,7 @@ export function deleteEvent(
     if (existing) {
       ctx.db
         .update(events)
-        .set({ status: 'CANCELLED', updatedAt: Date.now() })
+        .set({ status: 'CANCELLED', updatedAt: Date.now(), ...dirty(event.source) })
         .where(eq(events.id, existing.id))
         .run();
     } else {
@@ -502,6 +581,7 @@ export function deleteEvent(
           source: event.source,
           recurringEventId: event.id,
           originalStart: original,
+          ...dirty(event.source),
         })
         .run();
     }
@@ -510,10 +590,16 @@ export function deleteEvent(
   }
 
   deleteOwnerReminders(ctx, 'EVENT', [id]);
+  // Só o mestre sobe: apagar a série no Google leva as exceções junto.
   ctx.db
     .update(events)
-    .set({ deletedAt: Date.now(), updatedAt: Date.now() })
-    .where(or(eq(events.id, id), eq(events.recurringEventId, id)))
+    .set({ deletedAt: Date.now(), updatedAt: Date.now(), syncState: 'SYNCED' })
+    .where(eq(events.recurringEventId, id))
+    .run();
+  ctx.db
+    .update(events)
+    .set({ deletedAt: Date.now(), updatedAt: Date.now(), ...dirty(event.source) })
+    .where(eq(events.id, id))
     .run();
 }
 

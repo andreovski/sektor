@@ -134,7 +134,7 @@ export function updateTaskList(
   getList(ctx, id);
   ctx.db
     .update(taskLists)
-    .set({ ...body, updatedAt: Date.now() })
+    .set({ ...body, updatedAt: Date.now(), syncState: 'PENDING' })
     .where(eq(taskLists.id, id))
     .run();
   return listTaskLists(ctx).find((list) => list.id === id)!;
@@ -146,12 +146,12 @@ export function deleteTaskList(ctx: Ctx, id: string) {
   ctx.db.transaction(() => {
     ctx.db
       .update(tasks)
-      .set({ deletedAt: now, updatedAt: now })
+      .set({ deletedAt: now, updatedAt: now, syncState: 'PENDING' })
       .where(and(eq(tasks.listId, id), live))
       .run();
     ctx.db
       .update(taskLists)
-      .set({ deletedAt: now, updatedAt: now })
+      .set({ deletedAt: now, updatedAt: now, syncState: 'PENDING' })
       .where(eq(taskLists.id, id))
       .run();
   });
@@ -548,7 +548,7 @@ function markComplete(ctx: Ctx, task: TaskRow): string | null {
   const now = Date.now();
   ctx.db
     .update(tasks)
-    .set({ completedAt: now, status: 'DONE', updatedAt: now })
+    .set({ completedAt: now, status: 'DONE', updatedAt: now, syncState: 'PENDING' })
     .where(eq(tasks.id, task.id))
     .run();
   if (!task.rrule || !task.dueDate) return null;
@@ -579,7 +579,7 @@ function removeIntactNext(ctx: Ctx, nextTaskId: string | null) {
   const now = Date.now();
   ctx.db
     .update(tasks)
-    .set({ deletedAt: now, updatedAt: now })
+    .set({ deletedAt: now, updatedAt: now, syncState: 'PENDING' })
     .where(
       inArray(
         tasks.id,
@@ -592,7 +592,7 @@ function removeIntactNext(ctx: Ctx, nextTaskId: string | null) {
 function markOpen(ctx: Ctx, task: TaskRow, status: TaskStatus = 'TODO') {
   ctx.db
     .update(tasks)
-    .set({ completedAt: null, status, updatedAt: Date.now() })
+    .set({ completedAt: null, status, updatedAt: Date.now(), syncState: 'PENDING' })
     .where(eq(tasks.id, task.id))
     .run();
   removeIntactNext(ctx, task.nextTaskId);
@@ -632,7 +632,7 @@ export function updateTask(
   const task = findTask(ctx, id);
   const { completed, status, tags, listId, parentTaskId, projectId, ...fields } = body;
 
-  const patch: Partial<TaskRow> = { updatedAt: Date.now() };
+  const patch: Partial<TaskRow> = { updatedAt: Date.now(), syncState: 'PENDING' };
   if (fields.title !== undefined) patch.title = fields.title;
   if (fields.notes !== undefined) patch.notes = fields.notes;
   if (fields.priority !== undefined) patch.priority = fields.priority;
@@ -681,7 +681,7 @@ export function updateTask(
     if (Object.keys(family).length) {
       ctx.db
         .update(tasks)
-        .set({ ...family, updatedAt: Date.now() })
+        .set({ ...family, updatedAt: Date.now(), syncState: 'PENDING' })
         .where(and(eq(tasks.parentTaskId, id), live))
         .run();
     }
@@ -694,7 +694,7 @@ export function updateTask(
       else if (status) {
         ctx.db
           .update(tasks)
-          .set({ status, updatedAt: Date.now() })
+          .set({ status, updatedAt: Date.now(), syncState: 'PENDING' })
           .where(eq(tasks.id, id))
           .run();
       }
@@ -708,7 +708,7 @@ export function deleteTask(ctx: Ctx, id: string) {
   const now = Date.now();
   ctx.db
     .update(tasks)
-    .set({ deletedAt: now, updatedAt: now })
+    .set({ deletedAt: now, updatedAt: now, syncState: 'PENDING' })
     .where(and(or(eq(tasks.id, id), eq(tasks.parentTaskId, id)), live))
     .run();
 }

@@ -18,6 +18,7 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import {
+  AlertTriangle,
   Bell,
   CalendarCog,
   CalendarDays,
@@ -26,11 +27,13 @@ import {
   Eye,
   EyeOff,
   Plus,
+  RefreshCw,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
-import { call, useRpc } from '../../lib/rpc';
-import { Button, PageHeader, Segmented } from '../../ui';
+import { call, useRpc, useRpcMutation } from '../../lib/rpc';
+import { Button, cn, PageHeader, Segmented } from '../../ui';
+import { useGoogleRefresh } from '../settings/google';
 
 import { CalendarsDialog } from './calendars-dialog';
 import { EventDetail } from './event-detail';
@@ -90,6 +93,10 @@ function Page() {
   const from = days[0]!;
   const to = addDays(days[days.length - 1]!, 1);
 
+  const google = useGoogleRefresh();
+  const syncGoogle = useRpcMutation('google.sync');
+  const expired = google?.accounts.filter((account) => account.needsReconnect) ?? [];
+
   const calendars = useRpc('calendars.list');
   const events = useRpc('events.list', { from, to });
   // Tarefas são de outro módulo: se falhar, a agenda segue só com os eventos.
@@ -110,7 +117,8 @@ function Page() {
   const list = calendars.data ?? [];
   const colorOf = (event: EventOccurrence) =>
     event.color ?? list.find((c) => c.id === event.calendarId)?.color ?? 'blue';
-  const defaultCalendar = list.find((calendar) => !calendar.readOnly)?.id ?? '';
+  const writable = list.filter((calendar) => !calendar.readOnly);
+  const defaultCalendar = (writable.find((calendar) => calendar.isDefault) ?? writable[0])?.id ?? '';
 
   const create = (day = date, hour?: number) =>
     setEditing({
@@ -151,6 +159,16 @@ function Page() {
               <Bell size={15} />
               Lembretes
             </Button>
+            {!!google?.accounts.length && (
+              <Button
+                variant="ghost"
+                disabled={syncGoogle.isPending}
+                onClick={() => syncGoogle.mutate(undefined)}
+              >
+                <RefreshCw size={15} className={cn(syncGoogle.isPending && 'animate-spin')} />
+                Sincronizar
+              </Button>
+            )}
             <Button onClick={() => setManaging(true)}>
               <CalendarCog size={15} />
               Calendários
@@ -162,6 +180,18 @@ function Page() {
           </>
         }
       />
+
+      {expired.length > 0 && (
+        <p className="mb-3 flex items-center gap-2 text-sm text-warning">
+          <AlertTriangle size={14} className="shrink-0" />
+          {expired.map((account) => account.email).join(', ')}{' '}
+          {expired.length > 1 ? 'precisam' : 'precisa'} entrar de novo. Os eventos que você já tem
+          continuam aqui.
+          <Button size="sm" variant="ghost" onClick={() => void navigate({ to: '/ajustes' })}>
+            Abrir Ajustes
+          </Button>
+        </p>
+      )}
 
       <div className="mb-3 flex items-center gap-2">
         <Button aria-label="Anterior" onClick={() => setDate(shift(view, date, -1))}>

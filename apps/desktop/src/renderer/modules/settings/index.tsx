@@ -15,6 +15,7 @@ import {
   Select,
 } from '../../ui';
 
+import { GoogleSettings } from './google';
 import { useRestore } from './restore';
 
 const size = (bytes: number) =>
@@ -212,6 +213,10 @@ function SettingsPage() {
       <section>
         <SectionLabel>Você</SectionLabel>
         <Profile />
+      </section>
+      <section>
+        <SectionLabel>Google</SectionLabel>
+        <GoogleSettings />
       </section>
       <section>
         <SectionLabel>Backup</SectionLabel>

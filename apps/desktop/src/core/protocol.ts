@@ -21,11 +21,20 @@ export type CoreStageRestore = {
   targetKeyHex: string;
   password?: string;
 };
+/** O fim do login do Google: o código vem do servidor local do main, nunca da tela. */
+export type CoreGoogleConnect = {
+  type: 'google-connect';
+  id: number;
+  code: string;
+  verifier: string;
+  redirectUri: string;
+};
 export type CoreCommand =
   | CoreInit
   | CoreSmoke
   | CoreBackupFolder
   | CoreStageRestore
+  | CoreGoogleConnect
   | { type: 'port' };
 
 export type CoreReply<T = unknown> = {

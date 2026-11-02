@@ -17,6 +17,8 @@ const api: SektorApi = {
   restore: (password) => ipcRenderer.invoke('backup:restore', password),
   openDataDir: () => ipcRenderer.invoke('app:open-data-dir'),
   relaunch: () => ipcRenderer.invoke('app:relaunch'),
+  googleLogin: (hint) => ipcRenderer.invoke('google:login', hint),
+  googleCancelLogin: () => ipcRenderer.invoke('google:cancel-login'),
 };
 contextBridge.exposeInMainWorld('sektor', api);
 

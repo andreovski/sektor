@@ -30,6 +30,7 @@ export const handlers = (ctx: AppCtx) => ({
     color?: Tone;
     selected?: boolean;
   }) => svc.updateCalendar(ctx, id, parse(updateCalendarSchema as never, input)),
+  'calendars.setDefault': ({ id }: { id: string | null }) => svc.setDefaultCalendar(ctx, id),
   'calendars.delete': ({ id }: { id: string }) => {
     svc.deleteCalendar(ctx, id);
     ics.removeIcsSecret(ctx, id);
