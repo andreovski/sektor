@@ -1,3 +1,4 @@
+import { useMutation } from '@tanstack/react-query';
 import {
   ArrowDownToLine,
   Copy,
@@ -19,6 +20,7 @@ import { toast } from 'sonner';
 
 import { money, todayString } from '../../lib/format';
 import { useRpc, useRpcMutation } from '../../lib/rpc';
+import { openPluggyConnect } from './pluggy-widget';
 import { Button, Card, Dialog, Field, Input, SectionLabel, Select } from '../../ui';
 import { ConfirmDialog, Skeleton, useAccounts } from './parts';
 import { type Account, addDays, ago, type BankAccount, type BankItem, type BankStatus } from './utils';
@@ -213,6 +215,14 @@ function KeysForm({ onSaved }: { onSaved?(): void }) {
 function Connected({ data }: { data: BankStatus }) {
   const accounts = useAccounts();
   const sync = useRpcMutation('bank.sync');
+  const addItem = useRpcMutation('bank.addItem');
+  const widget = useMutation({
+    mutationFn: async () => {
+      const itemId = await openPluggyConnect();
+      if (itemId) await addItem.mutateAsync({ itemId });
+    },
+    onError: (error) => toast.error(error.message),
+  });
   const removeKeys = useRpcMutation('bank.removeCredentials');
   const removeItem = useRpcMutation('bank.removeItem');
   const [linking, setLinking] = useState<BankAccount | null>(null);
@@ -229,8 +239,8 @@ function Connected({ data }: { data: BankStatus }) {
             {data.pendingCount > 0 && ` · ${data.pendingCount} a revisar`}
           </p>
         </div>
-        <Button disabled title="O widget ainda não entrou no app">
-          <Plug size={14} /> Conectar pelo widget (em breve)
+        <Button disabled={widget.isPending} onClick={() => widget.mutate()}>
+          <Plug size={14} /> {widget.isPending ? 'Conectando…' : 'Conectar banco'}
         </Button>
         <Button onClick={() => setSheet('item')}>
           <Hash size={14} /> Adicionar pelo ID do item

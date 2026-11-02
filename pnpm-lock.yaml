@@ -99,6 +99,9 @@ importers:
       playwright:
         specifier: ^1.64.1
         version: 1.64.1
+      pluggy-connect-sdk:
+        specifier: 2.14.2
+        version: 2.14.2
       radix-ui:
         specifier: ^1.8.1
         version: 1.8.1(@types/react-dom@19.2.2(@types/react@19.2.2))(@types/react@19.2.2)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -2141,6 +2144,9 @@ packages:
     engines: {node: '>=6.0.0'}
     hasBin: true
 
+  belter@1.0.190:
+    resolution: {integrity: sha512-jz05FHrO+bwitdI6JxV5ESyRdVhTcwMWQ7L4o+q/R4LNJFQrG58sp9EiwsSjhbihhiyYFcmmCMRRagxte6igtw==}
+
   better-sqlite3-multiple-ciphers@13.0.3:
     resolution: {integrity: sha512-UYabM82r1J84TLWc/SszoHs6XopWpl/2HCg3Nui1JUaFXg/VLswzkPowYiRhK/4CftI8dgtikwyZQecMldrGxQ==}
     engines: {node: '>=22'}
@@ -2278,6 +2284,12 @@ packages:
 
   cross-dirname@0.1.0:
     resolution: {integrity: sha512-+R08/oI0nl3vfPcqftZRpytksBXDzOUveBq/NBVx0sUp1axwzPQrKinNx5yd5sxPu8j1wIy8AfnVQ+5eFdha6Q==}
+
+  cross-domain-safe-weakmap@1.0.29:
+    resolution: {integrity: sha512-VLoUgf2SXnf3+na8NfeUFV59TRZkIJqCIATaMdbhccgtnTlSnHXkyTRwokngEGYdQXx8JbHT9GDYitgR2sdjuA==}
+
+  cross-domain-utils@2.0.38:
+    resolution: {integrity: sha512-zZfi3+2EIR9l4chrEiXI2xFleyacsJf8YMLR1eJ0Veb5FTMXeJ3DpxDjZkto2FhL/g717WSELqbptNSo85UJDw==}
 
   cross-spawn@7.0.6:
     resolution: {integrity: sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA==}
@@ -2857,6 +2869,10 @@ packages:
   jsonfile@6.2.1:
     resolution: {integrity: sha512-zwOTdL3rFQ/lRdBnntKVOX6k5cKJwEc1HdilT71BWEu7J41gXIB2MRp+vxduPSwZJPWBxEzv4yH1wYLJGUHX4Q==}
 
+  jwt-decode@4.0.0:
+    resolution: {integrity: sha512-+KJGIyHgkGuIq3IEBNftfhW/LfWhXUIY6OmyVWjliu5KH1y0fw7VQ8YndE2O4qZdMSd9SqbnC8GOcZEy0Om7sA==}
+    engines: {node: '>=18'}
+
   keyv@4.5.4:
     resolution: {integrity: sha512-oxVHkHR/EJf2CNXnWxRLW6mg7JyCCUcG0DtEGmL2ctUo1PNTin1PUil+r/+4r5MpVgC/fn1kjsx7mjSujKqIpw==}
 
@@ -3206,6 +3222,17 @@ packages:
   plist@3.1.0:
     resolution: {integrity: sha512-uysumyrvkUX0rX/dEVqt8gC3sTBzd4zoWfLeS29nb53imdaXVvLINYXTI2GNqzaMuvacNx4uJQ8+b3zXR0pkgQ==}
     engines: {node: '>=10.4.0'}
+
+  pluggy-connect-sdk@2.14.2:
+    resolution: {integrity: sha512-mr5RKVvcfjDyF1/XANSSpFzql3VcsjQTEwbPOMd1Yvp3QK8VcFV6MNjS6NOQM5sydjSKazrC/llyvWnCHfzInA==}
+    peerDependencies:
+      pluggy-js: '>= 0.16.0'
+    peerDependenciesMeta:
+      pluggy-js:
+        optional: true
+
+  post-robot@10.0.46:
+    resolution: {integrity: sha512-EgVJiuvI4iRWDZvzObWes0X/n8olWBEJWxlSw79zmhpgkigX8UsVL4VOBhVtoJKwf0Y9qP9g2zOONw1rv80QbA==}
 
   postcss@8.5.32:
     resolution: {integrity: sha512-LJlKCCAUFKOuZxipUdYw1NzIITEsPcgyOG9LkvRJvuKj/bRzbuRY0ARXvL0pWGpsZvn8jku+LMep2eU0seHp8g==}
@@ -3580,6 +3607,9 @@ packages:
     resolution: {integrity: sha512-03KrMbjIFDWQR5RNPrSw3bd1r12JpyFQl9/yxjUbJtqkjmllqC5lFjZh6ujeuJCKr8EOQvRW872Oy/az+nLYxg==}
     engines: {node: '>=20.18.1'}
 
+  universal-serialize@1.0.10:
+    resolution: {integrity: sha512-FdouA4xSFa0fudk1+z5vLWtxZCoC0Q9lKYV3uUdFl7DttNfolmiw2ASr5ddY+/Yz6Isr68u3IqC9XMSwMP+Pow==}
+
   universalify@0.1.2:
     resolution: {integrity: sha512-rBJeI5CXAlmy1pV+617WB9J63U6XcazHHF2f2dbJix4XzpUF0RS3Zbj0FGIOCAva5P/d/GBOYaACQ1w+0azUkg==}
     engines: {node: '>= 4.0.0'}
@@ -3775,8 +3805,14 @@ packages:
     resolution: {integrity: sha512-rVksvsnNCdJ/ohGc6xgPwyN8eheCxsiLM8mxuE/t/mOVqJewPuO1miLpTHQiRgTKCLexL4MeAFVagts7HmNZ2Q==}
     engines: {node: '>=10'}
 
+  zalgo-promise@1.0.48:
+    resolution: {integrity: sha512-LLHANmdm53+MucY9aOFIggzYtUdkSBFxUsy4glTTQYNyK6B3uCPWTbfiGvSrEvLojw0mSzyFJ1/RRLv+QMNdzQ==}
+
   zod@3.25.76:
     resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
+
+  zoid@9.0.63:
+    resolution: {integrity: sha512-c9OccNUlOV9KuTKJJRhCU3B5SRHObTTiPAUayKkBQ0/qZugfh59MDW+zkFDR8IZN+c7NB/R90FCIpAfBp8+U/g==}
 
 snapshots:
 
@@ -5531,6 +5567,12 @@ snapshots:
 
   baseline-browser-mapping@2.11.34: {}
 
+  belter@1.0.190:
+    dependencies:
+      cross-domain-safe-weakmap: 1.0.29
+      cross-domain-utils: 2.0.38
+      zalgo-promise: 1.0.48
+
   better-sqlite3-multiple-ciphers@13.0.3:
     dependencies:
       node-addon-api: 8.9.2
@@ -5678,6 +5720,14 @@ snapshots:
 
   cross-dirname@0.1.0:
     optional: true
+
+  cross-domain-safe-weakmap@1.0.29:
+    dependencies:
+      cross-domain-utils: 2.0.38
+
+  cross-domain-utils@2.0.38:
+    dependencies:
+      zalgo-promise: 1.0.48
 
   cross-spawn@7.0.6:
     dependencies:
@@ -6268,6 +6318,8 @@ snapshots:
     optionalDependencies:
       graceful-fs: 4.2.11
 
+  jwt-decode@4.0.0: {}
+
   keyv@4.5.4:
     dependencies:
       json-buffer: 3.0.1
@@ -6541,6 +6593,19 @@ snapshots:
       '@xmldom/xmldom': 0.8.15
       base64-js: 1.5.1
       xmlbuilder: 15.1.1
+
+  pluggy-connect-sdk@2.14.2:
+    dependencies:
+      jwt-decode: 4.0.0
+      zoid: 9.0.63
+
+  post-robot@10.0.46:
+    dependencies:
+      belter: 1.0.190
+      cross-domain-safe-weakmap: 1.0.29
+      cross-domain-utils: 2.0.38
+      universal-serialize: 1.0.10
+      zalgo-promise: 1.0.48
 
   postcss@8.5.32:
     dependencies:
@@ -6984,6 +7049,8 @@ snapshots:
   undici@7.30.1:
     optional: true
 
+  universal-serialize@1.0.10: {}
+
   universalify@0.1.2: {}
 
   universalify@2.0.1: {}
@@ -7131,4 +7198,13 @@ snapshots:
 
   yocto-queue@0.1.0: {}
 
+  zalgo-promise@1.0.48: {}
+
   zod@3.25.76: {}
+
+  zoid@9.0.63:
+    dependencies:
+      belter: 1.0.190
+      cross-domain-utils: 2.0.38
+      post-robot: 10.0.46
+      zalgo-promise: 1.0.48

@@ -4,7 +4,7 @@
   "private": true,
   "version": "0.0.0",
   "description": "Sektor",
-  "author": "Andr\u00e9 Luiz",
+  "author": "André Luiz",
   "license": "AGPL-3.0-only",
   "main": "out/main/index.js",
   "scripts": {
@@ -25,7 +25,9 @@
     "@electron/rebuild": "4.2.1",
     "@fontsource-variable/geist": "^5.3.0",
     "@fontsource/geist-mono": "^5.3.0",
+    "@sektor/contract": "workspace:*",
     "@sektor/core": "workspace:*",
+    "@sektor/finance-engine": "workspace:*",
     "@tailwindcss/vite": "^4.3.3",
     "@tanstack/react-query": "^5.105.3",
     "@tanstack/react-router": "^1.170.46",
@@ -43,6 +45,7 @@
     "lucide-react": "^1.66.0",
     "motion": "^14.9.0",
     "playwright": "^1.64.1",
+    "pluggy-connect-sdk": "2.14.2",
     "radix-ui": "^1.8.1",
     "react": "19.3.1",
     "react-dom": "19.3.1",
@@ -52,8 +55,6 @@
     "tailwindcss": "^4.3.3",
     "typescript": "7.0.2",
     "vite": "8.3.5",
-    "zod": "3.25.76",
-    "@sektor/finance-engine": "workspace:*",
-    "@sektor/contract": "workspace:*"
+    "zod": "3.25.76"
   }
 }
