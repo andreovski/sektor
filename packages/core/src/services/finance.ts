@@ -26,7 +26,7 @@ import {
   referenceMonthForDue,
   splitInstallments,
 } from '@sektor/finance-engine';
-import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, or, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 
 import { accounts, categories, invoices, recurrences, transactions } from '../db/schema';
@@ -281,6 +281,56 @@ function openInvoiceIds(ctx: Ctx, accountId: string): Invoice[] {
     .where(and(eq(invoices.accountId, accountId), liveInvoice, isNull(invoices.paidAt)))
     .all()
     .filter((invoice) => !invoicePayment(ctx, invoice.id));
+}
+
+/** Fatura paga fora do app: fica paga sem tirar de conta nenhuma. Desfazer só vale nesse caso. */
+export function setInvoicePaidElsewhere(ctx: Ctx, id: string, paid: boolean) {
+  const invoice = ctx.db
+    .select()
+    .from(invoices)
+    .where(and(eq(invoices.id, id), liveInvoice))
+    .get();
+  if (!invoice) throw notFound('Fatura não encontrada.');
+  if (invoicePayment(ctx, id)) {
+    throw new AppError(409, 'Esta fatura tem um pagamento lançado. Apague o pagamento para reabrir.');
+  }
+  ctx.db
+    .update(invoices)
+    .set({ paidAt: paid ? Date.now() : null, updatedAt: Date.now() })
+    .where(eq(invoices.id, id))
+    .run();
+  return toInvoice(
+    ctx,
+    ctx.db.select().from(invoices).where(eq(invoices.id, id)).get()!,
+    todayIn(ctx)
+  );
+}
+
+/**
+ * Faturas que venceram antes da data de início da importação: o débito delas nunca vai chegar,
+ * então não podem ficar vencidas para sempre. Contam como pagas por fora.
+ */
+export function settleInvoicesBefore(ctx: Ctx, cardId: string, date: string) {
+  const old = ctx.db
+    .select()
+    .from(invoices)
+    .where(
+      and(
+        eq(invoices.accountId, cardId),
+        liveInvoice,
+        isNull(invoices.paidAt),
+        lt(invoices.dueDate, date)
+      )
+    )
+    .all();
+  for (const invoice of old) {
+    if (invoicePayment(ctx, invoice.id)) continue;
+    ctx.db
+      .update(invoices)
+      .set({ paidAt: Date.now(), updatedAt: Date.now() })
+      .where(eq(invoices.id, invoice.id))
+      .run();
+  }
 }
 
 /** Apaga um lançamento sem as regras da tela (a linha fica, marcada). */

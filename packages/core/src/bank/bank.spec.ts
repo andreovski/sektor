@@ -720,6 +720,59 @@ describe('bancos (Meu Pluggy)', () => {
       expectRepaired(cardId);
     });
 
+    it('fatura que venceu antes do início da importação conta como paga por fora', async () => {
+      pluggy.add(CARD_ID, {
+        id: 'old',
+        description: 'Loja 3/3',
+        amount: 90,
+        date: '2026-10-01T03:00:00.000Z',
+        status: 'PENDING',
+        creditCardMetadata: {
+          installmentNumber: 3,
+          totalInstallments: 3,
+          purchaseDate: '2026-08-01T03:00:00.000Z',
+        },
+      });
+      const { cardBank } = await connect();
+      const linked = await bank.linkAccount(ctx, cardBank, {
+        create: true,
+        importFrom: '2026-10-01',
+      });
+      const cardId = linked.items[0]!.accounts[1]!.accountId!;
+      bank.acceptAll(ctx);
+      const [invoice] = fin.listInvoices(ctx, cardId);
+      ctx.db
+        .update(invoices)
+        .set({ dueDate: '2026-09-16', closingDate: '2026-09-06' })
+        .where(eq(invoices.id, invoice!.id))
+        .run();
+      await bank.syncBanks(ctx);
+      expect(fin.listInvoices(ctx, cardId)[0]!.status).toBe('PAID');
+      expect(payments()).toEqual([]);
+    });
+
+    it('marcar como paga por fora, e desfazer', async () => {
+      const card = fin.createAccount(ctx, {
+        name: 'Cartão',
+        type: 'CREDIT_CARD',
+        initialBalanceCents: 0,
+        closingDay: 1,
+        dueDay: 10,
+      });
+      fin.createTransactions(ctx, {
+        kind: 'EXPENSE',
+        amountCents: 100_00,
+        date: '2026-08-05',
+        accountId: card.id,
+        description: 'Compra',
+      });
+      const [invoice] = fin.listInvoices(ctx, card.id);
+      expect(invoice!.status).toBe('OVERDUE');
+      expect(fin.setInvoicePaidElsewhere(ctx, invoice!.id, true).status).toBe('PAID');
+      expect(fin.listAccounts(ctx).find((a) => a.id === card.id)!.balanceCents).toBe(0);
+      expect(fin.setInvoicePaidElsewhere(ctx, invoice!.id, false).status).toBe('OVERDUE');
+    });
+
     it('confere o cartão com o banco: limite usado e cada fatura fechada', async () => {
       pluggy.bills.set(CARD_ID, [SEPTEMBER_BILL]);
       addMovements(true);

@@ -82,6 +82,9 @@ export const handlers = (ctx: AppCtx) => ({
     return fin.payInvoice(ctx, id, options);
   },
 
+  'invoices.setPaidElsewhere': ({ id, paid }: { id: string; paid: boolean }) =>
+    fin.setInvoicePaidElsewhere(ctx, id, paid),
+
   'categories.list': () => cat.listCategories(ctx),
   'categories.create': (input: CreateCategoryBody) =>
     cat.createCategory(ctx, parse(createCategoryBodySchema as never, input)),

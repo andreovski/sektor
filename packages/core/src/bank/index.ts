@@ -33,6 +33,7 @@ import {
   placeCardItems,
   redateOpenInvoices,
   removeTransaction,
+  settleInvoicesBefore,
   turnIntoInvoicePayment,
 } from '../services/finance';
 
@@ -650,6 +651,7 @@ async function importMovements(ctx: BankCtx, bankAccount: BankAccount, suggest: 
     fillInstallments(ctx, bankAccount.id);
     alignInvoices(ctx, bankAccount.id, card);
     payBills(ctx, card, pluggyBills);
+    settleInvoicesBefore(ctx, card.id, importFrom);
   } else {
     // O cartão já deu a fatura como paga e o débito chegou depois: ele vira o pagamento.
     for (const row of rows) {

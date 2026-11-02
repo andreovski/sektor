@@ -33,6 +33,7 @@ export function InvoicePanel({
   const categories = useCategories();
   const items = useRpc('invoices.transactions', { id: invoice.id });
   const pay = useRpcMutation('invoices.pay');
+  const elsewhere = useRpcMutation('invoices.setPaidElsewhere');
   const card = accounts.find((a) => a.id === invoice.accountId);
   const payers = accounts.filter((a) => a.type !== 'CREDIT_CARD' && !a.archived);
   const [from, setFrom] = useState('');
@@ -65,7 +66,7 @@ export function InvoicePanel({
         </p>
       )}
       {payable && (
-        <div className="grid grid-cols-[1fr_1fr_auto] items-end gap-3">
+        <div className="grid grid-cols-[1fr_1fr_auto_auto] items-end gap-3">
           <Field label="Pagar com">
             <Select value={effectiveFrom} onChange={(event) => setFrom(event.target.value)}>
               {payers.length === 0 && <option value="">Crie uma conta</option>}
@@ -95,7 +96,23 @@ export function InvoicePanel({
           >
             Pagar fatura
           </Button>
+          <Button
+            variant="ghost"
+            disabled={elsewhere.isPending}
+            onClick={() => elsewhere.mutate({ id: invoice.id, paid: true })}
+          >
+            Já paga, por fora do app
+          </Button>
         </div>
+      )}
+      {invoice.status === 'PAID' && !invoice.paymentTransactionId && (
+        <Button
+          variant="ghost"
+          disabled={elsewhere.isPending}
+          onClick={() => elsewhere.mutate({ id: invoice.id, paid: false })}
+        >
+          Reabrir fatura
+        </Button>
       )}
       <div>
         <SectionLabel>Lançamentos da fatura</SectionLabel>
