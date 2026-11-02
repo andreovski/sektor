@@ -6,12 +6,20 @@ import { join } from 'node:path';
 
 import type { CoreCommand, CoreEvent } from '../core/protocol';
 
-import { databaseKey } from './key';
+import { databaseKey, loadSecrets, saveSecrets } from './key';
 import { createTray, hasOpenWindow, notify } from './tray';
 
 const SMOKE = process.env.SEKTOR_SMOKE === '1';
+// Modo de teste das telas: banco temporário e sem cofre, que abriria um diálogo no Mac.
+const TEST_DIR = process.env.SEKTOR_TEST_DIR;
+const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-function startCore(dbPath: string, keyHex: string, onEvent: (event: CoreEvent) => void) {
+function startCore(
+  dbPath: string,
+  keyHex: string,
+  secrets: Record<string, string>,
+  onEvent: (event: CoreEvent) => void
+) {
   const core = utilityProcess.fork(join(__dirname, 'core.js'), [], {
     serviceName: 'sektor-core',
     stdio: 'inherit',
@@ -20,14 +28,17 @@ function startCore(dbPath: string, keyHex: string, onEvent: (event: CoreEvent) =
   core.on('exit', (code) => {
     if (code !== 0) onEvent({ type: 'failed', message: `Núcleo saiu com código ${code}.` });
   });
-  core.postMessage({ type: 'init', dbPath, keyHex } satisfies CoreCommand);
+  core.postMessage({ type: 'init', dbPath, keyHex, timeZone, secrets } satisfies CoreCommand);
   return core;
 }
 
 function createWindow(core: Electron.UtilityProcess) {
   const window = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    width: 1440,
+    height: 900,
+    minWidth: 960,
+    minHeight: 640,
+    backgroundColor: '#0e120e',
     show: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -52,7 +63,7 @@ function runSmoke() {
   const dir = mkdtempSync(join(tmpdir(), 'sektor-smoke-'));
   const dbPath = join(dir, 'sektor.db');
   createTray(() => undefined);
-  const core = startCore(dbPath, randomBytes(32).toString('hex'), async (event) => {
+  const core = startCore(dbPath, randomBytes(32).toString('hex'), {}, async (event) => {
     if (event.type === 'ready') {
       core.postMessage({
         type: 'smoke',
@@ -79,10 +90,17 @@ function runSmoke() {
 
 void app.whenReady().then(() => {
   if (SMOKE) return runSmoke();
-  const dbPath = join(app.getPath('userData'), 'sektor.db');
-  const core = startCore(dbPath, databaseKey(), (event) => {
-    if (event.type === 'failed') console.error('[core]', event.message);
-  });
+  const dbPath = join(TEST_DIR ?? app.getPath('userData'), 'sektor.db');
+  const core = startCore(
+    dbPath,
+    TEST_DIR ? 'd'.repeat(64) : databaseKey(),
+    TEST_DIR ? {} : loadSecrets(),
+    (event) => {
+      if (event.type === 'failed') console.error('[core]', event.message);
+      if (event.type === 'secrets' && !TEST_DIR) saveSecrets(event.secrets);
+      if (event.type === 'notify') void notify(event.title, event.body);
+    }
+  );
   const openWindow = () => {
     if (!hasOpenWindow()) createWindow(core);
   };

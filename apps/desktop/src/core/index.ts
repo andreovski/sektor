@@ -1,57 +1,64 @@
-import { appMeta, type DbHandle, openDatabase } from '@sektor/core';
+import { type App, appMeta, createApp, openDatabase } from '@sektor/core';
 import { eq } from 'drizzle-orm';
 
 import type { CoreCommand, CoreEvent, RpcRequest, RpcResponse } from './protocol';
 
 // Núcleo do app: único processo que abre o banco e fala com a rede.
 const parent = process.parentPort;
-let db: DbHandle | null = null;
+const MINUTE = 60_000;
+let app: App | null = null;
 let dbPath = '';
 
 const emit = (event: CoreEvent) => parent.postMessage(event);
 
-function bumpOpens(handle: DbHandle): number {
-  const row = handle.orm.select().from(appMeta).where(eq(appMeta.key, 'opens')).get();
-  const opens = Number(row?.value ?? 0) + 1;
-  handle.orm
-    .insert(appMeta)
-    .values({ key: 'opens', value: String(opens), updatedAt: Date.now() })
-    .onConflictDoUpdate({
-      target: appMeta.key,
-      set: { value: String(opens), updatedAt: Date.now() },
-    })
-    .run();
-  return opens;
+function init(command: Extract<CoreCommand, { type: 'init' }>) {
+  dbPath = command.dbPath;
+  const secrets = { ...command.secrets };
+  app = createApp({
+    dbPath,
+    keyHex: command.keyHex,
+    timeZone: command.timeZone,
+    secrets: {
+      get: (name) => secrets[name] ?? null,
+      set(name, value) {
+        if (value === null) delete secrets[name];
+        else secrets[name] = value;
+        emit({ type: 'secrets', secrets });
+      },
+    },
+    notify: (title, body) => emit({ type: 'notify', title, body }),
+  });
+  emit({ type: 'ready' });
+  void app.tick();
+  setInterval(() => void app?.tick(), MINUTE);
 }
 
 function smoke(wrongKeyHex: string) {
-  const handle = db!;
+  const { orm, raw } = app!.handle;
   const wrote = `prova-${Date.now()}`;
-  handle.orm
+  orm
     .insert(appMeta)
     .values({ key: 'smoke', value: wrote, updatedAt: Date.now() })
     .onConflictDoUpdate({ target: appMeta.key, set: { value: wrote, updatedAt: Date.now() } })
     .run();
-  const read = handle.orm.select().from(appMeta).where(eq(appMeta.key, 'smoke')).get();
+  const read = orm.select().from(appMeta).where(eq(appMeta.key, 'smoke')).get();
   let wrongKeyRefused = false;
   try {
     openDatabase(dbPath, wrongKeyHex).raw.close();
   } catch {
     wrongKeyRefused = true;
   }
-  // Fecha para o WAL ir ao arquivo principal, que é o que o main confere.
-  handle.raw.pragma('wal_checkpoint(TRUNCATE)');
+  // O WAL vai para o arquivo principal, que é o que o main confere.
+  raw.pragma('wal_checkpoint(TRUNCATE)');
   emit({ type: 'smoke-result', wrote, read: read?.value ?? null, wrongKeyRefused });
 }
 
 function serve(port: Electron.MessagePortMain) {
   port.on('message', (event) => {
-    const { id } = event.data as RpcRequest;
-    const dbVersion = db!.raw.pragma('user_version', { simple: true }) as number;
-    const opens = Number(
-      db!.orm.select().from(appMeta).where(eq(appMeta.key, 'opens')).get()?.value ?? 0
-    );
-    port.postMessage({ id, result: { dbVersion, opens } } satisfies RpcResponse);
+    const { id, method, input } = event.data as RpcRequest;
+    void app!.call(method, input).then((result) => {
+      port.postMessage({ id, result } satisfies RpcResponse);
+    });
   });
   port.start();
 }
@@ -59,16 +66,9 @@ function serve(port: Electron.MessagePortMain) {
 parent.on('message', (event) => {
   const command = event.data as CoreCommand;
   try {
-    if (command.type === 'init') {
-      dbPath = command.dbPath;
-      db = openDatabase(command.dbPath, command.keyHex);
-      bumpOpens(db);
-      emit({ type: 'ready' });
-    } else if (command.type === 'smoke') {
-      smoke(command.wrongKeyHex);
-    } else if (event.ports[0]) {
-      serve(event.ports[0]);
-    }
+    if (command.type === 'init') init(command);
+    else if (command.type === 'smoke') smoke(command.wrongKeyHex);
+    else if (event.ports[0]) serve(event.ports[0]);
   } catch (error) {
     emit({ type: 'failed', message: error instanceof Error ? error.message : String(error) });
   }

@@ -1,0 +1,215 @@
+import clsx from 'clsx';
+import { Dialog as RadixDialog } from 'radix-ui';
+import { type ComponentProps, type ReactNode } from 'react';
+import { type LucideIcon, X } from 'lucide-react';
+
+export { clsx as cn };
+
+type ButtonProps = ComponentProps<'button'> & {
+  variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
+  size?: 'sm' | 'md';
+};
+
+export function Button({ variant = 'secondary', size = 'md', className, ...props }: ButtonProps) {
+  return (
+    <button
+      type="button"
+      className={clsx(
+        'inline-flex items-center justify-center gap-2 rounded-control font-medium whitespace-nowrap transition-colors disabled:opacity-50',
+        size === 'sm' ? 'h-7 px-2.5 text-xs' : 'h-8 px-3 text-sm',
+        variant === 'primary' && 'bg-primary text-on-primary shadow-glow hover:bg-primary-hover',
+        variant === 'secondary' && 'border border-line-strong bg-sunken hover:bg-hover',
+        variant === 'ghost' && 'text-muted hover:bg-hover hover:text-foreground',
+        variant === 'danger' && 'border border-line-strong text-danger hover:bg-hover',
+        className
+      )}
+      {...props}
+    />
+  );
+}
+
+export function Card({ className, ...props }: ComponentProps<'section'>) {
+  return (
+    <section
+      className={clsx('rounded-panel border border-line bg-surface p-4 shadow-card', className)}
+      {...props}
+    />
+  );
+}
+
+export function CardHeader({
+  icon: Icon,
+  title,
+  action,
+}: {
+  icon?: LucideIcon;
+  title: string;
+  action?: ReactNode;
+}) {
+  return (
+    <header className="mb-3 flex items-center gap-2">
+      {Icon && <Icon size={16} className="text-muted" />}
+      <h3 className="text-sm font-medium">{title}</h3>
+      <div className="ml-auto text-xs text-muted">{action}</div>
+    </header>
+  );
+}
+
+export function PageHeader({
+  icon: Icon,
+  title,
+  description,
+  actions,
+}: {
+  icon: LucideIcon;
+  title: string;
+  description?: string;
+  actions?: ReactNode;
+}) {
+  return (
+    <header className="mb-6 flex items-center gap-3">
+      <span className="grid size-9 place-items-center rounded-control border border-line-strong">
+        <Icon size={18} />
+      </span>
+      <div>
+        <h1 className="text-2xl font-semibold">{title}</h1>
+        {description && <p className="text-sm text-muted">{description}</p>}
+      </div>
+      <div className="ml-auto flex items-center gap-2">{actions}</div>
+    </header>
+  );
+}
+
+export function SectionLabel({ children }: { children: ReactNode }) {
+  return (
+    <h2 className="mb-3 text-[11px] font-medium tracking-[0.14em] text-subtle uppercase">
+      {children}
+    </h2>
+  );
+}
+
+export function EmptyState({
+  icon: Icon,
+  title,
+  text,
+  action,
+}: {
+  icon: LucideIcon;
+  title: string;
+  text?: string;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col items-center gap-2 py-10 text-center">
+      <span className="mb-1 grid size-10 place-items-center rounded-full border border-line-strong shadow-glow">
+        <Icon size={18} className="text-muted" />
+      </span>
+      <p className="font-medium">{title}</p>
+      {text && <p className="max-w-sm text-sm text-muted">{text}</p>}
+      {action && <div className="mt-2">{action}</div>}
+    </div>
+  );
+}
+
+export function Segmented<T extends string>({
+  value,
+  onChange,
+  options,
+}: {
+  value: T;
+  onChange(value: T): void;
+  options: { value: T; label: string }[];
+}) {
+  return (
+    <div className="inline-flex rounded-control border border-line bg-sunken p-0.5">
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          onClick={() => onChange(option.value)}
+          className={clsx(
+            'h-7 rounded-[6px] px-2.5 text-xs font-medium',
+            option.value === value ? 'bg-active text-foreground' : 'text-muted hover:text-foreground'
+          )}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+const fieldClass =
+  'h-8 w-full rounded-control border border-line bg-sunken px-2.5 text-sm placeholder:text-subtle';
+
+export function Input({ className, ...props }: ComponentProps<'input'>) {
+  return <input className={clsx(fieldClass, className)} {...props} />;
+}
+
+export function Select({ className, ...props }: ComponentProps<'select'>) {
+  return <select className={clsx(fieldClass, className)} {...props} />;
+}
+
+export function Textarea({ className, ...props }: ComponentProps<'textarea'>) {
+  return (
+    <textarea
+      className={clsx(
+        'w-full rounded-control border border-line bg-sunken p-2.5 text-sm placeholder:text-subtle',
+        className
+      )}
+      {...props}
+    />
+  );
+}
+
+export function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label className="flex flex-col gap-1 text-xs text-muted">
+      {label}
+      {children}
+    </label>
+  );
+}
+
+export function Dialog({
+  open,
+  onOpenChange,
+  title,
+  children,
+}: {
+  open: boolean;
+  onOpenChange(open: boolean): void;
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <RadixDialog.Root open={open} onOpenChange={onOpenChange}>
+      <RadixDialog.Portal>
+        <RadixDialog.Overlay className="fixed inset-0 bg-[var(--overlay)]" />
+        <RadixDialog.Content className="fixed top-1/2 left-1/2 max-h-[85vh] w-[480px] max-w-[92vw] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-panel bg-raised p-5 shadow-popover">
+          <div className="mb-4 flex items-center">
+            <RadixDialog.Title className="font-semibold">{title}</RadixDialog.Title>
+            <RadixDialog.Close asChild>
+              <button type="button" aria-label="Fechar" className="ml-auto text-muted">
+                <X size={16} />
+              </button>
+            </RadixDialog.Close>
+          </div>
+          <RadixDialog.Description className="sr-only">{title}</RadixDialog.Description>
+          {children}
+        </RadixDialog.Content>
+      </RadixDialog.Portal>
+    </RadixDialog.Root>
+  );
+}
+
+/** Número principal de um cartão. */
+export function Stat({ label, value, hint }: { label: string; value: ReactNode; hint?: string }) {
+  return (
+    <div>
+      <p className="text-xs text-muted">{label}</p>
+      <p className="text-xl font-semibold tabular-nums">{value}</p>
+      {hint && <p className="text-xs text-subtle">{hint}</p>}
+    </div>
+  );
+}

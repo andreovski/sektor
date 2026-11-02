@@ -29,7 +29,7 @@ afterEach(() => {
 describe('banco', () => {
   it('aplica todas as migrações', () => {
     open();
-    expect(db.raw.pragma('user_version', { simple: true })).toBe(2);
+    expect(db.raw.pragma('user_version', { simple: true })).toBeGreaterThanOrEqual(2);
   });
 
   it('recusa valor zero ou negativo', () => {

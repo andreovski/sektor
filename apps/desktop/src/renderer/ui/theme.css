@@ -1,0 +1,122 @@
+@import '@fontsource-variable/geist';
+@import '@fontsource/geist-mono/400.css';
+@import 'tailwindcss';
+
+:root {
+  --accent-h: 128;
+  --accent-c: 0.15;
+  --background: oklch(15.5% 0.018 150);
+  --surface: oklch(19% 0.022 150);
+  --surface-raised: oklch(23% 0.026 150);
+  --surface-sunken: oklch(13.5% 0.015 150);
+  --foreground: oklch(96% 0.02 130);
+  --muted-foreground: oklch(74% 0.035 140);
+  --subtle-foreground: oklch(56% 0.035 145);
+  --border: oklch(95% 0.05 130 / 0.08);
+  --border-strong: oklch(95% 0.05 130 / 0.15);
+  --primary: oklch(0.84 var(--accent-c) var(--accent-h));
+  --primary-hover: oklch(0.88 var(--accent-c) var(--accent-h));
+  --primary-foreground: oklch(0.22 0.05 var(--accent-h));
+  --ring: oklch(0.84 var(--accent-c) var(--accent-h) / 0.7);
+  --hover: oklch(100% 0 0 / 0.045);
+  --active: oklch(100% 0 0 / 0.08);
+  --overlay: oklch(8% 0.02 150 / 0.62);
+  --success: oklch(74% 0.15 158);
+  --warning: oklch(81% 0.14 80);
+  --danger: oklch(67% 0.19 24);
+  --info: oklch(73% 0.12 238);
+  --tone-violet: oklch(70% 0.15 290);
+  --tone-blue: oklch(71% 0.13 250);
+  --tone-green: oklch(75% 0.14 160);
+  --tone-amber: oklch(80% 0.14 75);
+  --tone-orange: oklch(74% 0.15 50);
+  --tone-rose: oklch(70% 0.17 10);
+  --tone-cyan: oklch(77% 0.11 205);
+  --chart-1: #3987e5;
+  --chart-2: #d95926;
+  --chart-3: #199e70;
+  --chart-4: #c98500;
+  --chart-5: #d55181;
+  --chart-grid: oklch(100% 0 0 / 0.06);
+  --shadow-card: 0 1px 0 0 oklch(100% 0 0 / 0.03) inset, 0 1px 2px oklch(0% 0 0 / 0.3);
+  --shadow-popover:
+    0 0 0 1px oklch(100% 0 0 / 0.06), 0 12px 40px -8px oklch(0% 0 0 / 0.6),
+    0 4px 12px -4px oklch(0% 0 0 / 0.4);
+  --glow-primary: 0 0 0 1px oklch(0.84 0.15 128 / 0.5), 0 6px 24px -6px oklch(0.84 0.15 128 / 0.4);
+  --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+  --app-backdrop: radial-gradient(60rem 36rem at 78% -14%, oklch(60% 0.13 135 / 0.13), transparent 60%);
+  color-scheme: dark;
+}
+
+@theme inline {
+  --font-sans: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, monospace;
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-raised: var(--surface-raised);
+  --color-sunken: var(--surface-sunken);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted-foreground);
+  --color-subtle: var(--subtle-foreground);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-on-primary: var(--primary-foreground);
+  --color-hover: var(--hover);
+  --color-active: var(--active);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-info: var(--info);
+  --color-violet: var(--tone-violet);
+  --color-blue: var(--tone-blue);
+  --color-green: var(--tone-green);
+  --color-amber: var(--tone-amber);
+  --color-orange: var(--tone-orange);
+  --color-rose: var(--tone-rose);
+  --color-cyan: var(--tone-cyan);
+  --radius-control: 0.5rem;
+  --radius-panel: 1rem;
+  --shadow-card: var(--shadow-card);
+  --shadow-popover: var(--shadow-popover);
+  --shadow-glow: var(--glow-primary);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--background);
+  background-image: var(--app-backdrop);
+  background-attachment: fixed;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  letter-spacing: -0.02em;
+}
+
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 8px;
+}
