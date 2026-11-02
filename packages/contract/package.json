@@ -1,0 +1,10 @@
+{
+  "name": "@sektor/contract",
+  "private": true,
+  "version": "0.0.0",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": { "typecheck": "tsc -p ." },
+  "dependencies": { "zod": "3.25.76" },
+  "devDependencies": { "typescript": "7.0.2" }
+}

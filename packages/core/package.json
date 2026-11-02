@@ -12,7 +12,8 @@
   "dependencies": {
     "better-sqlite3-multiple-ciphers": "13.0.3",
     "drizzle-orm": "0.45.4",
-    "@sektor/finance-engine": "workspace:*"
+    "@sektor/finance-engine": "workspace:*",
+    "@sektor/contract": "workspace:*"
   },
   "devDependencies": {
     "@types/better-sqlite3": "7.6.13",
