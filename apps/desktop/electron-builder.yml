@@ -1,0 +1,12 @@
+appId: br.com.sektor.app
+productName: Sektor
+directories:
+  output: dist
+files:
+  - out/**
+  - package.json
+asarUnpack:
+  - '**/*.node'
+mac:
+  target: dir
+  identity: null

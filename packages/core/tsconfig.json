@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "include": [
+    "src"
+  ],
+  "compilerOptions": {
+    "paths": {
+      "better-sqlite3-multiple-ciphers": [
+        "../../node_modules/better-sqlite3-multiple-ciphers/index.d.ts"
+      ]
+    }
+  }
+}

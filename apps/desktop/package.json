@@ -1,0 +1,37 @@
+{
+  "name": "desktop",
+  "productName": "Sektor",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Sektor",
+  "author": "André Luiz",
+  "license": "AGPL-3.0-only",
+  "main": "out/main/index.js",
+  "scripts": {
+    "postinstall": "electron-rebuild -f -w better-sqlite3-multiple-ciphers",
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "typecheck": "tsc -p .",
+    "smoke": "electron-vite build && SEKTOR_SMOKE=1 electron .",
+    "package": "electron-vite build && electron-builder --dir"
+  },
+  "dependencies": {
+    "better-sqlite3-multiple-ciphers": "13.0.3"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "4.2.1",
+    "@sektor/core": "workspace:*",
+    "@types/node": "22.19.1",
+    "@types/react": "19.2.2",
+    "@types/react-dom": "19.2.2",
+    "@vitejs/plugin-react": "6.2.1",
+    "drizzle-orm": "0.45.4",
+    "electron": "45.2.1",
+    "electron-builder": "26.18.0",
+    "electron-vite": "6.0.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "typescript": "7.0.2",
+    "vite": "8.3.5"
+  }
+}

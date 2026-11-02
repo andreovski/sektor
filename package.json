@@ -1,0 +1,16 @@
+{
+  "name": "sektor",
+  "private": true,
+  "version": "0.0.0",
+  "license": "AGPL-3.0-only",
+  "packageManager": "pnpm@9.15.9",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "dev": "pnpm --filter desktop dev",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "smoke": "pnpm --filter desktop smoke",
+    "package": "pnpm --filter desktop package"
+  },
+  "devDependencies": { "turbo": "2.11.10", "typescript": "7.0.2" }
+}
