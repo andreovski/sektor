@@ -29,8 +29,23 @@ export type CoreGoogleConnect = {
   verifier: string;
   redirectUri: string;
 };
+/** A pasta dos arquivos de projeto é do main; quem sabe o que está em uso é o banco. */
+export type CoreProjectFile =
+  | {
+      type: 'project-file-add';
+      id: number;
+      projectId: string;
+      name: string;
+      sizeBytes: number;
+      contentHash: string;
+      storedName: string;
+    }
+  | { type: 'project-file-find'; id: number; fileId: string }
+  | { type: 'project-file-remove'; id: number; fileId: string }
+  | { type: 'project-file-orphans'; id: number };
 export type CoreCommand =
   | CoreInit
+  | CoreProjectFile
   | CoreSmoke
   | CoreBackupFolder
   | CoreStageRestore

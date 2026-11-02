@@ -15,7 +15,7 @@ import type { EventOccurrence } from '@sektor/core/src/modules/agenda/view';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
-import { call, useRpcMutation } from '../../lib/rpc';
+import { call, useRpc, useRpcMutation } from '../../lib/rpc';
 import { Button, cn, Dialog, Field, Input, Select, Textarea } from '../../ui';
 
 import { TIME_ZONE } from './shared';
@@ -38,6 +38,7 @@ export function EventFormDialog({
   const set = (patch: Partial<EventForm>) => setForm((current) => ({ ...current, ...patch }));
   const create = useRpcMutation('events.create');
   const update = useRpcMutation('events.update');
+  const projects = useRpc('projects.list', { includeCompleted: true });
   const pending = create.isPending || update.isPending;
   const invalid = endBeforeStart(form);
   const series = Boolean(editing?.isRecurring);
@@ -54,7 +55,13 @@ export function EventFormDialog({
     const body = bodyOf(form, TIME_ZONE);
     if (!editing) return create.mutate(body, done);
     if (scope === 'single') {
-      const { rrule: _rrule, reminders: _reminders, calendarId: _calendar, ...fields } = body;
+      const {
+        rrule: _rrule,
+        reminders: _reminders,
+        calendarId: _calendar,
+        projectId: _project,
+        ...fields
+      } = body;
       return update.mutate(
         { id: editing.eventId, ...fields, scope, occurrenceStart: editing.occurrenceStart },
         done
@@ -174,6 +181,20 @@ export function EventFormDialog({
             </Select>
           </Field>
         </div>
+
+        <Field label={series ? 'Projeto (vale para a série)' : 'Projeto'}>
+          <Select
+            value={form.projectId}
+            onChange={(event) => set({ projectId: event.target.value })}
+          >
+            <option value="">Sem projeto</option>
+            {projects.data?.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
 
         {(form.repeat === 'weekly' || form.repeat === 'biweekly') && (
           <div className="flex gap-1" role="group" aria-label="Dias da semana">

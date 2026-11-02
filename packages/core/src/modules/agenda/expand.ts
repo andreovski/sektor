@@ -43,6 +43,7 @@ export function occurrenceOf(
     source: row.source,
     calendarId: row.calendarId,
     reminders,
+    projectId: master ? master.projectId : row.projectId,
   };
 }
 

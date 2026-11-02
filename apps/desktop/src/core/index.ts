@@ -1,4 +1,10 @@
 import { type App, appMeta, AppError, createApp, openDatabase, stageRestore } from '@sektor/core';
+import {
+  addProjectFile,
+  orphanProjectFiles,
+  projectFileStoredName,
+  removeProjectFile,
+} from '@sektor/core';
 import { eq } from 'drizzle-orm';
 import { mkdtempSync, openSync, readdirSync, readSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -151,6 +157,15 @@ parent.on('message', (event) => {
       reply(command.id, () => app!.chooseBackupFolder(command.folder));
     } else if (command.type === 'google-connect') {
       connectGoogle(command);
+    } else if (command.type === 'project-file-add') {
+      const { id, type: _type, ...body } = command;
+      reply(id, () => addProjectFile(app!.ctx, body));
+    } else if (command.type === 'project-file-find') {
+      reply(command.id, () => projectFileStoredName(app!.ctx, command.fileId));
+    } else if (command.type === 'project-file-remove') {
+      reply(command.id, () => removeProjectFile(app!.ctx, command.fileId));
+    } else if (command.type === 'project-file-orphans') {
+      reply(command.id, () => orphanProjectFiles(app!.ctx));
     } else if (command.type === 'stage-restore') {
       const { id, type: _type, ...options } = command;
       reply(id, () => stageRestore(options));

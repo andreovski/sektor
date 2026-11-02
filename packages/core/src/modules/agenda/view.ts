@@ -35,6 +35,7 @@ export interface EventOccurrence {
   source: CalendarSource;
   calendarId: string;
   reminders: number[];
+  projectId?: string | null;
   /** Tarefa com prazo sobreposta à agenda: não é evento, abre em Tarefas. */
   taskId?: string;
 }

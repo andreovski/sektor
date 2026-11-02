@@ -63,6 +63,8 @@ export interface EventForm {
   calendarId: string;
   reminders: number[];
   color: string | null;
+  /** Vazio é sem projeto. */
+  projectId: string;
 }
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -119,6 +121,7 @@ export function newEventForm({
     calendarId,
     reminders: [],
     color: null,
+    projectId: '',
   };
 }
 
@@ -182,6 +185,7 @@ export function formFromOccurrence(event: EventOccurrence, timeZone: string): Ev
     calendarId: event.calendarId,
     reminders: event.reminders,
     color: event.color,
+    projectId: event.projectId ?? '',
   };
 }
 
@@ -257,6 +261,7 @@ export function bodyOf(form: EventForm, timeZone: string) {
     rrule: rruleOf(form),
     reminders: form.reminders,
     color: form.color as never,
+    projectId: form.projectId || null,
   };
 }
 

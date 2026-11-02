@@ -31,6 +31,10 @@ export const projects = sqliteTable('projects', {
     .default('PERSONAL'),
   description: text('description'),
   color: text('color', { enum: TONES }),
+  startDate: text('start_date'),
+  status: text('status', { enum: ['ACTIVE', 'PAUSED', 'DONE'] })
+    .notNull()
+    .default('ACTIVE'),
   dueDate: text('due_date'),
   completedAt: integer('completed_at'),
 });

@@ -125,6 +125,7 @@ function ProjectCard({
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
         <Chip>{PROJECT_TYPE_LABELS[project.type]}</Chip>
+        {project.status === 'PAUSED' && <Chip>Pausado</Chip>}
         <DueLabel project={project} />
       </div>
       {project.description && (
@@ -190,7 +191,7 @@ export function ProjectsPage() {
   const projects = useRpc('projects.list', { includeCompleted: showDone });
   const navigate = useNavigate();
   const open = (project: ProjectResponse) =>
-    navigate({ to: '/tarefas', search: { projeto: project.id } as never });
+    navigate({ to: '/projetos/$id', params: { id: project.id } });
   const newProject = () => setDialog({ project: null });
 
   return (
@@ -265,6 +266,7 @@ export function ProjectsPage() {
         open={dialog !== null}
         project={dialog?.project ?? null}
         onClose={() => setDialog(null)}
+        onCreated={open}
       />
     </div>
   );

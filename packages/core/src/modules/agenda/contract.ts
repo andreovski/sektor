@@ -21,6 +21,7 @@ const eventFields = {
   color: tone.nullable().optional(),
   rrule: z.string().max(500).nullable().optional(),
   reminders: reminders.optional(),
+  projectId: z.string().min(1).nullable().optional(),
 };
 
 const endAfterStart = (value: { startAt?: string; endAt?: string }) =>

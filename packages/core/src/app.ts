@@ -22,6 +22,7 @@ import {
 } from './modules/google';
 import { handlers as habits, jobs as habitsJobs } from './modules/habits';
 import { handlers as health, jobs as healthJobs } from './modules/health';
+import { handlers as projects, jobs as projectsJobs } from './modules/projects';
 import { handlers as reminders, jobs as remindersJobs } from './modules/reminders';
 import { handlers as review, jobs as reviewJobs } from './modules/review';
 import { handlers as tasks, jobs as tasksJobs } from './modules/tasks';
@@ -58,6 +59,7 @@ const buildHandlers = (ctx: AppCtx, store: DbStore, systemTimeZone: string) => (
   ...finance(ctx),
   ...financePlus(ctx),
   ...tasks(ctx),
+  ...projects(ctx),
   ...agenda(ctx),
   ...reminders(ctx),
   ...habits(ctx),
@@ -75,6 +77,7 @@ const JOBS: Job[] = [
   ...financeJobs,
   ...financePlusJobs,
   ...tasksJobs,
+  ...projectsJobs,
   ...agendaJobs,
   ...remindersJobs,
   ...habitsJobs,

@@ -72,6 +72,8 @@ export const events = sqliteTable(
     syncState: text('sync_state', { enum: ['SYNCED', 'PENDING', 'ERROR'] })
       .notNull()
       .default('SYNCED'),
+    /** Vale para a série inteira: a exceção segue o projeto do evento mestre. */
+    projectId: text('project_id'),
     /** Fuso em que a série do Google se repete. Vazio, vale o da pessoa. */
     timeZone: text('time_zone'),
     /** Linhas de `recurrence` que não são a RRULE (EXDATE, RDATE), em JSON, para voltarem no envio. */

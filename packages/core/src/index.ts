@@ -2,4 +2,10 @@ export { type App, type AppCtx, type AppOptions, createApp, type GoogleConfig, t
 export { type DbHandle, openDatabase } from './db/client';
 export { appMeta } from './db/schema';
 export { stageRestore, type StageResult } from './modules/backup';
+export {
+  addProjectFile,
+  orphanProjectFiles,
+  projectFileStoredName,
+  removeProjectFile,
+} from './modules/projects';
 export { AppError } from './services/context';

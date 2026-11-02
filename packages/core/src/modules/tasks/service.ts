@@ -23,6 +23,7 @@ import {
 import type { z } from 'zod';
 
 import { AppError, type Ctx, notFound, stamp, todayIn } from '../../services/context';
+import { dropProjectContent } from '../projects/links';
 
 import { parseCapture } from './capture';
 import type {
@@ -784,7 +785,10 @@ function withProgress(ctx: Ctx, rows: ProjectRow[]): ProjectResponse[] {
       type: row.type,
       description: row.description,
       color: row.color,
+      status: row.status,
+      startDate: row.startDate,
       dueDate: row.dueDate,
+      createdAt: row.createdAt,
       completedAt: row.completedAt,
       progress: { total, done, percent: total ? Math.round((done / total) * 100) : 0 },
       nextTask: next
@@ -821,16 +825,24 @@ export function getProject(ctx: Ctx, id: string): ProjectResponse {
   return withProgress(ctx, [findProject(ctx, id)])[0]!;
 }
 
+function assertProjectDates(startDate: string | null | undefined, dueDate: string | null | undefined) {
+  if (startDate && dueDate && startDate > dueDate) {
+    throw new AppError(400, 'A entrega não pode ser antes do início.');
+  }
+}
+
 export function createProject(
   ctx: Ctx,
   body: z.output<typeof createProjectSchema>
 ): ProjectResponse {
+  assertProjectDates(body.startDate, body.dueDate);
   const row = {
     ...stamp(),
     name: body.name,
     type: body.type ?? ('PERSONAL' as const),
     description: body.description ?? null,
     color: body.color ?? null,
+    startDate: body.startDate ?? null,
     dueDate: body.dueDate ?? null,
   };
   ctx.db.insert(projects).values(row).run();
@@ -843,16 +855,26 @@ export function updateProject(
   body: z.output<typeof updateProjectSchema>
 ): ProjectResponse {
   const project = findProject(ctx, id);
-  const { completed, ...fields } = body;
+  const { completed, status, ...fields } = body;
+  assertProjectDates(
+    fields.startDate !== undefined ? fields.startDate : project.startDate,
+    fields.dueDate !== undefined ? fields.dueDate : project.dueDate
+  );
   const now = Date.now();
   const patch: Partial<ProjectRow> = { ...fields, updatedAt: now };
-  if (completed === true && !project.completedAt) patch.completedAt = now;
-  if (completed === false) patch.completedAt = null;
+  // Reabrir só mexe em quem estava concluído: um projeto pausado continua pausado.
+  const next =
+    status ??
+    (completed === true ? 'DONE' : completed === false && project.completedAt ? 'ACTIVE' : null);
+  if (next) {
+    patch.status = next;
+    patch.completedAt = next === 'DONE' ? (project.completedAt ?? now) : null;
+  }
   ctx.db.update(projects).set(patch).where(eq(projects.id, id)).run();
   return getProject(ctx, id);
 }
 
-/** As tarefas continuam, agora sem projeto. */
+/** As tarefas e os eventos continuam, agora sem projeto. Notas e arquivos saem com ele. */
 export function deleteProject(ctx: Ctx, id: string) {
   findProject(ctx, id);
   const now = Date.now();
@@ -862,6 +884,7 @@ export function deleteProject(ctx: Ctx, id: string) {
       .set({ projectId: null, updatedAt: now })
       .where(eq(tasks.projectId, id))
       .run();
+    dropProjectContent(ctx, id, now);
     ctx.db
       .update(projects)
       .set({ deletedAt: now, updatedAt: now })

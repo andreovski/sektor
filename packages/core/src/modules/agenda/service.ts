@@ -8,6 +8,7 @@ import { and, eq, inArray, isNotNull, isNull, or, gt, lt } from 'drizzle-orm';
 import type { AppCtx } from '../../app';
 import { appMeta } from '../../db/schema';
 import { AppError, notFound, stamp } from '../../services/context';
+import { assertLinkableProject } from '../projects/links';
 import {
   deleteOwnerReminders,
   refreshOwner,
@@ -320,6 +321,7 @@ function toEvent(ctx: Ctx, row: EventRow) {
     color: row.color,
     rrule: row.rrule,
     source: row.source,
+    projectId: row.projectId,
     reminders: remindersByEvent(ctx, [row.id]).get(row.id) ?? [],
   };
 }
@@ -330,6 +332,7 @@ export function createEvent(ctx: Ctx, body: CreateEvent) {
   const calendar = body.calendarId ? findCalendar(ctx, body.calendarId) : defaultCalendar(ctx);
   if (!canWrite(calendar)) throw readOnly();
   assertRRule(body.rrule);
+  assertLinkableProject(ctx, body.projectId);
   const allDay = body.allDay ?? false;
   const row = ctx.db
     .insert(events)
@@ -343,6 +346,7 @@ export function createEvent(ctx: Ctx, body: CreateEvent) {
       ...timesOf(allDay, body.startAt, body.endAt),
       color: body.color ?? null,
       rrule: body.rrule ?? null,
+      projectId: body.projectId ?? null,
       source: calendar.source,
       ...dirty(calendar.source),
     })
@@ -500,6 +504,7 @@ export function updateEvent(ctx: Ctx, id: string, body: UpdateEvent & { scope?: 
       : null;
   if (target && !canWrite(target)) throw readOnly();
   assertRRule(body.rrule);
+  assertLinkableProject(ctx, body.projectId);
   const event = target ? moveToCalendar(ctx, found, target) : found;
 
   if (event.rrule && body.scope === 'single') {
@@ -540,6 +545,7 @@ export function updateEvent(ctx: Ctx, id: string, body: UpdateEvent & { scope?: 
       allDay,
       ...(times ?? {}),
       ...(body.rrule !== undefined && { rrule: body.rrule }),
+      ...(body.projectId !== undefined && { projectId: body.projectId }),
       updatedAt: Date.now(),
       ...dirty(event.source),
     })

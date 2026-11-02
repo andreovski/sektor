@@ -33,6 +33,16 @@ export const PROJECT_TYPE_LABELS: Record<ProjectType, string> = {
   FREELANCE: 'Freelance',
 };
 
+export const PROJECT_STATUSES = ['ACTIVE', 'PAUSED', 'DONE'] as const;
+export const projectStatusSchema = z.enum(PROJECT_STATUSES);
+export type ProjectStatus = z.infer<typeof projectStatusSchema>;
+
+export const PROJECT_STATUS_LABELS: Record<ProjectStatus, string> = {
+  ACTIVE: 'Ativo',
+  PAUSED: 'Pausado',
+  DONE: 'Concluído',
+};
+
 /** Tons de `ui/theme.css`, guardados pelo nome. */
 export const TONES = ['violet', 'blue', 'green', 'amber', 'orange', 'rose', 'cyan'] as const;
 export type Tone = (typeof TONES)[number];
@@ -124,6 +134,7 @@ const projectFields = {
   type: projectTypeSchema.optional(),
   description: z.string().max(2000).nullable().optional(),
   color: toneSchema,
+  startDate: dateSchema.nullable().optional(),
   dueDate: dateSchema.nullable().optional(),
 };
 
@@ -133,7 +144,7 @@ export type CreateProjectBody = z.input<typeof createProjectSchema>;
 export const updateProjectSchema = z
   .object(projectFields)
   .partial()
-  .extend({ completed: z.boolean().optional() });
+  .extend({ completed: z.boolean().optional(), status: projectStatusSchema.optional() });
 export type UpdateProjectBody = z.input<typeof updateProjectSchema>;
 
 export interface TaskResponse {
@@ -192,7 +203,10 @@ export interface ProjectResponse {
   type: ProjectType;
   description: string | null;
   color: Tone | null;
+  status: ProjectStatus;
+  startDate: string | null;
   dueDate: string | null;
+  createdAt: number;
   completedAt: number | null;
   progress: { total: number; done: number; percent: number };
   nextTask: { id: string; title: string; dueDate: string | null; dueTime: string | null } | null;

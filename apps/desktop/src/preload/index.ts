@@ -17,6 +17,11 @@ const api: SektorApi = {
   restore: (password) => ipcRenderer.invoke('backup:restore', password),
   openDataDir: () => ipcRenderer.invoke('app:open-data-dir'),
   relaunch: () => ipcRenderer.invoke('app:relaunch'),
+  pickProjectFiles: (projectId) => ipcRenderer.invoke('project-files:pick', projectId),
+  addProjectFile: (projectId, name, bytes) =>
+    ipcRenderer.invoke('project-files:add', { projectId, name, bytes }),
+  openProjectFile: (id) => ipcRenderer.invoke('project-files:open', id),
+  removeProjectFile: (id) => ipcRenderer.invoke('project-files:remove', id),
   googleLogin: (hint) => ipcRenderer.invoke('google:login', hint),
   googleCancelLogin: () => ipcRenderer.invoke('google:cancel-login'),
 };

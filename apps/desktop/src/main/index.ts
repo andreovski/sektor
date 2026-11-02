@@ -20,6 +20,7 @@ import { ask, forkCore } from './core-process';
 import { cancelGoogleLogin, googleLogin } from './google-login';
 import { databaseKey, dbPath, loadSecrets, saveSecrets, seal, useTestVault } from './key';
 import { setAppMenu } from './menu';
+import { projectFileChannels, sweepProjectFiles } from './project-files';
 import { applyPendingRestore, scheduleRestore, stagePath } from './restore';
 import { createTray, hasOpenWindow, notify } from './tray';
 import { createWindow, isAppUrl } from './window';
@@ -172,6 +173,15 @@ function registerIpc() {
     return restoreFile;
   });
   handle('backup:restore', (_event, password?: string) => runRestore(password));
+  const projectFiles = projectFileChannels(dataDir, liveCore);
+  handle('project-files:pick', (event, projectId: string) =>
+    projectFiles.pick(parent(event), projectId)
+  );
+  handle('project-files:add', (_event, input: Parameters<typeof projectFiles.add>[0]) =>
+    projectFiles.add(input)
+  );
+  handle('project-files:open', (_event, id: string) => projectFiles.open(id));
+  handle('project-files:remove', (_event, id: string) => projectFiles.remove(id));
   handle('google:login', (_event, hint?: string) => {
     if (!core || failure) throw new Error('O núcleo não está no ar.');
     return googleLogin(core, typeof hint === 'string' ? hint : undefined);
@@ -250,6 +260,7 @@ function boot() {
       const key = databaseKey();
       core = startCore(dbPath(), key, loadSecrets(), (event) => {
         if (event.type === 'failed') fail('database', event.message);
+        if (event.type === 'ready') void sweepProjectFiles(dataDir, liveCore);
         if (event.type === 'notify') void notify(event.title, event.body);
         if (event.type === 'secrets') {
           try {
