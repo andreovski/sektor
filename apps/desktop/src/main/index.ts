@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import type { CoreCommand, CoreEvent } from '../core/protocol';
 
 import { databaseKey } from './key';
+import { createTray, hasOpenWindow, notify } from './tray';
 
 const SMOKE = process.env.SEKTOR_SMOKE === '1';
 
@@ -50,7 +51,8 @@ function createWindow(core: Electron.UtilityProcess) {
 function runSmoke() {
   const dir = mkdtempSync(join(tmpdir(), 'sektor-smoke-'));
   const dbPath = join(dir, 'sektor.db');
-  const core = startCore(dbPath, randomBytes(32).toString('hex'), (event) => {
+  createTray(() => undefined);
+  const core = startCore(dbPath, randomBytes(32).toString('hex'), async (event) => {
     if (event.type === 'ready') {
       core.postMessage({
         type: 'smoke',
@@ -61,6 +63,7 @@ function runSmoke() {
       if (event.type === 'smoke-result') readSync(openSync(dbPath, 'r'), header, 0, 16, 0);
       const report = {
         ...event,
+        notificationShown: await notify('Sektor', 'Prova de aviso nativo'),
         packaged: app.isPackaged,
         electron: process.versions.electron,
         plainHeader: header.toString('latin1').startsWith('SQLite format 3'),
@@ -80,7 +83,12 @@ void app.whenReady().then(() => {
   const core = startCore(dbPath, databaseKey(), (event) => {
     if (event.type === 'failed') console.error('[core]', event.message);
   });
-  createWindow(core);
+  const openWindow = () => {
+    if (!hasOpenWindow()) createWindow(core);
+  };
+  createTray(openWindow);
+  openWindow();
 });
 
-app.on('window-all-closed', () => app.quit());
+// Fechar a janela deixa o app na bandeja; sair é pelo menu dela.
+app.on('window-all-closed', () => undefined);
