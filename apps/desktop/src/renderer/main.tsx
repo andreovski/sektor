@@ -21,6 +21,9 @@ import { routes as goals } from './modules/goals';
 import { routes as health } from './modules/health';
 import { routes as focus } from './modules/focus';
 import { routes as review } from './modules/review';
+import { routes as settings } from './modules/settings';
+import { FatalScreen } from './modules/settings/fatal';
+import { useCoreFailure } from './lib/rpc';
 import { Shell } from './shell';
 
 const rootRoute = createRootRoute({ component: Shell });
@@ -36,6 +39,7 @@ const moduleRoutes = [
   ...health,
   ...focus,
   ...review,
+  ...settings,
 ];
 
 // Rotas por hash: o app abre de arquivo, sem servidor.
@@ -50,10 +54,15 @@ const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 5_000, retry: false, refetchOnWindowFocus: false } },
 });
 
+function Root() {
+  const failure = useCoreFailure();
+  return failure ? <FatalScreen failure={failure} /> : <RouterProvider router={router} />;
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <Root />
       <Toaster theme="dark" position="top-right" />
     </QueryClientProvider>
   </StrictMode>

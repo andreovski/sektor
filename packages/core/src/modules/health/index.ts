@@ -54,9 +54,7 @@ export const handlers = (ctx: AppCtx) => ({
   'health.patterns': () => svc.getPatterns(ctx),
 });
 
-// O `tick` roda a cada 60 s e compara com o fim da rodada anterior: pedir 60 s exatos pularia uma
-// rodada sim, outra não.
-const EVERY_TICK = 55_000;
+const EVERY_TICK = 60_000;
 
 export const jobs: Job[] = [
   {

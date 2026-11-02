@@ -86,6 +86,7 @@ export function CaptureBox() {
               <Chip>
                 <CalendarDays size={11} />
                 {relativeDay(parsed.dueDate, today)}
+                {parsed.dueTime ? ` às ${parsed.dueTime}` : ''}
               </Chip>
             ) : (
               <Chip>

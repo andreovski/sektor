@@ -130,7 +130,7 @@ export function saveReview(
 /** Marca a tarefa criada: "Virar tarefas" de novo não duplica, e uma falha no meio retoma dali. */
 export function linkPriority(ctx: Ctx, weekStart: string, text: string, taskId: string) {
   const saved = findReview(ctx, weekStart);
-  if (!saved) throw notFound('Revisão');
+  if (!saved) throw notFound('Revisão não encontrada.');
   if (!saved.priorities.some((p) => p.text === text)) {
     throw new AppError(409, 'Essa prioridade mudou. Salve a revisão de novo.');
   }

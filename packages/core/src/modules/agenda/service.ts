@@ -88,7 +88,7 @@ export function findCalendar(ctx: Ctx, id: string) {
     .from(calendars)
     .where(and(eq(calendars.id, id), liveCalendar))
     .get();
-  if (!row) throw notFound('Calendário');
+  if (!row) throw notFound('Calendário não encontrado.');
   return row;
 }
 
@@ -263,7 +263,7 @@ function findEvent(ctx: Ctx, id: string) {
     .from(events)
     .where(and(eq(events.id, id), isNull(events.deletedAt)))
     .get();
-  if (!row) throw notFound('Evento');
+  if (!row) throw notFound('Evento não encontrado.');
   return row;
 }
 

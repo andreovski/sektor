@@ -1,6 +1,6 @@
 import type { AppCtx } from '../../app';
 import { AppError } from '../../services/context';
-import { getTask } from '../tasks';
+import { getTask, seriesLinks } from '../tasks';
 
 export interface LiveTask {
   title: string;
@@ -8,6 +8,9 @@ export interface LiveTask {
   dueTime: string | null;
   done: boolean;
 }
+
+/** Para onde vai o lembrete quando a tarefa acaba ou sai, numa tarefa recorrente. */
+export const taskSeries = (ctx: AppCtx, id: string) => seriesLinks(ctx, id);
 
 /** `gone`: a tarefa foi apagada. `undefined`: não deu para ler, e vale a cópia do lembrete. */
 export function readTask(ctx: AppCtx, id: string): LiveTask | 'gone' | undefined {

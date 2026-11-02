@@ -39,11 +39,11 @@ describe('metas', () => {
     dropTasks();
     handle.raw.exec(`
       CREATE TABLE projects (id text PRIMARY KEY, name text NOT NULL, deleted_at integer);
-      CREATE TABLE tasks (id text PRIMARY KEY, project_id text, completed_at integer, deleted_at integer);
+      CREATE TABLE tasks (id text PRIMARY KEY, project_id text, parent_task_id text, completed_at integer, deleted_at integer);
       INSERT INTO projects (id, name) VALUES ('p1', 'Mudança');
       INSERT INTO tasks VALUES
-        ('t1', 'p1', 1, NULL), ('t2', 'p1', 1, NULL), ('t3', 'p1', NULL, NULL),
-        ('t4', 'p1', 1, 5), ('t5', 'outro', 1, NULL);
+        ('t1', 'p1', NULL, 1, NULL), ('t2', 'p1', NULL, 1, NULL), ('t3', 'p1', NULL, NULL, NULL),
+        ('t4', 'p1', NULL, 1, 5), ('t5', 'outro', NULL, 1, NULL);
     `);
   };
 

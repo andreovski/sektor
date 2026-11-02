@@ -260,4 +260,61 @@ describe('lembretes', () => {
       expect(svc.listReminders(ctx)).toEqual([]);
     });
   });
+
+  describe('tarefa recorrente', () => {
+    const api = () => tasksHandlers(ctx);
+    const create = () =>
+      api()['tasks.create']({
+        title: 'Pagar boleto',
+        dueDate: '2026-10-19',
+        dueTime: '09:00',
+        rrule: 'FREQ=WEEKLY',
+      });
+    const remind = (t: ReturnType<typeof create>) =>
+      svc.createForTask(ctx, {
+        taskId: t.id,
+        title: t.title,
+        dueDate: t.dueDate!,
+        dueTime: t.dueTime,
+        minutesBefore: 0,
+      });
+    const owners = () =>
+      ctx.db
+        .select()
+        .from(reminders)
+        .all()
+        .filter((r) => !r.deletedAt)
+        .map((r) => r.ownerId);
+
+    it('o lembrete passa para a próxima ao concluir', () => {
+      const task = create();
+      remind(task);
+      const { next } = api()['tasks.complete']({ id: task.id });
+      at('2026-10-18T15:01:00Z');
+      expect(owners()).toEqual([next!.id]);
+      expect(only()).toMatchObject({ taskDueDate: '2026-10-26', taskDueTime: '09:00' });
+      expect(nextFire()).toBe('2026-10-26T12:00:00.000Z');
+    });
+
+    it('volta à original se ela for reaberta e a próxima sair', () => {
+      const task = create();
+      remind(task);
+      api()['tasks.complete']({ id: task.id });
+      at('2026-10-18T15:01:00Z');
+      api()['tasks.reopen']({ id: task.id });
+      at('2026-10-18T15:02:00Z');
+      expect(owners()).toEqual([task.id]);
+      expect(only().deletedAt).toBeNull();
+      expect(nextFire()).toBe('2026-10-19T12:00:00.000Z');
+    });
+
+    it('concluída sem recorrência continua sem próximo aviso', () => {
+      const task = api()['tasks.create']({ title: 'Uma vez', dueDate: '2026-10-19' });
+      remind(task);
+      api()['tasks.complete']({ id: task.id });
+      at('2026-10-18T15:01:00Z');
+      expect(owners()).toEqual([task.id]);
+      expect(nextFire()).toBeNull();
+    });
+  });
 });

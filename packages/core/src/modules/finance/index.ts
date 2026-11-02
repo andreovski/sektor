@@ -6,7 +6,7 @@ import type {
   CreateTransactionBody,
   LinkBankAccountBody,
   ListTransactionsQuery,
-  RecurrenceScope,
+  PayInvoiceBody,
   SaveBankCredentialsBody,
   UpdateAccountBody,
   UpdateCategoryBody,
@@ -19,13 +19,17 @@ import {
   createCategoryBodySchema,
   createTransactionBodySchema,
   linkBankAccountBodySchema,
+  listTransactionsQuerySchema,
+  monthSummaryQuerySchema,
+  payInvoiceBodySchema,
   saveBankCredentialsBodySchema,
   updateAccountBodySchema,
   updateCategoryBodySchema,
   updateTransactionBodySchema,
   upsertBudgetBodySchema,
 } from '@sektor/contract';
-import { ZodError, type ZodType } from 'zod';
+import { idSchema } from '@sektor/contract';
+import { z, ZodError, type ZodType } from 'zod';
 
 import type { AppCtx, Job } from '../../app';
 import * as bank from '../../bank';
@@ -40,11 +44,24 @@ export function parse<T>(schema: ZodType<T, never, unknown>, input: unknown): T 
     return schema.parse(input);
   } catch (error) {
     if (error instanceof ZodError) {
-      throw new AppError(400, error.issues[0]?.message ?? 'Dados inválidos.');
+      const message = error.issues[0]?.message;
+      // "Required" é a mensagem padrão do Zod: campo que a tela não preenche nem mostra.
+      throw new AppError(400, !message || message === 'Required' ? 'Dados inválidos.' : message);
     }
     throw error;
   }
 }
+
+const transactionScopeSchema = z.enum(['single', 'future', 'all']);
+const updateInputSchema = updateTransactionBodySchema.extend({
+  scope: transactionScopeSchema.default('single'),
+});
+const payInvoiceInputSchema = payInvoiceBodySchema.extend({ id: idSchema });
+
+type UpdateInput = Omit<Partial<UpdateTransactionBody>, 'scope'> & {
+  id: string;
+  scope?: fin.TransactionScope;
+};
 
 export const handlers = (ctx: AppCtx) => ({
   'accounts.list': (input?: { archived?: boolean }) => fin.listAccounts(ctx, input?.archived),
@@ -58,15 +75,12 @@ export const handlers = (ctx: AppCtx) => ({
   'invoices.due': (input: { month?: string; from?: string; to?: string }) =>
     fin.listDueInvoices(ctx, input),
   'invoices.transactions': ({ id }: { id: string }) => fin.invoiceTransactions(ctx, id),
-  'invoices.pay': ({
-    id,
-    ...options
-  }: {
-    id: string;
-    fromAccountId?: string;
-    date?: string;
-    amountCents?: number;
-  }) => fin.payInvoice(ctx, id, options),
+  'invoices.pay': (input: { id: string } & PayInvoiceBody) => {
+    const { id, ...options } = parse(payInvoiceInputSchema as never, input) as {
+      id: string;
+    } & PayInvoiceBody;
+    return fin.payInvoice(ctx, id, options);
+  },
 
   'categories.list': () => cat.listCategories(ctx),
   'categories.create': (input: CreateCategoryBody) =>
@@ -75,13 +89,18 @@ export const handlers = (ctx: AppCtx) => ({
     cat.updateCategory(ctx, id, parse(updateCategoryBodySchema as never, input)),
   'categories.delete': ({ id }: { id: string }) => cat.deleteCategory(ctx, id),
 
-  'transactions.list': (input: ListTransactionsQuery) => fin.listTransactions(ctx, input),
+  'transactions.list': (input: ListTransactionsQuery) =>
+    fin.listTransactions(ctx, parse(listTransactionsQuerySchema as never, input)),
   'transactions.create': (input: CreateTransactionBody) =>
     fin.createTransactions(ctx, parse(createTransactionBodySchema as never, input)),
-  'transactions.update': ({ id, ...input }: Partial<UpdateTransactionBody> & { id: string }) =>
-    fin.updateTransaction(ctx, id, parse(updateTransactionBodySchema as never, input)),
-  'transactions.delete': ({ id, scope }: { id: string; scope?: RecurrenceScope }) =>
-    fin.deleteTransaction(ctx, id, scope),
+  'transactions.update': ({ id, ...input }: UpdateInput) =>
+    fin.updateTransaction(
+      ctx,
+      id,
+      parse<Omit<UpdateInput, 'id'>>(updateInputSchema as never, input)
+    ),
+  'transactions.delete': ({ id, scope }: { id: string; scope?: fin.TransactionScope }) =>
+    fin.deleteTransaction(ctx, id, parse(transactionScopeSchema.optional() as never, scope)),
 
   'budgets.list': ({ month }: { month: string }) => rep.budgetStatuses(ctx, month),
   'budgets.upsert': (input: UpsertBudgetBody) =>
@@ -89,7 +108,8 @@ export const handlers = (ctx: AppCtx) => ({
   'budgets.copyPrevious': ({ month }: { month: string }) => rep.copyPreviousBudgets(ctx, month),
   'budgets.delete': ({ id }: { id: string }) => rep.deleteBudget(ctx, id),
 
-  'reports.month': ({ month }: { month: string }) => rep.monthSummary(ctx, month),
+  'reports.month': (input: { month: string }) =>
+    rep.monthSummary(ctx, parse<{ month: string }>(monthSummaryQuerySchema as never, input).month),
   'reports.forecast': ({ days }: { days: number }) => rep.forecast(ctx, days),
 
   'bank.status': () => bank.bankStatus(ctx),

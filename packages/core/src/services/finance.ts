@@ -14,6 +14,7 @@ import {
   accountBalance,
   addDays,
   addMonthsClamped,
+  addMonthsToMonth,
   dateOccurrences,
   diffInDays,
   installmentDates,
@@ -25,7 +26,7 @@ import {
   referenceMonthForDue,
   splitInstallments,
 } from '@sektor/finance-engine';
-import { and, asc, desc, eq, gt, gte, inArray, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 
 import { accounts, categories, invoices, recurrences, transactions } from '../db/schema';
@@ -38,6 +39,41 @@ export const RECURRENCE_HORIZON_MONTHS = 12;
 type Account = typeof accounts.$inferSelect;
 type Invoice = typeof invoices.$inferSelect;
 type Transaction = typeof transactions.$inferSelect;
+
+/** Além de `single` e `future`: `all` são todas as parcelas da compra. */
+export type TransactionScope = RecurrenceScope | 'all';
+
+/** A fatura em que a compra entrou, quando a do ciclo dela já estava paga. */
+export interface RolledInvoice {
+  referenceMonth: string;
+  dueDate: string;
+}
+
+export type SavedTransaction = TransactionResponse & {
+  rolledToInvoice?: RolledInvoice;
+  /** Parcelas de faturas pagas que a edição em grupo deixou como estavam. */
+  keptInPaidInvoices?: number;
+};
+
+export interface InvoiceBalance {
+  /** Compras menos estornos da própria fatura. */
+  ownCents: number;
+  /** O que a fatura cobra: `ownCents` menos o crédito de faturas anteriores, nunca negativo. */
+  totalCents: number;
+  creditAppliedCents: number;
+  /** Crédito que passa à fatura seguinte. */
+  creditCarriedCents: number;
+}
+
+export type InvoiceView = InvoiceResponse &
+  Pick<InvoiceBalance, 'ownCents' | 'creditAppliedCents' | 'creditCarriedCents'>;
+
+export type AccountView = AccountResponse & {
+  /** Só cartão: faturas fechadas, vencidas e a atual ainda sem pagamento. */
+  unpaidInvoiceCents: number | null;
+  /** Só cartão: a parte de `unpaidInvoiceCents` que já venceu. */
+  overdueInvoiceCents: number | null;
+};
 
 interface TransactionTemplate {
   kind: 'INCOME' | 'EXPENSE' | 'TRANSFER';
@@ -75,18 +111,23 @@ export function ownedAccount(ctx: Ctx, id: string): Account {
     .from(accounts)
     .where(and(eq(accounts.id, id), isNull(accounts.deletedAt)))
     .get();
-  if (!account) throw notFound('Conta');
+  if (!account) throw notFound('Conta não encontrada.');
   return account;
 }
 
+function isLiveCategory(ctx: Ctx, id: string | null) {
+  if (!id) return false;
+  return Boolean(
+    ctx.db
+      .select({ id: categories.id })
+      .from(categories)
+      .where(and(eq(categories.id, id), isNull(categories.deletedAt)))
+      .get()
+  );
+}
+
 function assertCategory(ctx: Ctx, id: string | null | undefined) {
-  if (!id) return;
-  const found = ctx.db
-    .select({ id: categories.id })
-    .from(categories)
-    .where(and(eq(categories.id, id), isNull(categories.deletedAt)))
-    .get();
-  if (!found) throw notFound('Categoria');
+  if (id && !isLiveCategory(ctx, id)) throw notFound('Categoria não encontrada.');
 }
 
 // ---------------------------------------------------------------- faturas
@@ -128,9 +169,49 @@ function ensureInvoice(ctx: Ctx, card: Account, date: string): Invoice {
   if (!card.closingDay || !card.dueDay) {
     throw new AppError(400, 'Cartão sem dia de fechamento ou de vencimento.');
   }
-  const cycle = invoiceCycleFor(date, card.closingDay, card.dueDay);
-  return upsertInvoice(ctx, card.id, cycle.referenceMonth, cycle, false);
+  let { referenceMonth } = invoiceCycleFor(date, card.closingDay, card.dueDay);
+  // O ciclo já foi pago: a compra entra na próxima fatura em aberto, e a paga não muda.
+  while (isPaidMonth(ctx, card.id, referenceMonth)) {
+    referenceMonth = addMonthsToMonth(referenceMonth, 1);
+  }
+  const cycle = invoiceCycleForMonth(referenceMonth, card.closingDay, card.dueDay);
+  return upsertInvoice(ctx, card.id, referenceMonth, cycle, false);
 }
+
+function isPaidMonth(ctx: Ctx, cardId: string, referenceMonth: string) {
+  return Boolean(
+    ctx.db
+      .select({ id: invoices.id })
+      .from(invoices)
+      .where(
+        and(
+          eq(invoices.accountId, cardId),
+          eq(invoices.referenceMonth, referenceMonth),
+          liveInvoice,
+          isNotNull(invoices.paidAt)
+        )
+      )
+      .get()
+  );
+}
+
+/** Diz em que fatura a compra entrou, se a do ciclo dela estava paga. */
+function rolledInvoice(ctx: Ctx, tx: TransactionResponse): RolledInvoice | undefined {
+  if (!tx.invoiceId) return undefined;
+  const card = ownedAccount(ctx, tx.accountId);
+  if (!card.closingDay || !card.dueDay) return undefined;
+  const natural = invoiceCycleFor(tx.date, card.closingDay, card.dueDay).referenceMonth;
+  const invoice = ctx.db.select().from(invoices).where(eq(invoices.id, tx.invoiceId)).get();
+  if (!invoice || invoice.referenceMonth <= natural || !isPaidMonth(ctx, card.id, natural)) {
+    return undefined;
+  }
+  return { referenceMonth: invoice.referenceMonth, dueDate: invoice.dueDate };
+}
+
+const withRolledInvoice = (ctx: Ctx, tx: TransactionResponse): SavedTransaction => {
+  const rolled = rolledInvoice(ctx, tx);
+  return rolled ? { ...tx, rolledToInvoice: rolled } : tx;
+};
 
 /** O mês de fechamento da fatura que o banco diz que vence em `bill.dueDate`. */
 export function billReferenceMonth(card: Account, bill: BankBill): string {
@@ -298,31 +379,81 @@ function invoiceItems(ctx: Ctx, invoiceId: string) {
     .all();
 }
 
-export function toInvoice(ctx: Ctx, invoice: Invoice, today: string): InvoiceResponse {
+/**
+ * O crédito de uma fatura negativa (estorno maior que as compras) segue para as próximas em
+ * aberto. Calculado na leitura: nada é gravado, e a fatura paga fica como foi paga. Ela só consome
+ * crédito se o pagamento foi menor que as compras; paga por fora, não dá para saber, e não consome.
+ */
+export function invoiceBalances(ctx: Ctx, cardId: string): Map<string, InvoiceBalance> {
+  const rows = ctx.db
+    .select()
+    .from(invoices)
+    .where(and(eq(invoices.accountId, cardId), liveInvoice))
+    .orderBy(asc(invoices.referenceMonth))
+    .all();
+  const balances = new Map<string, InvoiceBalance>();
+  let credit = 0;
+  for (const invoice of rows) {
+    const ownCents = invoiceTotal(invoiceItems(ctx, invoice.id));
+    if (invoice.paidAt) {
+      const paid = invoicePayment(ctx, invoice.id)?.amountCents ?? ownCents;
+      const creditAppliedCents = Math.min(credit, Math.max(0, ownCents - paid));
+      credit -= creditAppliedCents;
+      balances.set(invoice.id, {
+        ownCents,
+        totalCents: ownCents - creditAppliedCents,
+        creditAppliedCents,
+        creditCarriedCents: 0,
+      });
+      continue;
+    }
+    const net = ownCents - credit;
+    balances.set(invoice.id, {
+      ownCents,
+      totalCents: Math.max(0, net),
+      creditAppliedCents: Math.min(credit, Math.max(0, ownCents)),
+      creditCarriedCents: Math.max(0, -net),
+    });
+    credit = Math.max(0, -net);
+  }
+  return balances;
+}
+
+export function toInvoice(
+  ctx: Ctx,
+  invoice: Invoice,
+  today: string,
+  balances = invoiceBalances(ctx, invoice.accountId)
+): InvoiceView {
+  const { totalCents, ownCents, creditAppliedCents, creditCarriedCents } = balances.get(invoice.id)!;
   return {
     id: invoice.id,
     accountId: invoice.accountId,
     referenceMonth: invoice.referenceMonth,
     closingDate: invoice.closingDate,
     dueDate: invoice.dueDate,
-    totalCents: invoiceTotal(invoiceItems(ctx, invoice.id)),
+    totalCents,
+    ownCents,
+    creditAppliedCents,
+    creditCarriedCents,
     status: invoiceStatus(invoice, today),
     paidAt: invoice.paidAt ? new Date(invoice.paidAt).toISOString() : null,
     paymentTransactionId: invoicePayment(ctx, invoice.id)?.id ?? null,
   };
 }
 
-export function listInvoices(ctx: Ctx, accountId: string): InvoiceResponse[] {
+export function listInvoices(ctx: Ctx, accountId: string): InvoiceView[] {
   const card = ownedAccount(ctx, accountId);
   if (card.type !== 'CREDIT_CARD') throw new AppError(400, 'A conta não é um cartão.');
   const today = todayIn(ctx);
+  const balances = invoiceBalances(ctx, accountId);
   return ctx.db
     .select()
     .from(invoices)
     .where(and(eq(invoices.accountId, accountId), liveInvoice))
     .orderBy(desc(invoices.referenceMonth))
     .all()
-    .map((invoice) => toInvoice(ctx, invoice, today));
+    .map((invoice) => toInvoice(ctx, invoice, today, balances));
 }
 
 /** Faturas ainda sem pagamento que vencem no período, com algo a cobrar. */
@@ -356,7 +487,7 @@ export function invoiceTransactions(ctx: Ctx, invoiceId: string): TransactionRes
     .from(invoices)
     .where(and(eq(invoices.id, invoiceId), liveInvoice))
     .get();
-  if (!invoice) throw notFound('Fatura');
+  if (!invoice) throw notFound('Fatura não encontrada.');
   return ctx.db
     .select({ tx: transactions, rrule: recurrences.rrule })
     .from(transactions)
@@ -371,18 +502,18 @@ export function payInvoice(
   ctx: Ctx,
   invoiceId: string,
   options: { fromAccountId?: string; date?: string; amountCents?: number } = {}
-): InvoiceResponse {
+): InvoiceView {
   const invoice = ctx.db
     .select()
     .from(invoices)
     .where(and(eq(invoices.id, invoiceId), liveInvoice))
     .get();
-  if (!invoice) throw notFound('Fatura');
+  if (!invoice) throw notFound('Fatura não encontrada.');
   if (invoice.paidAt || invoicePayment(ctx, invoiceId)) {
     throw new AppError(409, 'Esta fatura já foi paga.');
   }
   const card = ownedAccount(ctx, invoice.accountId);
-  const total = invoiceTotal(invoiceItems(ctx, invoiceId));
+  const total = invoiceBalances(ctx, card.id).get(invoiceId)!.totalCents;
   if (total <= 0) throw new AppError(400, 'A fatura não tem valor a pagar.');
 
   const fromAccountId = options.fromAccountId ?? card.paymentAccountId;
@@ -560,7 +691,7 @@ export function toLedgerAccount(account: Account): LedgerAccount {
   return { id: account.id, type: account.type, initialBalanceCents: account.initialBalanceCents };
 }
 
-export function listAccounts(ctx: Ctx, includeArchived = false): AccountResponse[] {
+export function listAccounts(ctx: Ctx, includeArchived = false): AccountView[] {
   const today = todayIn(ctx);
   const rows = ctx.db
     .select()
@@ -573,6 +704,10 @@ export function listAccounts(ctx: Ctx, includeArchived = false): AccountResponse
   const ledger = ctx.db.select().from(transactions).where(liveTx).all().map(toLedgerTx);
 
   const openInvoices = new Map<string, number>();
+  const unpaidInvoices = new Map<string, number>();
+  const overdueInvoices = new Map<string, number>();
+  const add = (totals: Map<string, number>, id: string, cents: number) =>
+    totals.set(id, (totals.get(id) ?? 0) + cents);
   // Fatura paga por fora: não tem transferência, então o saldo do cartão só deixa de dever essas
   // compras somando-as de volta.
   const paidElsewhere = new Map<string, number>();
@@ -583,14 +718,17 @@ export function listAccounts(ctx: Ctx, includeArchived = false): AccountResponse
       .where(and(eq(invoices.accountId, card.id), liveInvoice))
       .orderBy(asc(invoices.referenceMonth))
       .all();
+    const balances = invoiceBalances(ctx, card.id);
     for (const invoice of cardInvoices) {
-      const total = invoiceTotal(invoiceItems(ctx, invoice.id));
-      if (invoice.paidAt && !invoicePayment(ctx, invoice.id)) {
-        paidElsewhere.set(card.id, (paidElsewhere.get(card.id) ?? 0) + total);
-      }
-      if (invoiceStatus(invoice, today) === 'OPEN' && !openInvoices.has(card.id)) {
+      const total = balances.get(invoice.id)!.totalCents;
+      if (invoice.paidAt && !invoicePayment(ctx, invoice.id)) add(paidElsewhere, card.id, total);
+      const status = invoiceStatus(invoice, today);
+      if (status === 'OPEN' && !openInvoices.has(card.id)) {
         openInvoices.set(card.id, total);
+        add(unpaidInvoices, card.id, total);
       }
+      if (status === 'CLOSED' || status === 'OVERDUE') add(unpaidInvoices, card.id, total);
+      if (status === 'OVERDUE') add(overdueInvoices, card.id, total);
     }
   }
 
@@ -610,6 +748,9 @@ export function listAccounts(ctx: Ctx, includeArchived = false): AccountResponse
       accountBalance(toLedgerAccount(account), ledger, { plannedUntil: today }) +
       (paidElsewhere.get(account.id) ?? 0),
     openInvoiceCents: account.type === 'CREDIT_CARD' ? (openInvoices.get(account.id) ?? 0) : null,
+    unpaidInvoiceCents: account.type === 'CREDIT_CARD' ? (unpaidInvoices.get(account.id) ?? 0) : null,
+    overdueInvoiceCents:
+      account.type === 'CREDIT_CARD' ? (overdueInvoices.get(account.id) ?? 0) : null,
   }));
 }
 
@@ -617,7 +758,7 @@ function accountResponse(ctx: Ctx, id: string) {
   return listAccounts(ctx, true).find((account) => account.id === id)!;
 }
 
-export function createAccount(ctx: Ctx, body: CreateAccountBody): AccountResponse {
+export function createAccount(ctx: Ctx, body: CreateAccountBody): AccountView {
   if (body.paymentAccountId) ownedAccount(ctx, body.paymentAccountId);
   const isCard = body.type === 'CREDIT_CARD';
   const { id } = ctx.db
@@ -637,7 +778,7 @@ export function createAccount(ctx: Ctx, body: CreateAccountBody): AccountRespons
   return accountResponse(ctx, id);
 }
 
-export function updateAccount(ctx: Ctx, id: string, input: UpdateAccountBody): AccountResponse {
+export function updateAccount(ctx: Ctx, id: string, input: UpdateAccountBody): AccountView {
   const { archived, ...body } = input;
   const account = ownedAccount(ctx, id);
   if (body.paymentAccountId === id) throw new AppError(400, 'O cartão não pode pagar a si mesmo.');
@@ -668,11 +809,19 @@ export function deleteAccount(ctx: Ctx, id: string) {
     .where(and(or(eq(transactions.accountId, id), eq(transactions.toAccountId, id)), liveTx))
     .get();
   if (used) throw new AppError(409, 'A conta tem lançamentos. Arquive em vez de apagar.');
-  ctx.db
-    .update(accounts)
-    .set({ deletedAt: Date.now(), updatedAt: Date.now() })
-    .where(eq(accounts.id, id))
-    .run();
+  const now = Date.now();
+  ctx.db.transaction(() => {
+    ctx.db
+      .update(accounts)
+      .set({ paymentAccountId: null, updatedAt: now })
+      .where(eq(accounts.paymentAccountId, id))
+      .run();
+    ctx.db
+      .update(accounts)
+      .set({ deletedAt: now, updatedAt: now })
+      .where(eq(accounts.id, id))
+      .run();
+  });
 }
 
 // ---------------------------------------------------------------- lançamentos
@@ -713,14 +862,29 @@ function withRecurrence(ctx: Ctx, ids: string[]): TransactionResponse[] {
 
 const defaultStatus = (date: string, today: string) => (date <= today ? 'DONE' : 'PLANNED');
 
-function validateTemplate(ctx: Ctx, template: TransactionTemplate): Account {
+/** A compra no cartão já está feita e a fatura a cobra: nunca é prevista, nem com data futura. */
+const statusOn = (account: Account, status: 'DONE' | 'PLANNED') =>
+  account.type === 'CREDIT_CARD' ? 'DONE' : status;
+
+/** `paidCardTo`: o cartão que o lançamento já tinha como destino (pagamento feito ou antigo). */
+function validateTemplate(
+  ctx: Ctx,
+  template: TransactionTemplate,
+  paidCardTo: string | null = null
+): Account {
   const account = ownedAccount(ctx, template.accountId);
   if (template.kind === 'TRANSFER') {
     if (!template.toAccountId) throw new AppError(400, 'Escolha a conta de destino.');
     if (template.toAccountId === template.accountId) {
       throw new AppError(400, 'Origem e destino precisam ser contas diferentes.');
     }
-    ownedAccount(ctx, template.toAccountId);
+    const destination = ownedAccount(ctx, template.toAccountId);
+    if (destination.type === 'CREDIT_CARD' && destination.id !== paidCardTo) {
+      throw new AppError(
+        400,
+        'Para pagar o cartão, use "Pagar fatura": uma transferência não quitaria a fatura.'
+      );
+    }
   }
   assertCategory(ctx, template.categoryId);
   return account;
@@ -785,7 +949,7 @@ export function createTransactions(
   ctx: Ctx,
   body: CreateTransactionBody,
   options: { bill?: BankBill } = {}
-): TransactionResponse[] {
+): SavedTransaction[] {
   const today = todayIn(ctx);
   const template = templateFrom(body);
 
@@ -799,12 +963,10 @@ export function createTransactions(
       const groupId = randomUUID();
       for (let i = 0; i < amounts.length; i++) {
         // No cartão a compra parcelada já está feita: cada parcela cai numa fatura.
-        const status =
-          account.type === 'CREDIT_CARD'
-            ? 'DONE'
-            : i === 0 && body.status
-              ? body.status
-              : defaultStatus(dates[i]!, today);
+        const status = statusOn(
+          account,
+          i === 0 && body.status ? body.status : defaultStatus(dates[i]!, today)
+        );
         rows.push({
           ...stamp(),
           ...template,
@@ -840,7 +1002,10 @@ export function createTransactions(
           ...stamp(),
           ...template,
           date,
-          status: i === 0 && body.status ? body.status : defaultStatus(date, today),
+          status: statusOn(
+            account,
+            i === 0 && body.status ? body.status : defaultStatus(date, today)
+          ),
           recurrenceId: recurrence.id,
           invoiceId: invoiceIdFor(ctx, account, date),
         });
@@ -850,7 +1015,7 @@ export function createTransactions(
         ...stamp(),
         ...template,
         date: body.date,
-        status: body.status ?? defaultStatus(body.date, today),
+        status: statusOn(account, body.status ?? defaultStatus(body.date, today)),
         invoiceId:
           options.bill && account.type === 'CREDIT_CARD'
             ? ensureBillInvoice(ctx, account, options.bill).id
@@ -862,22 +1027,61 @@ export function createTransactions(
     return withRecurrence(
       ctx,
       rows.map((row) => row.id)
-    );
+    ).map((tx) => withRolledInvoice(ctx, tx));
   });
+}
+
+/** Parcelas que o escopo alcança, além de `tx`. As de fatura paga ficam fora e são contadas. */
+function installmentsInScope(ctx: Ctx, tx: Transaction, scope: 'future' | 'all') {
+  const rows = ctx.db
+    .select({ row: transactions, paidAt: invoices.paidAt })
+    .from(transactions)
+    .leftJoin(invoices, eq(invoices.id, transactions.invoiceId))
+    .where(
+      and(
+        eq(transactions.installmentGroupId, tx.installmentGroupId!),
+        scope === 'future' ? gte(transactions.installmentNumber, tx.installmentNumber!) : undefined,
+        liveTx
+      )
+    )
+    .all();
+  return {
+    rows: rows.filter((item) => !item.paidAt).map((item) => item.row),
+    keptInPaidInvoices: rows.filter((item) => item.paidAt).length,
+  };
+}
+
+const EDITABLE_FIELDS = ['amountCents', 'accountId', 'toAccountId', 'categoryId', 'description', 'notes'] as const;
+
+/** Só o que mudou vai para as outras parcelas: cada uma tem seus centavos e seu "(2/10)". */
+function changedFields(existing: Transaction, merged: TransactionTemplate) {
+  return Object.fromEntries(
+    EDITABLE_FIELDS.filter((field) => merged[field] !== existing[field]).map((field) => [
+      field,
+      merged[field],
+    ])
+  ) as Partial<TransactionTemplate>;
+}
+
+function assertScopeFits(existing: Transaction, scope: TransactionScope) {
+  if (scope === 'all' && !existing.installmentGroupId) {
+    throw new AppError(400, '"Todas" vale só para compras parceladas.');
+  }
 }
 
 export function updateTransaction(
   ctx: Ctx,
   id: string,
-  body: Partial<UpdateTransactionBody>
-): TransactionResponse {
+  body: Omit<Partial<UpdateTransactionBody>, 'scope'> & { scope?: TransactionScope }
+): SavedTransaction {
   const existing = ctx.db
     .select()
     .from(transactions)
     .where(and(eq(transactions.id, id), liveTx))
     .get();
-  if (!existing) throw notFound('Lançamento');
+  if (!existing) throw notFound('Lançamento não encontrado.');
   const { scope = 'single', ...fields } = body;
+  assertScopeFits(existing, scope);
 
   return ctx.db.transaction(() => {
     const merged: TransactionTemplate = {
@@ -899,8 +1103,27 @@ export function updateTransaction(
       description: fields.description ?? existing.description,
       notes: fields.notes !== undefined ? fields.notes : existing.notes,
     };
-    const account = validateTemplate(ctx, merged);
+    const account = validateTemplate(ctx, merged, existing.toAccountId);
     const date = fields.date ?? existing.date;
+    let keptInPaidInvoices: number | undefined;
+
+    if (scope !== 'single' && existing.installmentGroupId) {
+      const changed = changedFields(existing, merged);
+      const group = installmentsInScope(ctx, existing, scope as 'future' | 'all');
+      keptInPaidInvoices = group.keptInPaidInvoices;
+      for (const tx of group.rows.filter((row) => row.id !== id)) {
+        ctx.db
+          .update(transactions)
+          .set({
+            ...changed,
+            status: statusOn(account, tx.status),
+            invoiceId: changed.accountId ? invoiceIdFor(ctx, account, tx.date) : tx.invoiceId,
+            updatedAt: Date.now(),
+          })
+          .where(eq(transactions.id, tx.id))
+          .run();
+      }
+    }
 
     if (scope === 'future' && existing.recurrenceId) {
       const recurrence = ctx.db
@@ -933,7 +1156,9 @@ export function updateTransaction(
           .update(transactions)
           .set({
             ...merged,
-            invoiceId: invoiceIdFor(ctx, account, tx.date),
+            // Sem mudar de conta, cada um fica na fatura em que está (a paga não muda).
+            invoiceId:
+              tx.accountId === merged.accountId ? tx.invoiceId : invoiceIdFor(ctx, account, tx.date),
             updatedAt: Date.now(),
           })
           .where(eq(transactions.id, tx.id))
@@ -946,7 +1171,7 @@ export function updateTransaction(
       .set({
         ...merged,
         date,
-        status: fields.status ?? existing.status,
+        status: statusOn(account, fields.status ?? existing.status),
         // A fatura só muda se a data ou a conta mudou: o item pode estar na fatura que o banco disse.
         invoiceId:
           date === existing.date && merged.accountId === existing.accountId
@@ -958,7 +1183,8 @@ export function updateTransaction(
       })
       .where(eq(transactions.id, id))
       .run();
-    return withRecurrence(ctx, [id])[0]!;
+    const saved = withRolledInvoice(ctx, withRecurrence(ctx, [id])[0]!);
+    return keptInPaidInvoices === undefined ? saved : { ...saved, keptInPaidInvoices };
   });
 }
 
@@ -969,15 +1195,20 @@ function endRuleBefore(rrule: string, date: string): string {
   return [...parts, `UNTIL=${until}T235959Z`].join(';');
 }
 
-export function deleteTransaction(ctx: Ctx, id: string, scope: RecurrenceScope = 'single') {
+export function deleteTransaction(
+  ctx: Ctx,
+  id: string,
+  scope: TransactionScope = 'single'
+): { keptInPaidInvoices: number } {
   const existing = ctx.db
     .select()
     .from(transactions)
     .where(and(eq(transactions.id, id), liveTx))
     .get();
-  if (!existing) throw notFound('Lançamento');
+  if (!existing) throw notFound('Lançamento não encontrado.');
+  assertScopeFits(existing, scope);
 
-  ctx.db.transaction(() => {
+  return ctx.db.transaction(() => {
     if (existing.paysInvoiceId) {
       ctx.db
         .update(invoices)
@@ -1000,9 +1231,16 @@ export function deleteTransaction(ctx: Ctx, id: string, scope: RecurrenceScope =
         ctx,
         and(eq(transactions.recurrenceId, recurrence.id), gte(transactions.date, existing.date), liveTx)!
       );
-      return;
+      return { keptInPaidInvoices: 0 };
+    }
+    if (scope !== 'single' && existing.installmentGroupId) {
+      const group = installmentsInScope(ctx, existing, scope as 'future' | 'all');
+      const ids = group.rows.map((row) => row.id);
+      if (ids.length) softDeleteTransactions(ctx, inArray(transactions.id, ids) as ReturnType<typeof eq>);
+      return { keptInPaidInvoices: group.keptInPaidInvoices };
     }
     softDeleteTransactions(ctx, eq(transactions.id, id));
+    return { keptInPaidInvoices: 0 };
   });
 }
 
@@ -1021,6 +1259,7 @@ export function extendRecurrences(ctx: Ctx, now = new Date()): number {
     const template = recurrence.template as TransactionTemplate;
     const account = ctx.db.select().from(accounts).where(eq(accounts.id, template.accountId)).get();
     if (!account || account.deletedAt) continue;
+    const categoryId = isLiveCategory(ctx, template.categoryId) ? template.categoryId : null;
 
     const dates = dateOccurrences(
       recurrence.rrule,
@@ -1035,8 +1274,9 @@ export function extendRecurrences(ctx: Ctx, now = new Date()): number {
           .values({
             ...stamp(),
             ...template,
+            categoryId,
             date,
-            status: 'PLANNED',
+            status: statusOn(account, 'PLANNED'),
             recurrenceId: recurrence.id,
             invoiceId: invoiceIdFor(ctx, account, date),
           })

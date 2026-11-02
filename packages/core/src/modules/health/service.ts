@@ -293,7 +293,7 @@ function findMed(ctx: Ctx, id: string) {
     .from(healthMeds)
     .where(and(eq(healthMeds.id, id), isNull(healthMeds.deletedAt)))
     .get();
-  if (!med) throw notFound('Remédio');
+  if (!med) throw notFound('Remédio não encontrado.');
   return med;
 }
 
@@ -522,7 +522,7 @@ function findAppointment(ctx: Ctx, id: string) {
     .from(healthAppointments)
     .where(and(eq(healthAppointments.id, id), isNull(healthAppointments.deletedAt)))
     .get();
-  if (!row) throw notFound('Consulta');
+  if (!row) throw notFound('Consulta não encontrada.');
   return row;
 }
 

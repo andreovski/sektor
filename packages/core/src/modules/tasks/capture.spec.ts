@@ -10,6 +10,7 @@ describe('captura', () => {
     expect(parseCapture('pagar a luz sexta #casa !alta', TODAY)).toEqual({
       title: 'pagar a luz',
       dueDate: '2026-10-23',
+      dueTime: null,
       tags: ['casa'],
       priority: 'HIGH',
     });
@@ -65,6 +66,50 @@ describe('captura', () => {
     expect(parseCapture('ler hojeando', TODAY).dueDate).toBeNull();
   });
 
+  it('hora junto da data sai do título', () => {
+    expect(parseCapture('entregar relatório amanhã 15h', TODAY)).toMatchObject({
+      title: 'entregar relatório',
+      dueDate: '2026-10-19',
+      dueTime: '15:00',
+    });
+    expect(parseCapture('reunião na sexta 15h30 com o João', TODAY)).toMatchObject({
+      title: 'reunião com o João',
+      dueDate: '2026-10-23',
+      dueTime: '15:30',
+    });
+    expect(parseCapture('dentista 9:05 hoje', TODAY)).toMatchObject({
+      title: 'dentista',
+      dueDate: TODAY,
+      dueTime: '09:05',
+    });
+    expect(parseCapture('ligar amanhã às 7h #casa', TODAY)).toMatchObject({
+      title: 'ligar',
+      dueTime: '07:00',
+    });
+  });
+
+  it('o que não é hora fica no título', () => {
+    expect(parseCapture('curso de 25h amanhã', TODAY)).toMatchObject({
+      title: 'curso de 25h',
+      dueTime: null,
+    });
+    expect(parseCapture('ver 15:75 amanhã', TODAY).dueTime).toBeNull();
+    expect(parseCapture('ler 3 capítulos amanhã', TODAY).title).toBe('ler 3 capítulos');
+    expect(parseCapture('sala 15h2 amanhã', TODAY).dueTime).toBeNull();
+  });
+
+  it('sem data, a hora só vale com a data padrão da tela', () => {
+    expect(parseCapture('comprar pacote de 15h', TODAY)).toMatchObject({
+      title: 'comprar pacote de 15h',
+      dueTime: null,
+    });
+    expect(parseCapture('reunião 15h', TODAY, { hasDefaultDate: true })).toMatchObject({
+      title: 'reunião',
+      dueDate: null,
+      dueTime: '15:00',
+    });
+  });
+
   it('etiquetas sem repetir e prioridade com ou sem acento', () => {
     expect(parseCapture('a #Casa #casa #mercado-livre #ação', TODAY)).toMatchObject({
       title: 'a',
@@ -80,6 +125,7 @@ describe('captura', () => {
     expect(parseCapture('ver site.com/#topo que legal!', TODAY)).toEqual({
       title: 'ver site.com/#topo que legal!',
       dueDate: null,
+      dueTime: null,
       tags: [],
       priority: null,
     });

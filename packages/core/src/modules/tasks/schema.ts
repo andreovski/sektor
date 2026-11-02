@@ -45,6 +45,10 @@ export const tasks = sqliteTable('tasks', {
   dueDate: text('due_date'),
   dueTime: text('due_time'),
   rrule: text('rrule'),
+  /** Primeiro prazo da série: é ele que diz o dia do mês. Vazio, vale o prazo da própria tarefa. */
+  rruleAnchor: text('rrule_anchor'),
+  /** A tarefa gerada ao concluir esta, para reabrir e concluir não gerar outra. */
+  nextTaskId: text('next_task_id'),
   sortOrder: integer('sort_order').notNull().default(0),
   completedAt: integer('completed_at'),
 });

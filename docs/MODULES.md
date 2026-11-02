@@ -27,7 +27,7 @@ Português do Brasil em toda tela e comentário. Comentário só quando a regra 
   `lib/rpc.ts`.
 - Use as peças de `ui/index.tsx` e as cores de `ui/theme.css`. Sem cor fixa no código. Valores em
   `money()` de `lib/format.ts`. Telas em português, com estado vazio e de carregamento.
-- Referência visual: o NEXO. Cabeçalho com `PageHeader`, abas com `Segmented`, cartões com `Card`,
+- Referência visual: `docs/DESIGN.md`. Cabeçalho com `PageHeader`, abas com `Segmented`, cartões com `Card`,
   rótulos de seção com `SectionLabel`, botão principal `variant="primary"`.
 
 ## Conferir

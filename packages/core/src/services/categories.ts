@@ -6,7 +6,7 @@ import type {
 } from '@sektor/contract';
 import { and, asc, eq, inArray, isNull, or } from 'drizzle-orm';
 
-import { budgets, categories, transactions } from '../db/schema';
+import { budgets, categories, recurrences, transactions } from '../db/schema';
 
 import { AppError, type Ctx, notFound, stamp } from './context';
 import { DEFAULT_CATEGORIES } from './default-categories';
@@ -117,7 +117,7 @@ export function listCategories(ctx: Ctx): CategoryResponse[] {
 export function createCategory(ctx: Ctx, body: CreateCategoryBody): CategoryResponse {
   if (body.parentId) {
     const parent = find(ctx, body.parentId);
-    if (!parent) throw notFound('Categoria-mãe');
+    if (!parent) throw notFound('Categoria-mãe não encontrada.');
     if (parent.parentId) throw new AppError(400, 'Subcategorias vão até um nível só.');
     if (parent.kind !== body.kind) {
       throw new AppError(400, 'A subcategoria precisa ser do mesmo tipo.');
@@ -141,7 +141,7 @@ export function createCategory(ctx: Ctx, body: CreateCategoryBody): CategoryResp
 
 export function updateCategory(ctx: Ctx, id: string, body: UpdateCategoryBody): CategoryResponse {
   const category = find(ctx, id);
-  if (!category) throw notFound('Categoria');
+  if (!category) throw notFound('Categoria não encontrada.');
   if (body.parentId === id) throw new AppError(400, 'A categoria não pode ser mãe de si mesma.');
   // Fixa: muda cor e ícone, mas não o nome nem o lugar.
   if (
@@ -161,10 +161,10 @@ export function updateCategory(ctx: Ctx, id: string, body: UpdateCategoryBody): 
   );
 }
 
-/** Os lançamentos ficam sem categoria; subcategorias e orçamentos saem junto. */
+/** Os lançamentos e as recorrências ficam sem categoria; subcategorias e orçamentos saem junto. */
 export function deleteCategory(ctx: Ctx, id: string) {
   const category = find(ctx, id);
-  if (!category) throw notFound('Categoria');
+  if (!category) throw notFound('Categoria não encontrada.');
   if (category.systemKey) {
     throw new AppError(409, 'Esta categoria é fixa do app e não pode ser apagada.');
   }
@@ -181,6 +181,15 @@ export function deleteCategory(ctx: Ctx, id: string) {
       .set({ categoryId: null, updatedAt: now })
       .where(inArray(transactions.categoryId, ids))
       .run();
+    for (const recurrence of ctx.db.select().from(recurrences).all()) {
+      const template = recurrence.template as { categoryId?: string | null };
+      if (!template.categoryId || !ids.includes(template.categoryId)) continue;
+      ctx.db
+        .update(recurrences)
+        .set({ template: { ...template, categoryId: null }, updatedAt: now })
+        .where(eq(recurrences.id, recurrence.id))
+        .run();
+    }
     ctx.db
       .update(budgets)
       .set({ deletedAt: now, updatedAt: now })

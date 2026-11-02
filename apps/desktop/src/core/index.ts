@@ -1,18 +1,27 @@
-import { type App, appMeta, createApp, openDatabase } from '@sektor/core';
+import { type App, appMeta, createApp, openDatabase, stageRestore } from '@sektor/core';
 import { eq } from 'drizzle-orm';
+import { mkdtempSync, openSync, readdirSync, readSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
-import type { CoreCommand, CoreEvent, RpcRequest, RpcResponse } from './protocol';
+import type { CoreCommand, CoreEvent, CoreReply, RpcRequest, RpcResponse } from './protocol';
 
 // Núcleo do app: único processo que abre o banco e fala com a rede.
 const parent = process.parentPort;
 const MINUTE = 60_000;
 let app: App | null = null;
 let dbPath = '';
+let dbKey = '';
 
 const emit = (event: CoreEvent) => parent.postMessage(event);
 
+const tick = () => {
+  app?.tick().catch((error) => console.error('[tick]', error));
+};
+
 function init(command: Extract<CoreCommand, { type: 'init' }>) {
   dbPath = command.dbPath;
+  dbKey = command.keyHex;
   const secrets = { ...command.secrets };
   app = createApp({
     dbPath,
@@ -29,8 +38,32 @@ function init(command: Extract<CoreCommand, { type: 'init' }>) {
     notify: (title, body) => emit({ type: 'notify', title, body }),
   });
   emit({ type: 'ready' });
-  void app.tick();
-  setInterval(() => void app?.tick(), MINUTE);
+  tick();
+  setInterval(tick, MINUTE);
+}
+
+/** Backup de verdade no pacote: sai cifrado e volta com a senha, em outra chave. */
+function smokeBackup(otherKeyHex: string) {
+  const dir = mkdtempSync(join(tmpdir(), 'sektor-smoke-backup-'));
+  try {
+    const { recoveryPassword } = app!.chooseBackupFolder(dir);
+    const file = join(dir, readdirSync(dir).find((name) => name.endsWith('.db'))!);
+    const header = Buffer.alloc(15);
+    readSync(openSync(file, 'r'), header, 0, 15, 0);
+    const { status } = stageRestore({
+      file,
+      stagePath: join(dir, 'stage'),
+      currentKeyHex: otherKeyHex,
+      targetKeyHex: otherKeyHex,
+      password: recoveryPassword!,
+    });
+    return {
+      backupCiphered: header.toString('latin1') !== 'SQLite format 3',
+      backupRestored: status,
+    };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 function smoke(wrongKeyHex: string) {
@@ -50,17 +83,37 @@ function smoke(wrongKeyHex: string) {
   }
   // O WAL vai para o arquivo principal, que é o que o main confere.
   raw.pragma('wal_checkpoint(TRUNCATE)');
-  emit({ type: 'smoke-result', wrote, read: read?.value ?? null, wrongKeyRefused });
+  emit({
+    type: 'smoke-result',
+    wrote,
+    read: read?.value ?? null,
+    wrongKeyRefused,
+    ...smokeBackup(wrongKeyHex),
+  });
 }
 
 function serve(port: Electron.MessagePortMain) {
   port.on('message', (event) => {
     const { id, method, input } = event.data as RpcRequest;
-    void app!.call(method, input).then((result) => {
+    const answer = app
+      ? app.call(method, input)
+      : Promise.resolve({ ok: false as const, status: 503, message: 'O banco não abriu.' });
+    void answer.then((result) => {
       port.postMessage({ id, result } satisfies RpcResponse);
     });
   });
   port.start();
+}
+
+function reply(id: number, run: () => unknown) {
+  let answer: CoreReply;
+  try {
+    answer = { type: 'reply', id, ok: true, value: run() };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    answer = { type: 'reply', id, ok: false, message };
+  }
+  emit(answer);
 }
 
 parent.on('message', (event) => {
@@ -68,7 +121,12 @@ parent.on('message', (event) => {
   try {
     if (command.type === 'init') init(command);
     else if (command.type === 'smoke') smoke(command.wrongKeyHex);
-    else if (event.ports[0]) serve(event.ports[0]);
+    else if (command.type === 'backup-folder') {
+      reply(command.id, () => app!.chooseBackupFolder(command.folder));
+    } else if (command.type === 'stage-restore') {
+      const { id, type: _type, ...options } = command;
+      reply(id, () => stageRestore(options));
+    } else if (event.ports[0]) serve(event.ports[0]);
   } catch (error) {
     emit({ type: 'failed', message: error instanceof Error ? error.message : String(error) });
   }

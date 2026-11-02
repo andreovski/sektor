@@ -1,3 +1,4 @@
+import { followToday } from '@sektor/core/src/services/day';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   Annoyed,
@@ -263,8 +264,29 @@ function AppointmentCard({ day }: { day: DayData }) {
   );
 }
 
-export function TodayTab({ onSleep, onMeds }: { onSleep(): void; onMeds(): void }) {
+/** O dia aberto acompanha a virada da meia-noite, sem tirar quem escolheu outro dia. */
+function useDayFollowingToday() {
   const [date, setDate] = useState(todayString);
+  useEffect(() => {
+    let known = todayString();
+    const check = () => {
+      const today = todayString();
+      if (today === known) return;
+      setDate((current) => followToday(current, known, today));
+      known = today;
+    };
+    const timer = setInterval(check, 60_000);
+    window.addEventListener('focus', check);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('focus', check);
+    };
+  }, []);
+  return [date, setDate] as const;
+}
+
+export function TodayTab({ onSleep, onMeds }: { onSleep(): void; onMeds(): void }) {
+  const [date, setDate] = useDayFollowingToday();
   const day = useRpc('health.day', { date });
   return (
     <div className="flex flex-col gap-4">

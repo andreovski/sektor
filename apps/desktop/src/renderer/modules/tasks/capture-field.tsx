@@ -21,7 +21,7 @@ export function CaptureField({
   const [text, setText] = useState('');
   const capture = useRpcMutation('tasks.capture');
   const today = todayString();
-  const parsed = parseCapture(text, today);
+  const parsed = parseCapture(text, today, { hasDefaultDate: Boolean(defaults.defaultDueDate) });
   const due = parsed.dueDate ?? defaults.defaultDueDate ?? null;
   const understood = text.trim() !== '' && (parsed.dueDate || parsed.priority || parsed.tags.length);
 
@@ -54,6 +54,7 @@ export function CaptureField({
             <Chip>
               <CalendarDays size={11} />
               {relativeDay(due, today)}
+              {parsed.dueTime ? ` às ${parsed.dueTime}` : ''}
             </Chip>
           )}
           {parsed.priority && (

@@ -162,7 +162,7 @@ export const bankAccounts = sqliteTable(
   ]
 );
 
-// Sem cascata: no JP, remover um banco apagava estas linhas, que são o que impede importar de novo.
+// Sem cascata: remover um banco não apaga estas linhas, que são o que impede importar de novo.
 export const bankMovements = sqliteTable(
   'bank_movements',
   {

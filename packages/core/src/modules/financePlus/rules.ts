@@ -85,8 +85,7 @@ export function detectFixedBills(history: HistoryRow[], today: string, ignoredKe
     const latest = similar.reduce((a, b) => (b.date > a.date ? b : a));
     if (monthOf(latest.date) < addMonthsToMonth(thisMonth, -1)) continue;
 
-    // Dia 29 a 31 não existe em todo mês, e a regra mensal pularia esses meses.
-    const day = Math.min(28, median(similar.map((row) => parseDateString(row.date).day)));
+    const day = median(similar.map((row) => parseDateString(row.date).day));
     found.push({
       key,
       description: latest.description,
@@ -103,7 +102,9 @@ export function detectFixedBills(history: HistoryRow[], today: string, ignoredKe
 
 function nextOccurrence(day: number, today: string, paidThisMonth: boolean) {
   const { year, month, day: todayDay } = parseDateString(today);
-  if (!paidThisMonth && day >= todayDay) return toDateString(year, month, day);
+  if (!paidThisMonth && day >= todayDay) {
+    return toDateString(year, month, Math.min(day, daysInMonth(year, month)));
+  }
   const next = parseDateString(`${addMonthsToMonth(monthOf(today), 1)}-01`);
   return toDateString(next.year, next.month, Math.min(day, daysInMonth(next.year, next.month)));
 }

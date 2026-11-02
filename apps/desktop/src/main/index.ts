@@ -1,118 +1,273 @@
-import { app, BrowserWindow, MessageChannelMain, shell, utilityProcess } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  type IpcMainInvokeEvent,
+  Menu,
+  MessageChannelMain,
+  shell,
+} from 'electron';
 import { randomBytes } from 'node:crypto';
 import { mkdtempSync, openSync, readSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import type { CoreCommand, CoreEvent } from '../core/protocol';
+import type { CoreFailure, FolderChoice, RestoreResult } from '../preload/api';
 
-import { databaseKey, loadSecrets, saveSecrets } from './key';
+import { ask, forkCore } from './core-process';
+import { databaseKey, dbPath, loadSecrets, saveSecrets, seal, useTestVault } from './key';
+import { setAppMenu } from './menu';
+import { applyPendingRestore, scheduleRestore, stagePath } from './restore';
 import { createTray, hasOpenWindow, notify } from './tray';
+import { createWindow, isAppUrl } from './window';
 
+// O smoke é a prova do pacote: roda sempre em pasta e banco temporários, sem o cofre.
 const SMOKE = process.env.SEKTOR_SMOKE === '1';
-// Modo de teste das telas: banco temporário e sem cofre, que abriria um diálogo no Mac.
-const TEST_DIR = process.env.SEKTOR_TEST_DIR;
+const smokeDir = SMOKE ? mkdtempSync(join(tmpdir(), 'sektor-smoke-')) : null;
+// Modo de teste das telas: dados temporários e sem cofre. No pacote, a variável não vale nada.
+const TEST_DIR = app.isPackaged ? undefined : process.env.SEKTOR_TEST_DIR;
 const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
+if (smokeDir) app.setPath('userData', join(smokeDir, 'electron'));
+if (TEST_DIR) {
+  useTestVault();
+  app.setPath('userData', TEST_DIR);
+}
+
+let core: Electron.UtilityProcess | null = null;
+let failure: CoreFailure | null = null;
+let quitting = false;
+let restoreFile: string | null = null;
+
+const dataDir = () => app.getPath('userData');
+
+function fail(kind: CoreFailure['kind'], message: string) {
+  console.error('[sektor]', kind, message);
+  if (failure) return;
+  failure = { kind, message, dataDir: dataDir() };
+  for (const window of BrowserWindow.getAllWindows()) {
+    window.webContents.send('core-failed', failure);
+  }
+}
+
 function startCore(
-  dbPath: string,
+  path: string,
   keyHex: string,
   secrets: Record<string, string>,
   onEvent: (event: CoreEvent) => void
 ) {
-  const core = utilityProcess.fork(join(__dirname, 'core.js'), [], {
-    serviceName: 'sektor-core',
-    stdio: 'inherit',
+  const started = forkCore('sektor-core');
+  started.on('message', onEvent);
+  started.on('exit', (code) => {
+    if (quitting) return;
+    if (!SMOKE) fail('core', `O núcleo do Sektor parou (código ${code}).`);
+    else onEvent({ type: 'failed', message: `Núcleo saiu com código ${code}.` });
   });
-  core.on('message', onEvent);
-  core.on('exit', (code) => {
-    if (code !== 0) onEvent({ type: 'failed', message: `Núcleo saiu com código ${code}.` });
-  });
-  core.postMessage({ type: 'init', dbPath, keyHex, timeZone, secrets } satisfies CoreCommand);
-  return core;
+  started.postMessage({ type: 'init', dbPath: path, keyHex, timeZone, secrets } satisfies CoreCommand);
+  return started;
 }
 
-function createWindow(core: Electron.UtilityProcess) {
-  const window = new BrowserWindow({
-    width: 1440,
-    height: 900,
-    minWidth: 960,
-    minHeight: 640,
-    backgroundColor: '#0e120e',
-    show: false,
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      contextIsolation: true,
-      sandbox: true,
-      nodeIntegration: false,
-    },
-  });
-  window.once('ready-to-show', () => window.show());
-  // Link externo abre no navegador; dentro da janela só o próprio app navega.
-  window.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith('https://')) void shell.openExternal(url);
-    return { action: 'deny' };
-  });
-  // A cada carga da página, inclusive recarregar: a porta anterior morreu com ela.
-  window.webContents.on('did-finish-load', () => {
-    const { port1, port2 } = new MessageChannelMain();
-    core.postMessage({ type: 'port' } satisfies CoreCommand, [port1]);
-    window.webContents.postMessage('core-port', null, [port2]);
-  });
-  const devUrl = process.env.ELECTRON_RENDERER_URL;
-  if (devUrl) void window.loadURL(devUrl);
-  else void window.loadFile(join(__dirname, '../renderer/index.html'));
+function givePort(window: BrowserWindow) {
+  if (!core || failure) return;
+  const { port1, port2 } = new MessageChannelMain();
+  core.postMessage({ type: 'port' } satisfies CoreCommand, [port1]);
+  window.webContents.postMessage('core-port', null, [port2]);
 }
 
-/** Prova sem janela e sem o cofre, que abre um diálogo no Mac: banco e chave temporários. */
+function openWindow() {
+  if (!hasOpenWindow()) return void createWindow(givePort);
+  const [window] = BrowserWindow.getAllWindows();
+  if (window!.isMinimized()) window!.restore();
+  window!.show();
+  window!.focus();
+}
+
+function restart() {
+  quitting = true;
+  // O Playwright não acompanha um processo novo: o teste abre o app de novo.
+  if (!TEST_DIR) app.relaunch();
+  app.exit(0);
+}
+
+async function runRestore(password?: string): Promise<RestoreResult> {
+  if (!restoreFile) return { status: 'error', message: 'Escolha o arquivo de backup primeiro.' };
+  let currentKeyHex: string | null;
+  try {
+    currentKeyHex = databaseKey();
+  } catch {
+    currentKeyHex = null;
+  }
+  const targetKeyHex = currentKeyHex ?? randomBytes(32).toString('hex');
+  let sealedKey: Buffer | null = null;
+  try {
+    if (!currentKeyHex) sealedKey = seal(targetKeyHex);
+  } catch (error) {
+    return { status: 'error', message: `Sem cofre não há onde guardar a chave. ${(error as Error).message}` };
+  }
+  // Núcleo à parte: o do app pode nem ter subido, e a cópia não mexe no banco em uso.
+  const helper = forkCore('sektor-restauracao');
+  try {
+    const result = await ask<RestoreResult & { keyChanged?: boolean }>(helper, {
+      type: 'stage-restore',
+      file: restoreFile,
+      stagePath: stagePath(),
+      currentKeyHex,
+      targetKeyHex,
+      password,
+    });
+    if (result.status !== 'ok') return result;
+    scheduleRestore(sealedKey);
+    setImmediate(restart);
+    return { status: 'ok' };
+  } catch (error) {
+    return { status: 'error', message: (error as Error).message };
+  } finally {
+    helper.kill();
+  }
+}
+
+function registerIpc() {
+  const handle = <A, R>(channel: string, run: (event: IpcMainInvokeEvent, arg: A) => R) => {
+    ipcMain.handle(channel, (event, arg: A) => {
+      if (!isAppUrl(event.senderFrame?.url ?? '')) throw new Error('Origem não autorizada.');
+      return run(event, arg);
+    });
+  };
+  const parent = (event: IpcMainInvokeEvent) => BrowserWindow.fromWebContents(event.sender)!;
+
+  handle('app:info', () => ({ version: app.getVersion(), dataDir: dataDir() }));
+  handle('app:failure', () => failure);
+  handle('app:open-data-dir', () => shell.openPath(dataDir()).then(() => undefined));
+  handle('app:relaunch', restart);
+  handle('backup:pick-folder', async (event): Promise<FolderChoice> => {
+    if (!core || failure) throw new Error('O núcleo não está no ar.');
+    const { canceled, filePaths } = await dialog.showOpenDialog(parent(event), {
+      title: 'Pasta de backup',
+      buttonLabel: 'Usar esta pasta',
+      properties: ['openDirectory', 'createDirectory'],
+    });
+    if (canceled || !filePaths[0]) return { canceled: true };
+    const chosen = await ask<{ folder: string; recoveryPassword: string | null }>(core, {
+      type: 'backup-folder',
+      folder: filePaths[0],
+    });
+    return { canceled: false, ...chosen };
+  });
+  handle('backup:pick-file', async (event) => {
+    const { canceled, filePaths } = await dialog.showOpenDialog(parent(event), {
+      title: 'Restaurar backup',
+      buttonLabel: 'Escolher',
+      properties: ['openFile'],
+      filters: [{ name: 'Backup do Sektor', extensions: ['db'] }],
+    });
+    restoreFile = canceled ? null : (filePaths[0] ?? null);
+    return restoreFile;
+  });
+  handle('backup:restore', (_event, password?: string) => runRestore(password));
+}
+
+/** Prova sem cofre: banco e chave temporários, e a janela de verdade, que o asar precisa abrir. */
 function runSmoke() {
-  const dir = mkdtempSync(join(tmpdir(), 'sektor-smoke-'));
-  const dbPath = join(dir, 'sektor.db');
+  const path = join(smokeDir!, 'sektor.db');
+  setAppMenu();
   createTray(() => undefined);
-  const core = startCore(dbPath, randomBytes(32).toString('hex'), {}, async (event) => {
+  registerIpc();
+  const finish = async (event: CoreEvent) => {
+    const header = Buffer.alloc(16);
+    if (event.type === 'smoke-result') readSync(openSync(path, 'r'), header, 0, 16, 0);
+    const window = createWindow(givePort, true);
+    const page = await new Promise<unknown>((resolve) => {
+      window.webContents.once('did-finish-load', () =>
+        setTimeout(() => {
+          window.webContents
+            .executeJavaScript(
+              `window.sektor.info().then((info) => ({
+                 url: location.href.replace(/.*\\/(?=[^/]*asar)/, ''),
+                 info,
+                 home: /hoje/i.test(document.body.innerText),
+                 dock: !!document.querySelector('nav[aria-label="Navegação principal"]'),
+               }))`
+            )
+            .then(resolve, (error) => resolve(String(error)));
+        }, 1500)
+      );
+    });
+    const report = {
+      ...event,
+      notificationShown: await notify('Sektor', 'Prova de aviso nativo'),
+      packaged: app.isPackaged,
+      electron: process.versions.electron,
+      plainHeader: header.toString('latin1').startsWith('SQLite format 3'),
+      bytes: statSync(path, { throwIfNoEntry: false })?.size ?? 0,
+      testDirIgnored: !TEST_DIR,
+      devToolsOpens: (window.webContents.openDevTools(), window.webContents.isDevToolsOpened()),
+      menu: Menu.getApplicationMenu()?.items.flatMap((item) => [
+        item.label,
+        ...(item.submenu?.items.map((sub) => sub.label) ?? []),
+      ]),
+      page,
+    };
+    console.log(`SEKTOR_SMOKE ${JSON.stringify(report)}`);
+    quitting = true;
+    core?.kill();
+    rmSync(smokeDir!, { recursive: true, force: true });
+    app.exit(event.type === 'smoke-result' ? 0 : 1);
+  };
+  core = startCore(path, randomBytes(32).toString('hex'), {}, (event) => {
     if (event.type === 'ready') {
-      core.postMessage({
+      core!.postMessage({
         type: 'smoke',
         wrongKeyHex: randomBytes(32).toString('hex'),
       } satisfies CoreCommand);
-    } else {
-      const header = Buffer.alloc(16);
-      if (event.type === 'smoke-result') readSync(openSync(dbPath, 'r'), header, 0, 16, 0);
-      const report = {
-        ...event,
-        notificationShown: await notify('Sektor', 'Prova de aviso nativo'),
-        packaged: app.isPackaged,
-        electron: process.versions.electron,
-        plainHeader: header.toString('latin1').startsWith('SQLite format 3'),
-        bytes: statSync(dbPath, { throwIfNoEntry: false })?.size ?? 0,
-      };
-      console.log(`SEKTOR_SMOKE ${JSON.stringify(report)}`);
-      core.kill();
-      rmSync(dir, { recursive: true, force: true });
-      app.exit(event.type === 'smoke-result' ? 0 : 1);
-    }
+    } else if (event.type === 'smoke-result' || event.type === 'failed') void finish(event);
   });
 }
 
-void app.whenReady().then(() => {
-  if (SMOKE) return runSmoke();
-  const dbPath = join(TEST_DIR ?? app.getPath('userData'), 'sektor.db');
-  const core = startCore(
-    dbPath,
-    TEST_DIR ? 'd'.repeat(64) : databaseKey(),
-    TEST_DIR ? {} : loadSecrets(),
-    (event) => {
-      if (event.type === 'failed') console.error('[core]', event.message);
-      if (event.type === 'secrets' && !TEST_DIR) saveSecrets(event.secrets);
-      if (event.type === 'notify') void notify(event.title, event.body);
-    }
-  );
-  const openWindow = () => {
-    if (!hasOpenWindow()) createWindow(core);
-  };
+function boot() {
+  setAppMenu();
+  registerIpc();
   createTray(openWindow);
+  try {
+    applyPendingRestore();
+  } catch (error) {
+    fail('database', (error as Error).message);
+  }
+  if (!failure) {
+    try {
+      const key = databaseKey();
+      core = startCore(dbPath(), key, loadSecrets(), (event) => {
+        if (event.type === 'failed') fail('database', event.message);
+        if (event.type === 'notify') void notify(event.title, event.body);
+        if (event.type === 'secrets') {
+          try {
+            saveSecrets(event.secrets);
+          } catch (error) {
+            console.error('[cofre]', error);
+          }
+        }
+      });
+    } catch (error) {
+      fail('vault', (error as Error).message);
+    }
+  }
   openWindow();
+}
+
+app.on('before-quit', () => {
+  quitting = true;
 });
 
-// Fechar a janela deixa o app na bandeja; sair é pelo menu dela.
-app.on('window-all-closed', () => undefined);
+// Sem a trava, duas instâncias abririam o mesmo banco. O smoke roda em pasta própria.
+if (SMOKE || app.requestSingleInstanceLock()) {
+  app.on('second-instance', openWindow);
+  // Fechar a janela deixa o app na bandeja; o clique no Dock a reabre e sair é pelo menu.
+  app.on('activate', () => {
+    if (app.isReady() && !SMOKE) openWindow();
+  });
+  app.on('window-all-closed', () => undefined);
+  void app.whenReady().then(() => (SMOKE ? runSmoke() : boot()));
+} else {
+  app.exit(0);
+}

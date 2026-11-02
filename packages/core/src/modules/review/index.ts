@@ -15,9 +15,16 @@ const saveSchema = z.object({
 });
 type SaveInput = z.infer<typeof saveSchema>;
 
+const periodSchema = z.object({
+  kind: z.enum(['week', 'month', 'year'], { message: 'Período inválido.' }),
+  key: z.string().optional(),
+});
+
 export const handlers = (ctx: AppCtx) => ({
-  'review.get': (input: { kind: PeriodKind; key?: string }) =>
-    review.getPeriod(ctx, input.kind, input.key),
+  'review.get': (input: { kind: PeriodKind; key?: string }) => {
+    const { kind, key } = parse<{ kind: PeriodKind; key?: string }>(periodSchema as never, input);
+    return review.getPeriod(ctx, kind, key);
+  },
   'review.save': (input: SaveInput) => review.saveReview(ctx, parse<SaveInput>(saveSchema as never, input)),
   'review.linkTask': (input: { weekStart: string; text: string; taskId: string }) =>
     review.linkPriority(ctx, input.weekStart, input.text, input.taskId),

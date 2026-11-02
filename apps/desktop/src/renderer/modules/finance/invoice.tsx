@@ -37,7 +37,9 @@ export function InvoicePanel({
   const payers = accounts.filter((a) => a.type !== 'CREDIT_CARD' && !a.archived);
   const [from, setFrom] = useState('');
   const [date, setDate] = useState(todayString());
-  const effectiveFrom = from || card?.paymentAccountId || payers[0]?.id || '';
+  // A conta do cartão pode estar arquivada: só vale se estiver entre as que podem pagar.
+  const cardPayer = payers.find((a) => a.id === card?.paymentAccountId);
+  const effectiveFrom = from || cardPayer?.id || payers[0]?.id || '';
   const payable = invoice.status !== 'PAID' && invoice.totalCents > 0;
 
   return (
@@ -51,6 +53,17 @@ export function InvoicePanel({
         />
         <InvoicePill status={invoice.status} future={future} />
       </div>
+      {invoice.creditAppliedCents > 0 && (
+        <p className="text-sm text-muted">
+          Compras de {money(invoice.ownCents)} menos {money(invoice.creditAppliedCents)} de crédito da
+          fatura anterior.
+        </p>
+      )}
+      {invoice.creditCarriedCents > 0 && (
+        <p className="text-sm text-muted">
+          {money(invoice.creditCarriedCents)} de crédito vão para a próxima fatura.
+        </p>
+      )}
       {payable && (
         <div className="grid grid-cols-[1fr_1fr_auto] items-end gap-3">
           <Field label="Pagar com">

@@ -41,7 +41,7 @@ function ownedHabit(ctx: Ctx, id: string) {
     .from(habits)
     .where(and(eq(habits.id, id), liveHabit))
     .get();
-  if (!row) throw notFound('Hábito');
+  if (!row) throw notFound('Hábito não encontrado.');
   return row;
 }
 

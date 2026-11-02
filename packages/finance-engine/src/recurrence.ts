@@ -88,9 +88,29 @@ export function describeRRule(rrule: string): string {
   return text;
 }
 
+/**
+ * O RRULE pula os meses sem o dia (dia 31 só cai em 7 meses). Aqui a série vale todo mês: fica no
+ * último dia dos meses curtos e volta ao dia original, porque a âncora é sempre o início da série.
+ * Regra que já escolhe o dia (`BYDAY`, `BYMONTHDAY`...) fica como veio.
+ */
+function clampedToMonthEnd(rrule: string, dtstart: Date): string {
+  if (rrule.includes('\n') || /(^|;)BY[A-Z]+=/.test(rrule)) return rrule;
+  const day = dtstart.getUTCDate();
+  if (day < 29) return rrule;
+  const lastDays = Array.from({ length: day - 27 }, (_, i) => 28 + i).join(',');
+  if (/(^|;)FREQ=MONTHLY(;|$)/.test(rrule)) {
+    return `${rrule};BYMONTHDAY=${lastDays};BYSETPOS=-1`;
+  }
+  // No ano, só 29/02 falta.
+  if (/(^|;)FREQ=YEARLY(;|$)/.test(rrule) && dtstart.getUTCMonth() === 1) {
+    return `${rrule};BYMONTH=2;BYMONTHDAY=${lastDays};BYSETPOS=-1`;
+  }
+  return rrule;
+}
+
 function ruleFrom(rrule: string, dtstart: Date): RRule {
-  const rule = rrulestr(rrule.replace(/^RRULE:/, ''), { dtstart }) as RRule;
-  return rule;
+  const text = clampedToMonthEnd(rrule.replace(/^RRULE:/, ''), dtstart);
+  return rrulestr(text, { dtstart }) as RRule;
 }
 
 /**

@@ -166,6 +166,23 @@ describe('foco', () => {
     expect(focus.history(ctx)[0]!.focusSeconds).toBe(focus.MAX_SESSION_SECONDS);
   });
 
+  it('sessão esquecida com tempo planejado fica no planejado', () => {
+    focus.startSession(ctx, { mode: 'POMODORO', plannedMinutes: 25 });
+    advance(30 * 60 * MIN);
+    focus.runClock(ctx);
+    expect(focus.activeSession(ctx)).toBeNull();
+    expect(focus.history(ctx)[0]!.focusSeconds).toBe(25 * 60);
+  });
+
+  it('esquecida em pausa depois do planejado também fica no planejado', () => {
+    focus.startSession(ctx, { mode: 'POMODORO', plannedMinutes: 25 });
+    advance(40 * MIN);
+    focus.pauseSession(ctx);
+    advance(13 * 60 * MIN);
+    focus.runClock(ctx);
+    expect(focus.history(ctx)[0]!.focusSeconds).toBe(25 * 60);
+  });
+
   it('sem tarefas e projetos, a ligação fica vazia e a sessão guarda o id', () => {
     handle.raw.exec('PRAGMA foreign_keys = OFF; DROP TABLE tasks; DROP TABLE projects;');
     expect(focus.linkables(ctx)).toEqual({ tasks: [], projects: [] });

@@ -305,13 +305,16 @@ describe('regras e contas fixas', () => {
     expect(detectFixedBills(fine, '2026-11-02', new Set(['internet vivo']))).toEqual([]);
   });
 
-  it('dia 31 vira 28, porque a regra mensal pularia os meses curtos', () => {
+  it('conta do dia 31 fica no dia 31; a próxima data cabe no mês', () => {
     const history = [
       bill('2026-08-31', 100_00),
       bill('2026-09-30', 100_00),
       bill('2026-10-31', 100_00),
     ];
-    expect(detectFixedBills(history, '2026-11-02', new Set())[0]!.day).toBe(28);
+    expect(detectFixedBills(history, '2026-11-02', new Set())[0]).toMatchObject({
+      day: 31,
+      nextDate: '2026-11-30',
+    });
   });
 });
 

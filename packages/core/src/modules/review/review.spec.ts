@@ -7,6 +7,7 @@ import type { AppCtx } from '../../app';
 import { type DbHandle, openDatabase } from '../../db/client';
 import * as focus from '../focus/service';
 
+import { handlers } from '.';
 import { periodOf } from './period';
 import * as review from './service';
 
@@ -172,5 +173,15 @@ describe('revisão', () => {
     vi.setSystemTime(new Date('2026-11-15T22:00:00Z'));
     review.remind(ctx);
     expect(notes).toHaveLength(1);
+  });
+
+  it('entrada ausente ou inválida é 400', () => {
+    const api = handlers(ctx);
+    expect(() => api['review.get'](undefined as never)).toThrow(
+      expect.objectContaining({ status: 400 })
+    );
+    expect(() => api['review.get']({ kind: 'dia' } as never)).toThrow(
+      expect.objectContaining({ status: 400 })
+    );
   });
 });

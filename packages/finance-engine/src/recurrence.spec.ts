@@ -48,6 +48,89 @@ describe('dateOccurrences', () => {
   });
 });
 
+describe('fim de mês', () => {
+  it('salário no dia 31 cai todo mês, no último dia dos meses curtos', () => {
+    expect(dateOccurrences('FREQ=MONTHLY', '2026-10-31', '2026-10-01', '2027-10-31')).toEqual([
+      '2026-10-31',
+      '2026-11-30',
+      '2026-12-31',
+      '2027-01-31',
+      '2027-02-28',
+      '2027-03-31',
+      '2027-04-30',
+      '2027-05-31',
+      '2027-06-30',
+      '2027-07-31',
+      '2027-08-31',
+      '2027-09-30',
+      '2027-10-31',
+    ]);
+  });
+
+  it('dias 29 e 30 voltam ao dia original depois de fevereiro', () => {
+    expect(dateOccurrences('FREQ=MONTHLY', '2027-01-29', '2027-01-01', '2027-03-31')).toEqual([
+      '2027-01-29',
+      '2027-02-28',
+      '2027-03-29',
+    ]);
+    expect(dateOccurrences('FREQ=MONTHLY', '2028-01-30', '2028-01-01', '2028-03-31')).toEqual([
+      '2028-01-30',
+      '2028-02-29',
+      '2028-03-30',
+    ]);
+  });
+
+  it('respeita COUNT, UNTIL e INTERVAL', () => {
+    expect(
+      dateOccurrences('FREQ=MONTHLY;COUNT=3', '2026-12-31', '2026-01-01', '2028-01-01')
+    ).toEqual(['2026-12-31', '2027-01-31', '2027-02-28']);
+    expect(
+      dateOccurrences(
+        'FREQ=MONTHLY;UNTIL=20270228T235959Z',
+        '2026-12-31',
+        '2026-01-01',
+        '2028-01-01'
+      )
+    ).toEqual(['2026-12-31', '2027-01-31', '2027-02-28']);
+    expect(
+      dateOccurrences('FREQ=MONTHLY;INTERVAL=2', '2026-12-31', '2026-01-01', '2027-04-30')
+    ).toEqual(['2026-12-31', '2027-02-28', '2027-04-30']);
+  });
+
+  it('aniversário em 29/02 cai em 28/02 nos anos comuns', () => {
+    expect(dateOccurrences('FREQ=YEARLY', '2028-02-29', '2028-01-01', '2032-12-31')).toEqual([
+      '2028-02-29',
+      '2029-02-28',
+      '2030-02-28',
+      '2031-02-28',
+      '2032-02-29',
+    ]);
+  });
+
+  it('não mexe em regra com dia escolhido', () => {
+    expect(
+      dateOccurrences('FREQ=MONTHLY;BYMONTHDAY=31', '2026-10-31', '2026-10-01', '2027-01-31')
+    ).toEqual(['2026-10-31', '2026-12-31', '2027-01-31']);
+  });
+
+  it('evento no dia 31 segue no relógio de parede', () => {
+    const starts = eventOccurrences(
+      'FREQ=MONTHLY',
+      new Date('2026-12-31T12:00:00Z'),
+      new Date('2026-12-01T00:00:00Z'),
+      new Date('2027-05-01T00:00:00Z'),
+      'America/Sao_Paulo'
+    ).map((d) => d.toISOString());
+    expect(starts).toEqual([
+      '2026-12-31T12:00:00.000Z',
+      '2027-01-31T12:00:00.000Z',
+      '2027-02-28T12:00:00.000Z',
+      '2027-03-31T12:00:00.000Z',
+      '2027-04-30T12:00:00.000Z',
+    ]);
+  });
+});
+
 describe('eventOccurrences', () => {
   const tz = 'America/New_York';
 

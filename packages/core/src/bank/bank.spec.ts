@@ -10,6 +10,7 @@ import { accounts, bankMovements, categories, invoices, transactions } from '../
 import { ensureCategories } from '../services/categories';
 import { stamp } from '../services/context';
 import * as fin from '../services/finance';
+import * as plus from '../modules/financePlus/service';
 
 import { type PluggyKeys, forgetPluggyKey } from './client';
 import { FakePluggy } from './fake-pluggy';
@@ -72,6 +73,37 @@ describe('bancos (Meu Pluggy)', () => {
     const id = (name: string) => body.items[0]!.accounts.find((a) => a.name === name)!.id;
     return { checkingBank: id('Conta Corrente'), cardBank: id('Cartão Platinum') };
   }
+
+  it('as regras de categoria valem na revisão do banco, depois do histórico', async () => {
+    const { checkingBank } = await connect();
+    const transport = ctx.db
+      .select()
+      .from(categories)
+      .where(and(eq(categories.kind, 'EXPENSE'), eq(categories.name, 'Transporte')))
+      .get()!.id;
+    plus.createRule(ctx, { pattern: 'uber', categoryId: transport });
+    plus.createRule(ctx, { pattern: 'padaria', categoryId: transport });
+    fin.createTransactions(ctx, {
+      kind: 'EXPENSE',
+      amountCents: 12_00,
+      date: '2026-09-20',
+      accountId: checking.id,
+      categoryId: groceries,
+      description: 'Padaria Pão Quente',
+    });
+    pluggy.add(CHECKING_ID, { id: 'h1', description: 'PADARIA PAO QUENTE', amount: -9 });
+    pluggy.add(CHECKING_ID, { id: 'u1', description: 'UBER *TRIP', amount: -35 });
+    await bank.linkAccount(ctx, checkingBank, { accountId: checking.id });
+    const by = Object.fromEntries(pending().map((m) => [m.description, m]));
+    expect(by['UBER *TRIP']).toMatchObject({
+      suggestedCategoryId: transport,
+      suggestionSource: 'RULE',
+    });
+    expect(by['PADARIA PAO QUENTE']).toMatchObject({
+      suggestedCategoryId: groceries,
+      suggestionSource: 'HISTORY',
+    });
+  });
 
   it('o aviso de privacidade fica lido', () => {
     expect(bank.bankStatus(ctx).noticeAcceptedAt).toBeNull();

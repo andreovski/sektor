@@ -103,7 +103,7 @@ function getList(ctx: Ctx, id: string) {
     .from(taskLists)
     .where(and(eq(taskLists.id, id), isNull(taskLists.deletedAt)))
     .get();
-  if (!list) throw notFound('Lista');
+  if (!list) throw notFound('Lista não encontrada.');
   return list;
 }
 
@@ -236,7 +236,7 @@ function findTask(ctx: Ctx, id: string) {
     .from(tasks)
     .where(and(eq(tasks.id, id), live))
     .get();
-  if (!task) throw notFound('Tarefa');
+  if (!task) throw notFound('Tarefa não encontrada.');
   return task;
 }
 
@@ -467,41 +467,37 @@ function findParent(ctx: Ctx, id: string) {
     .from(tasks)
     .where(and(eq(tasks.id, id), live))
     .get();
-  if (!parent) throw notFound('Tarefa-mãe');
+  if (!parent) throw notFound('Tarefa-mãe não encontrada.');
   if (parent.parentTaskId) throw new AppError(400, 'Subtarefas vão até um nível só.');
   return parent;
 }
 
 /** Cria uma tarefa a partir de uma linha digitada. */
 export function captureTask(ctx: Ctx, body: z.output<typeof captureTaskSchema>): TaskResponse {
-  const parsed = parseCapture(body.text, todayIn(ctx));
+  const parsed = parseCapture(body.text, todayIn(ctx), {
+    hasDefaultDate: Boolean(body.defaultDueDate),
+  });
   if (!parsed.title) throw new AppError(400, 'Escreva o que precisa ser feito.');
   return createTask(ctx, {
     title: parsed.title.slice(0, 300),
     listId: body.listId,
     projectId: body.projectId,
     dueDate: parsed.dueDate ?? body.defaultDueDate ?? null,
+    dueTime: parsed.dueTime,
     priority: parsed.priority,
     tags: body.defaultTag ? [...parsed.tags, body.defaultTag].slice(0, 10) : parsed.tags,
   });
 }
 
-/** Próximo prazo de uma tarefa recorrente, depois do atual. Três anos sem ocorrência é o fim. */
-function nextDue(rrule: string, dueDate: string) {
-  return dateOccurrences(rrule, dueDate, addDays(dueDate, 1), addDays(dueDate, 3 * 366))[0] ?? null;
+/**
+ * Próximo prazo de uma tarefa recorrente, depois do atual. Três anos sem ocorrência é o fim.
+ * `anchor` é o início da série: sem ele, o dia 31 viraria 28 para sempre depois de fevereiro.
+ */
+function nextDue(rrule: string, anchor: string, dueDate: string) {
+  return dateOccurrences(rrule, anchor, addDays(dueDate, 1), addDays(dueDate, 3 * 366))[0] ?? null;
 }
 
-function markComplete(ctx: Ctx, task: TaskRow): string | null {
-  const now = Date.now();
-  ctx.db
-    .update(tasks)
-    .set({ completedAt: now, status: 'DONE', updatedAt: now })
-    .where(eq(tasks.id, task.id))
-    .run();
-  if (!task.rrule || !task.dueDate) return null;
-  const dueDate = nextDue(task.rrule, task.dueDate);
-  if (!dueDate) return null;
-
+function createNext(ctx: Ctx, task: TaskRow, dueDate: string, anchor: string) {
   const next = {
     ...stamp(),
     listId: task.listId,
@@ -512,6 +508,7 @@ function markComplete(ctx: Ctx, task: TaskRow): string | null {
     dueTime: task.dueTime,
     priority: task.priority,
     rrule: task.rrule,
+    rruleAnchor: anchor,
     sortOrder: task.sortOrder,
   };
   ctx.db.insert(tasks).values(next).run();
@@ -538,12 +535,80 @@ function markComplete(ctx: Ctx, task: TaskRow): string | null {
   return next.id;
 }
 
-function markOpen(ctx: Ctx, id: string, status: TaskStatus = 'TODO') {
+const liveTask = (ctx: Ctx, id: string | null) =>
+  id
+    ? ctx.db
+        .select()
+        .from(tasks)
+        .where(and(eq(tasks.id, id), live))
+        .get()
+    : undefined;
+
+function markComplete(ctx: Ctx, task: TaskRow): string | null {
+  const now = Date.now();
+  ctx.db
+    .update(tasks)
+    .set({ completedAt: now, status: 'DONE', updatedAt: now })
+    .where(eq(tasks.id, task.id))
+    .run();
+  if (!task.rrule || !task.dueDate) return null;
+  // Reabriu e concluiu de novo: a próxima que ficou segue valendo.
+  const kept = liveTask(ctx, task.nextTaskId);
+  if (kept) return kept.id;
+  const anchor = task.rruleAnchor ?? task.dueDate;
+  const dueDate = nextDue(task.rrule, anchor, task.dueDate);
+  if (!dueDate) return null;
+  const nextId = createNext(ctx, task, dueDate, anchor);
+  ctx.db.update(tasks).set({ nextTaskId: nextId }).where(eq(tasks.id, task.id)).run();
+  return nextId;
+}
+
+/** A próxima sai só se ninguém mexeu nela nem nas subtarefas: o que a pessoa fez ali fica. */
+function removeIntactNext(ctx: Ctx, nextTaskId: string | null) {
+  const next = liveTask(ctx, nextTaskId);
+  if (!next) return;
+  const family = [
+    next,
+    ...ctx.db
+      .select()
+      .from(tasks)
+      .where(and(eq(tasks.parentTaskId, next.id), live))
+      .all(),
+  ];
+  if (family.some((row) => row.completedAt || row.updatedAt !== row.createdAt)) return;
+  const now = Date.now();
+  ctx.db
+    .update(tasks)
+    .set({ deletedAt: now, updatedAt: now })
+    .where(
+      inArray(
+        tasks.id,
+        family.map((row) => row.id)
+      )
+    )
+    .run();
+}
+
+function markOpen(ctx: Ctx, task: TaskRow, status: TaskStatus = 'TODO') {
   ctx.db
     .update(tasks)
     .set({ completedAt: null, status, updatedAt: Date.now() })
-    .where(eq(tasks.id, id))
+    .where(eq(tasks.id, task.id))
     .run();
+  removeIntactNext(ctx, task.nextTaskId);
+}
+
+/** Quem veio depois da tarefa na série e, reaberta a anterior, quem a originou. */
+export function seriesLinks(ctx: Ctx, id: string) {
+  const previous = ctx.db
+    .select({ id: tasks.id })
+    .from(tasks)
+    .where(and(eq(tasks.nextTaskId, id), isNull(tasks.completedAt), live))
+    .get();
+  return {
+    nextTaskId: liveTask(ctx, id)?.nextTaskId ?? null,
+    previousTaskId: previous?.id ?? null,
+  };
 }
 
 export function completeTask(ctx: Ctx, id: string): CompleteTaskResponse {
@@ -555,7 +620,7 @@ export function completeTask(ctx: Ctx, id: string): CompleteTaskResponse {
 
 export function reopenTask(ctx: Ctx, id: string, status?: TaskStatus): TaskResponse {
   const task = findTask(ctx, id);
-  if (task.completedAt) markOpen(ctx, id, status);
+  if (task.completedAt) ctx.db.transaction(() => markOpen(ctx, task, status));
   return getTask(ctx, id);
 }
 
@@ -572,6 +637,8 @@ export function updateTask(
   if (fields.notes !== undefined) patch.notes = fields.notes;
   if (fields.priority !== undefined) patch.priority = fields.priority;
   if (fields.rrule !== undefined) patch.rrule = fields.rrule;
+  // A pessoa mudou a série: o prazo que ela deixou é o novo início.
+  if (fields.dueDate !== undefined || fields.rrule !== undefined) patch.rruleAnchor = null;
 
   const dueDate = fields.dueDate !== undefined ? fields.dueDate : task.dueDate;
   if (fields.dueDate !== undefined) patch.dueDate = fields.dueDate;
@@ -623,7 +690,7 @@ export function updateTask(
     if (done) {
       if (!task.completedAt) markComplete(ctx, { ...task, ...patch });
     } else if (reopen) {
-      if (task.completedAt) markOpen(ctx, id, status);
+      if (task.completedAt) markOpen(ctx, task, status);
       else if (status) {
         ctx.db
           .update(tasks)
@@ -675,7 +742,7 @@ function findProject(ctx: Ctx, id: string) {
     .from(projects)
     .where(and(eq(projects.id, id), isNull(projects.deletedAt)))
     .get();
-  if (!project) throw notFound('Projeto');
+  if (!project) throw notFound('Projeto não encontrado.');
   return project;
 }
 

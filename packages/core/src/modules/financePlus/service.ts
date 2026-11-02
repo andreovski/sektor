@@ -176,7 +176,7 @@ function ownedDebt(ctx: Ctx, id: string) {
     .from(debts)
     .where(and(eq(debts.id, id), isNull(debts.deletedAt)))
     .get();
-  if (!debt) throw notFound('Dívida');
+  if (!debt) throw notFound('Dívida não encontrada.');
   return debt;
 }
 
@@ -247,7 +247,7 @@ function ruleValues(ctx: Ctx, body: { pattern: string; categoryId: string }, id?
     .from(categories)
     .where(and(eq(categories.id, body.categoryId), isNull(categories.deletedAt)))
     .get();
-  if (!category) throw notFound('Categoria');
+  if (!category) throw notFound('Categoria não encontrada.');
   const clash = ctx.db
     .select({ id: categoryRules.id })
     .from(categoryRules)
@@ -282,7 +282,7 @@ export function updateRule(ctx: Ctx, id: string, body: { pattern: string; catego
     .set({ ...ruleValues(ctx, body, id), updatedAt: Date.now() })
     .where(and(eq(categoryRules.id, id), isNull(categoryRules.deletedAt)))
     .run();
-  if (changes === 0) throw notFound('Regra');
+  if (changes === 0) throw notFound('Regra não encontrada.');
 }
 
 export function deleteRule(ctx: Ctx, id: string) {
@@ -291,7 +291,7 @@ export function deleteRule(ctx: Ctx, id: string) {
     .set({ deletedAt: Date.now(), updatedAt: Date.now() })
     .where(and(eq(categoryRules.id, id), isNull(categoryRules.deletedAt)))
     .run();
-  if (changes === 0) throw notFound('Regra');
+  if (changes === 0) throw notFound('Regra não encontrada.');
 }
 
 function ruleChanges(ctx: Ctx, overwrite: boolean) {
@@ -404,7 +404,7 @@ export function recurringSuggestions(ctx: Ctx) {
 
 export function acceptRecurring(ctx: Ctx, key: string) {
   const item = recurringSuggestions(ctx).find((suggestion) => suggestion.key === key);
-  if (!item) throw notFound('Sugestão');
+  if (!item) throw notFound('Sugestão não encontrada.');
   return fin.createTransactions(ctx, {
     kind: 'EXPENSE',
     amountCents: item.amountCents,

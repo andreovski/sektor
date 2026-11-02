@@ -1,4 +1,5 @@
 import { relativeDay } from '@sektor/core/src/modules/tasks/logic';
+import { byEventStart } from '@sektor/core/src/services/day';
 import { Link, useNavigate } from '@tanstack/react-router';
 import {
   Annoyed,
@@ -243,7 +244,7 @@ export function AgendaCard() {
               ...event,
               day: event.allDay ? event.startAt.slice(0, 10) : localDate(event.startAt),
             }))
-            .sort((a, b) => a.startAt.localeCompare(b.startAt));
+            .sort(byEventStart);
           if (events.length === 0) {
             return (
               <Empty

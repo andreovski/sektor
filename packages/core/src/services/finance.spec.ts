@@ -1,12 +1,14 @@
 import type { AccountResponse, InvoiceResponse } from '@sektor/contract';
 import { eq } from 'drizzle-orm';
+import { readFileSync } from 'node:fs';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type DbHandle, openDatabase } from '../db/client';
-import { categories, invoices, transactions } from '../db/schema';
+import { accounts, categories, invoices, recurrences, transactions } from '../db/schema';
+import { handlers } from '../modules/finance';
 
 import * as cat from './categories';
 import type { Ctx } from './context';
@@ -178,7 +180,7 @@ describe('finanças', () => {
     expect(paid.status).toBe('PAID');
     expectStatus(() => fin.payInvoice(ctx, october.id), 409);
     expect(account(checking.id).balanceCents).toBe(900_00);
-    expect(account(card.id).balanceCents).toBe(-200_00);
+    expect(account(card.id).balanceCents).toBe(-250_00);
 
     // Apagar o pagamento reabre a fatura, e dá para pagar de novo.
     fin.deleteTransaction(ctx, paid.paymentTransactionId!);
@@ -367,5 +369,437 @@ describe('finanças', () => {
     expect(fin.listTransactions(ctx, {})).toHaveLength(0);
     const row = ctx.db.select().from(transactions).where(eq(transactions.id, tx!.id)).get();
     expect(row?.deletedAt).not.toBeNull();
+  });
+
+  const purchase = (over: Partial<Parameters<typeof fin.createTransactions>[1]> = {}) =>
+    fin.createTransactions(ctx, {
+      kind: 'EXPENSE',
+      amountCents: 100_00,
+      date: '2026-10-20',
+      accountId: card.id,
+      description: 'Compra',
+      ...over,
+    });
+  const chargeback = (amountCents: number, date = '2026-10-21') =>
+    purchase({ kind: 'INCOME', amountCents, date, description: 'Estorno' });
+  const invoiceOf = (month: string) =>
+    fin.listInvoices(ctx, card.id).find((i) => i.referenceMonth === month)!;
+
+  describe('lançamento de cartão é sempre efetivado', () => {
+    it('com data futura, na recorrência e na extensão', () => {
+      expect(purchase({ date: '2026-12-01' })[0]!.status).toBe('DONE');
+      expect(purchase({ date: '2026-12-01', status: 'PLANNED' })[0]!.status).toBe('DONE');
+
+      const created = purchase({ description: 'Streaming', recurrence: { rrule: 'FREQ=MONTHLY' } });
+      expect(new Set(created.map((t) => t.status))).toEqual(new Set(['DONE']));
+
+      vi.setSystemTime(new Date('2027-01-20T12:00:00Z'));
+      expect(fin.extendRecurrences(ctx)).toBeGreaterThan(0);
+      expect(fin.listTransactions(ctx, { status: 'PLANNED' })).toEqual([]);
+    });
+
+    it('editar não o devolve a previsto', () => {
+      const [tx] = purchase();
+      expect(fin.updateTransaction(ctx, tx!.id, { status: 'PLANNED' }).status).toBe('DONE');
+    });
+
+    it('a fatura cobra o mesmo que o saldo e o relatório do mês contam', () => {
+      purchase({ date: '2026-11-10', description: 'Luz', recurrence: { rrule: 'FREQ=MONTHLY' } });
+      expect(account(card.id).balanceCents).toBe(-13 * 100_00);
+      expect(rep.monthSummary(ctx, '2026-11').expenseCents).toBe(100_00);
+    });
+
+    it('a migração 0100 efetiva os previstos que já existem no cartão', () => {
+      const [onCard] = purchase();
+      const [onChecking] = purchase({ accountId: checking.id, date: '2026-12-01' });
+      handle.raw.prepare('UPDATE transactions SET status = ? WHERE id = ?').run('PLANNED', onCard!.id);
+      handle.raw.exec(
+        readFileSync(new URL('../db/migrations/0100_card_done.sql', import.meta.url), 'utf8')
+      );
+      const status = (id: string) =>
+        ctx.db.select().from(transactions).where(eq(transactions.id, id)).get()!.status;
+      expect(status(onCard!.id)).toBe('DONE');
+      expect(status(onChecking!.id)).toBe('PLANNED');
+    });
+  });
+
+  describe('recorrência no fim do mês', () => {
+    it('salário no dia 31 cai todo mês', () => {
+      const created = fin.createTransactions(ctx, {
+        kind: 'INCOME',
+        amountCents: 5000_00,
+        date: '2026-10-31',
+        accountId: checking.id,
+        description: 'Salário',
+        recurrence: { rrule: 'FREQ=MONTHLY' },
+      });
+      expect(created.map((t) => t.date.slice(0, 7))).toHaveLength(13);
+      expect(created[4]!.date).toBe('2027-02-28');
+    });
+  });
+
+  describe('compra em ciclo de fatura já paga', () => {
+    it('vai para a próxima fatura em aberto, avisando', () => {
+      purchase();
+      fin.payInvoice(ctx, invoiceOf('2026-10').id);
+      const [late] = purchase({ date: '2026-10-21', description: 'Atrasada' });
+      expect(late!.rolledToInvoice).toEqual({ referenceMonth: '2026-11', dueDate: '2026-12-05' });
+      expect(invoiceOf('2026-10').totalCents).toBe(100_00);
+      expect(invoiceOf('2026-11').totalCents).toBe(100_00);
+      expect(fin.listDueInvoices(ctx, {}).map((i) => i.referenceMonth)).toEqual(['2026-11']);
+    });
+
+    it('pula também a seguinte, se já estiver paga', () => {
+      purchase();
+      purchase({ date: '2026-11-20' });
+      fin.payInvoice(ctx, invoiceOf('2026-10').id);
+      fin.payInvoice(ctx, invoiceOf('2026-11').id);
+      const [late] = purchase({ date: '2026-10-21' });
+      expect(late!.rolledToInvoice?.referenceMonth).toBe('2026-12');
+    });
+
+    it('compra em ciclo aberto não avisa nada', () => {
+      expect(purchase()[0]!.rolledToInvoice).toBeUndefined();
+    });
+
+    it('mudar a data para um ciclo pago também avisa', () => {
+      purchase();
+      const [other] = purchase({ date: '2026-11-20' });
+      fin.payInvoice(ctx, invoiceOf('2026-10').id);
+      const moved = fin.updateTransaction(ctx, other!.id, { date: '2026-10-22' });
+      expect(moved.rolledToInvoice?.referenceMonth).toBe('2026-11');
+    });
+
+    it('editar a série não tira da fatura paga o que já estava lá', () => {
+      const [first, second] = purchase({ recurrence: { rrule: 'FREQ=MONTHLY' } });
+      fin.payInvoice(ctx, invoiceOf('2026-11').id);
+      fin.updateTransaction(ctx, first!.id, { description: 'Nova', scope: 'future' });
+      expect(fin.listTransactions(ctx, {}).find((t) => t.id === second!.id)!.invoiceId).toBe(
+        invoiceOf('2026-11').id
+      );
+    });
+  });
+
+  describe('previsão com fatura sem conta pagadora', () => {
+    let orphan: AccountResponse;
+    beforeEach(() => {
+      orphan = fin.createAccount(ctx, {
+        name: 'Sem pagadora',
+        type: 'CREDIT_CARD',
+        initialBalanceCents: 0,
+        closingDay: 25,
+        dueDay: 5,
+      });
+    });
+
+    it('usa a primeira conta ativa e devolve a fatura para o aviso', () => {
+      purchase({ accountId: orphan.id, amountCents: 300_00 });
+      const forecast = rep.forecast(ctx, 30);
+      expect(forecast.days.find((d) => d.date === '2026-11-05')!.byAccount[checking.id]).toBe(
+        700_00
+      );
+      expect(forecast.unassignedInvoices).toEqual([
+        expect.objectContaining({
+          accountId: orphan.id,
+          cardName: 'Sem pagadora',
+          dueDate: '2026-11-05',
+          totalCents: 300_00,
+          payerAccountId: checking.id,
+        }),
+      ]);
+    });
+
+    it('conta pagadora arquivada conta como sem pagadora', () => {
+      const other = fin.createAccount(ctx, {
+        name: 'Antiga',
+        type: 'SAVINGS',
+        initialBalanceCents: 0,
+      });
+      fin.updateAccount(ctx, orphan.id, { paymentAccountId: other.id });
+      fin.updateAccount(ctx, other.id, { archived: true });
+      purchase({ accountId: orphan.id });
+      expect(rep.forecast(ctx, 30).unassignedInvoices).toHaveLength(1);
+    });
+
+    it('fatura de quem tem pagadora e fatura fora do período não entram no aviso', () => {
+      purchase();
+      purchase({ accountId: orphan.id, date: '2027-01-20' });
+      expect(rep.forecast(ctx, 30).unassignedInvoices).toEqual([]);
+    });
+  });
+
+  it('apagar a conta pagadora limpa o cartão', () => {
+    const payer = fin.createAccount(ctx, { name: 'Pagadora', type: 'CHECKING', initialBalanceCents: 0 });
+    fin.updateAccount(ctx, card.id, { paymentAccountId: payer.id });
+    fin.deleteAccount(ctx, payer.id);
+    expect(account(card.id).paymentAccountId).toBeNull();
+  });
+
+  describe('categoria apagada', () => {
+    it('sai do modelo da recorrência', () => {
+      const own = cat.createCategory(ctx, { name: 'Própria', kind: 'EXPENSE' });
+      purchase({
+        accountId: checking.id,
+        categoryId: own.id,
+        recurrence: { rrule: 'FREQ=MONTHLY' },
+      });
+      cat.deleteCategory(ctx, own.id);
+      const [row] = ctx.db.select().from(recurrences).all();
+      expect((row!.template as { categoryId: string | null }).categoryId).toBeNull();
+    });
+
+    it('a extensão não recria a categoria apagada de um modelo antigo', () => {
+      const own = cat.createCategory(ctx, { name: 'Própria', kind: 'EXPENSE' });
+      purchase({
+        accountId: checking.id,
+        categoryId: own.id,
+        recurrence: { rrule: 'FREQ=MONTHLY' },
+      });
+      const [row] = ctx.db.select().from(recurrences).all();
+      ctx.db
+        .update(categories)
+        .set({ deletedAt: Date.now() })
+        .where(eq(categories.id, own.id))
+        .run();
+      expect((row!.template as { categoryId: string }).categoryId).toBe(own.id);
+      vi.setSystemTime(new Date('2027-01-20T12:00:00Z'));
+      fin.extendRecurrences(ctx);
+      const generated = fin.listTransactions(ctx, { from: '2027-11-01' });
+      expect(generated.length).toBeGreaterThan(0);
+      expect(generated.every((t) => t.categoryId === null)).toBe(true);
+    });
+  });
+
+  describe('parcelado com escopo', () => {
+    const parcels = () =>
+      fin
+        .listTransactions(ctx, {})
+        .filter((t) => t.installmentGroupId)
+        .sort((a, b) => (a.installmentNumber ?? 0) - (b.installmentNumber ?? 0));
+    const buy = () => purchase({ amountCents: 100_00, description: 'Fone', installments: 3 });
+
+    it('apaga esta, esta e seguintes, ou todas', () => {
+      const [, second] = buy();
+      fin.deleteTransaction(ctx, second!.id, 'single');
+      expect(parcels().map((t) => t.installmentNumber)).toEqual([1, 3]);
+      ctx.db.update(transactions).set({ deletedAt: Date.now() }).run();
+
+      const [, again] = buy();
+      fin.deleteTransaction(ctx, again!.id, 'future');
+      expect(parcels().map((t) => t.installmentNumber)).toEqual([1]);
+      ctx.db.update(transactions).set({ deletedAt: Date.now() }).run();
+
+      const [, third] = buy();
+      fin.deleteTransaction(ctx, third!.id, 'all');
+      expect(parcels()).toEqual([]);
+    });
+
+    it('edita esta e seguintes, ou todas, sem refazer os centavos das outras', () => {
+      const [first, second] = purchase({
+        amountCents: 100_00,
+        description: 'Fone',
+        installments: 3,
+      });
+      expect(parcels().map((t) => t.amountCents)).toEqual([33_34, 33_33, 33_33]);
+      fin.updateTransaction(ctx, second!.id, { description: 'Fone novo', scope: 'future' });
+      expect(parcels().map((t) => t.description)).toEqual(['Fone', 'Fone novo', 'Fone novo']);
+      expect(parcels().map((t) => t.amountCents)).toEqual([33_34, 33_33, 33_33]);
+
+      fin.updateTransaction(ctx, first!.id, { notes: 'Presente', scope: 'all' });
+      expect(parcels().map((t) => t.notes)).toEqual(['Presente', 'Presente', 'Presente']);
+
+      fin.updateTransaction(ctx, second!.id, { amountCents: 40_00, scope: 'single' });
+      expect(parcels().map((t) => t.amountCents)).toEqual([33_34, 40_00, 33_33]);
+    });
+
+    it('a parcela de fatura paga não muda nem some', () => {
+      const [first, second] = buy();
+      fin.payInvoice(ctx, invoiceOf('2026-10').id);
+      expect(
+        fin.updateTransaction(ctx, second!.id, { amountCents: 50_00, scope: 'all' })
+          .keptInPaidInvoices
+      ).toBe(1);
+      expect(parcels().map((t) => t.amountCents)).toEqual([33_34, 50_00, 50_00]);
+      expect(fin.deleteTransaction(ctx, second!.id, 'all')).toEqual({ keptInPaidInvoices: 1 });
+      expect(parcels().map((t) => t.id)).toEqual([first!.id]);
+      expect(invoiceOf('2026-10').totalCents).toBe(33_34);
+    });
+
+    it('todas não vale para recorrência', () => {
+      const [tx] = purchase({ recurrence: { rrule: 'FREQ=MONTHLY' } });
+      expectStatus(() => fin.deleteTransaction(ctx, tx!.id, 'all'), 400);
+      expectStatus(() => fin.updateTransaction(ctx, tx!.id, { notes: 'x', scope: 'all' }), 400);
+    });
+
+    it('a entrada do RPC aceita o escopo todas', () => {
+      const [first] = buy();
+      handlers(ctx as never)['transactions.update']({ id: first!.id, notes: 'y', scope: 'all' });
+      expect(parcels().every((t) => t.notes === 'y')).toBe(true);
+    });
+  });
+
+  describe('total não pago dos cartões', () => {
+    it('soma fechada, vencida e a atual, sem as futuras', () => {
+      vi.setSystemTime(new Date('2026-09-10T15:00:00Z'));
+      purchase({ date: '2026-08-10', amountCents: 10_00 }); // venceu em 05/09
+      purchase({ date: '2026-08-28', amountCents: 20_00 }); // fecha em 25/09: aberta atual
+      purchase({ date: '2026-10-10', amountCents: 40_00 }); // futura
+      expect(account(card.id)).toMatchObject({
+        openInvoiceCents: 20_00,
+        unpaidInvoiceCents: 30_00,
+        overdueInvoiceCents: 10_00,
+      });
+      vi.setSystemTime(new Date('2026-09-28T15:00:00Z'));
+      expect(account(card.id)).toMatchObject({
+        unpaidInvoiceCents: 70_00,
+        overdueInvoiceCents: 10_00,
+      });
+    });
+
+    it('fatura paga sai do total; conta sem cartão fica nula', () => {
+      purchase();
+      expect(account(card.id).unpaidInvoiceCents).toBe(100_00);
+      fin.payInvoice(ctx, invoiceOf('2026-10').id);
+      expect(account(card.id).unpaidInvoiceCents).toBe(0);
+      expect(account(checking.id).unpaidInvoiceCents).toBeNull();
+    });
+  });
+
+  describe('transferência para cartão', () => {
+    const transfer = () =>
+      fin.createTransactions(ctx, {
+        kind: 'TRANSFER',
+        amountCents: 100_00,
+        date: '2026-10-18',
+        accountId: checking.id,
+        toAccountId: card.id,
+        description: 'Pagamento',
+      });
+
+    it('é recusada, apontando para pagar a fatura', () => {
+      expect(transfer).toThrow(expect.objectContaining({ status: 400, message: expect.stringContaining('Pagar fatura') }));
+    });
+
+    it('mudar o destino para um cartão também é recusado', () => {
+      const savings = fin.createAccount(ctx, { name: 'R', type: 'SAVINGS', initialBalanceCents: 0 });
+      const [tx] = fin.createTransactions(ctx, {
+        kind: 'TRANSFER',
+        amountCents: 100_00,
+        date: '2026-10-18',
+        accountId: checking.id,
+        toAccountId: savings.id,
+        description: 'Guardar',
+      });
+      expectStatus(() => fin.updateTransaction(ctx, tx!.id, { toAccountId: card.id }), 400);
+    });
+
+    it('o pagamento feito por payInvoice segue editável', () => {
+      purchase();
+      const paid = fin.payInvoice(ctx, invoiceOf('2026-10').id);
+      expect(
+        fin.updateTransaction(ctx, paid.paymentTransactionId!, { date: '2026-10-19' }).date
+      ).toBe('2026-10-19');
+    });
+
+    it('transferência antiga para cartão segue editável', () => {
+      const [row] = ctx.db
+        .insert(transactions)
+        .values({
+          id: '00000000-0000-7000-8000-000000000001',
+          createdAt: 1,
+          updatedAt: 1,
+          kind: 'TRANSFER',
+          amountCents: 1_00,
+          date: '2026-10-01',
+          accountId: checking.id,
+          toAccountId: card.id,
+          description: 'Antiga',
+          status: 'DONE',
+        })
+        .returning()
+        .all();
+      expect(fin.updateTransaction(ctx, row!.id, { notes: 'ok' }).notes).toBe('ok');
+    });
+  });
+
+  describe('crédito de estorno', () => {
+    it('fatura negativa leva o crédito para a seguinte', () => {
+      purchase({ amountCents: 20_00 });
+      chargeback(50_00);
+      purchase({ date: '2026-11-10', amountCents: 100_00 });
+
+      expect(invoiceOf('2026-10')).toMatchObject({ totalCents: 0, creditCarriedCents: 30_00 });
+      expect(invoiceOf('2026-11')).toMatchObject({
+        totalCents: 70_00,
+        ownCents: 100_00,
+        creditAppliedCents: 30_00,
+      });
+
+      const paid = fin.payInvoice(ctx, invoiceOf('2026-11').id);
+      expect(paid.totalCents).toBe(70_00);
+      expect(account(checking.id).balanceCents).toBe(930_00);
+      expect(account(card.id).balanceCents).toBe(0);
+    });
+
+    it('a compra futura consome o crédito uma vez só', () => {
+      chargeback(30_00);
+      purchase({ date: '2026-11-10', amountCents: 100_00 });
+      purchase({ date: '2026-12-10', amountCents: 100_00 });
+      fin.payInvoice(ctx, invoiceOf('2026-11').id);
+      expect(invoiceOf('2026-11').totalCents).toBe(70_00);
+      expect(invoiceOf('2026-12').totalCents).toBe(100_00);
+    });
+
+    it('não altera fatura paga: o crédito pula para a próxima em aberto', () => {
+      purchase({ date: '2026-11-10', amountCents: 100_00 });
+      fin.payInvoice(ctx, invoiceOf('2026-11').id);
+      chargeback(30_00, '2026-10-21');
+      purchase({ date: '2026-12-10', amountCents: 100_00 });
+      expect(invoiceOf('2026-11')).toMatchObject({ totalCents: 100_00, status: 'PAID' });
+      expect(invoiceOf('2026-12').totalCents).toBe(70_00);
+    });
+
+    it('estorno depois de pagar entra na próxima fatura', () => {
+      purchase({ amountCents: 100_00 });
+      fin.payInvoice(ctx, invoiceOf('2026-10').id);
+      const [back] = chargeback(30_00);
+      expect(back!.rolledToInvoice?.referenceMonth).toBe('2026-11');
+      expect(invoiceOf('2026-10').totalCents).toBe(100_00);
+      expect(invoiceOf('2026-11')).toMatchObject({ totalCents: 0, creditCarriedCents: 30_00 });
+    });
+
+    it('a previsão e os totais do cartão contam o valor com o crédito', () => {
+      chargeback(30_00);
+      purchase({ date: '2026-11-10', amountCents: 100_00 });
+      expect(rep.forecast(ctx, 90).days.at(-1)!.byAccount[checking.id]).toBe(930_00);
+      expect(fin.listDueInvoices(ctx, {}).map((i) => i.totalCents)).toEqual([70_00]);
+    });
+  });
+
+  describe('entrada do RPC', () => {
+    const rpc = () => handlers(ctx as never);
+
+    it('invoices.pay valida o corpo', () => {
+      purchase();
+      const id = invoiceOf('2026-10').id;
+      expectStatus(() => rpc()['invoices.pay']({ id, date: 'ontem' }), 400);
+      expectStatus(() => rpc()['invoices.pay']({ id: 'x' }), 400);
+      expectStatus(() => rpc()['invoices.pay'](undefined as never), 400);
+      expect(rpc()['invoices.pay']({ id }).status).toBe('PAID');
+    });
+
+    it('entrada ausente é 400, em português', () => {
+      expect(() => rpc()['transactions.list'](undefined as never)).toThrow(
+        expect.objectContaining({ status: 400, message: 'Dados inválidos.' })
+      );
+      expectStatus(() => rpc()['reports.month'](undefined as never), 400);
+      expectStatus(() => rpc()['reports.month']({ month: 'x' }), 400);
+      expect(rpc()['transactions.list']({})).toEqual([]);
+    });
+  });
+
+  it('mensagens de não encontrado têm o gênero certo', () => {
+    expect(() => fin.ownedAccount(ctx, 'x')).toThrow('Conta não encontrada.');
+    expect(() => fin.deleteTransaction(ctx, 'x')).toThrow('Lançamento não encontrado.');
   });
 });

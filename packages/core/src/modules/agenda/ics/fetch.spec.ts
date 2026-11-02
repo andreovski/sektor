@@ -16,6 +16,7 @@ describe('normalizeIcsUrl', () => {
       normalizeIcsUrl(' webcal://outlook.office365.com/owa/calendar/x/reachcalendar.ics ')
     ).toBe('https://outlook.office365.com/owa/calendar/x/reachcalendar.ics');
     expect(normalizeIcsUrl('https://example.com/a.ics')).toBe('https://example.com/a.ics');
+    expect(normalizeIcsUrl('http://example.com/a.ics')).toBeNull();
     expect(normalizeIcsUrl('file:///etc/passwd')).toBeNull();
     expect(normalizeIcsUrl('ftp://example.com/a.ics')).toBeNull();
     expect(normalizeIcsUrl('https://user:senha@example.com/a.ics')).toBeNull();
@@ -69,6 +70,7 @@ describe('fetchIcs', () => {
       if (req.url === '/some') return res.writeHead(404).end();
       if (req.url === '/volta') return res.writeHead(302, { location: '/ok' }).end();
       if (req.url === '/laco') return res.writeHead(302, { location: '/laco' }).end();
+      if (req.url === '/http') return res.writeHead(302, { location: 'http://8.8.8.8/a.ics' }).end();
       if (req.url === '/interno') {
         return res.writeHead(302, { location: 'http://169.254.169.254/x' }).end();
       }
@@ -97,6 +99,11 @@ describe('fetchIcs', () => {
     ]) {
       await expect(fetchIcs(link), link).rejects.toThrow('Esse endereço não é público.');
     }
+  });
+
+  it('recusa http público, mesmo vindo de redirecionamento', async () => {
+    await expect(fetchIcs('http://8.8.8.8/a.ics')).rejects.toThrow('precisa usar https');
+    await expect(fetchIcs(`${base}/http`, open())).rejects.toThrow('precisa usar https');
   });
 
   it('o lookup da conexão recusa nome que resolve para a rede interna', async () => {

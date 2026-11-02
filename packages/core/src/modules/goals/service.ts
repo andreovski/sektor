@@ -56,7 +56,7 @@ function readProject(ctx: Ctx, id: string): SourceRead | null {
   if (!project) return null;
   const tasks = ctx.db.get<{ done: number | null }>(
     sql`SELECT SUM(completed_at IS NOT NULL) AS done FROM tasks
-        WHERE project_id = ${id} AND deleted_at IS NULL`
+        WHERE project_id = ${id} AND parent_task_id IS NULL AND deleted_at IS NULL`
   );
   return { label: project.label, value: tasks.done ?? 0 };
 }
@@ -121,7 +121,8 @@ export function goalSources(ctx: Ctx) {
       ? ctx.db.all<{ id: string; label: string; total: number }>(
           sql`SELECT p.id, p.${projectLabelColumn(ctx)} AS label,
                 (SELECT COUNT(*) FROM tasks t
-                  WHERE t.project_id = p.id AND t.deleted_at IS NULL) AS total
+                  WHERE t.project_id = p.id AND t.parent_task_id IS NULL
+                    AND t.deleted_at IS NULL) AS total
               FROM projects p WHERE p.deleted_at IS NULL ORDER BY label`
         )
       : [];
@@ -192,15 +193,19 @@ function ownedGoal(ctx: Ctx, id: string) {
     .from(goals)
     .where(and(eq(goals.id, id), liveGoal))
     .get();
-  if (!row) throw notFound('Meta');
+  if (!row) throw notFound('Meta não encontrada.');
   return row;
 }
 
 function columns(ctx: Ctx, body: GoalBody) {
   const linked = body.source !== 'MANUAL';
   if (linked && !readSource(ctx, body.source, body.sourceId ?? null)) {
-    const names = { PROJECT_TASKS: 'Projeto', HABIT_STREAK: 'Hábito', ACCOUNT_BALANCE: 'Conta' };
-    throw notFound(names[body.source as keyof typeof names]);
+    const messages = {
+      PROJECT_TASKS: 'Projeto não encontrado.',
+      HABIT_STREAK: 'Hábito não encontrado.',
+      ACCOUNT_BALANCE: 'Conta não encontrada.',
+    };
+    throw notFound(messages[body.source as keyof typeof messages]);
   }
   const unit = SOURCE_UNIT[body.source] ?? body.unit;
   if (unit === MONEY_UNIT && !Number.isInteger(body.target)) {

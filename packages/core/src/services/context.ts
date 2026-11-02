@@ -10,7 +10,7 @@ export interface Ctx {
 
 export const todayIn = (ctx: Ctx, now = new Date()) => dateStringInZone(now, ctx.timeZone);
 
-/** Erro de regra: `status` segue os códigos HTTP do JP, que a tela já sabe mostrar. */
+/** Erro de regra: `status` segue os códigos HTTP, que a tela já sabe mostrar. */
 export class AppError extends Error {
   constructor(
     public readonly status: number,
@@ -20,7 +20,7 @@ export class AppError extends Error {
   }
 }
 
-export const notFound = (what: string) => new AppError(404, `${what} não encontrado(a).`);
+export const notFound = (message: string) => new AppError(404, message);
 
 /** UUID v7: ordena pelo tempo, o que ajuda índices e a sincronização. */
 export function newId(now = Date.now()): string {

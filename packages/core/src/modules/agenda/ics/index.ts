@@ -221,7 +221,7 @@ export async function replaceIcsUrl(
   fetcher: IcsFetcher = fetchIcs
 ) {
   const calendar = findCalendar(ctx, id);
-  if (calendar.source !== 'ICS') throw notFound('Agenda');
+  if (calendar.source !== 'ICS') throw notFound('Agenda não encontrada.');
   const url = parseUrl(input);
   if (url === ctx.secrets.get(secretName(id))) return;
   assertNotDuplicate(ctx, url, id);
@@ -243,7 +243,7 @@ export function removeIcsSecret(ctx: Ctx, id: string) {
 
 export async function syncNow(ctx: Ctx, id: string, fetcher: IcsFetcher = fetchIcs) {
   const calendar = findCalendar(ctx, id);
-  if (calendar.source !== 'ICS') throw notFound('Agenda');
+  if (calendar.source !== 'ICS') throw notFound('Agenda não encontrada.');
   await syncIcsCalendar(ctx, calendar, fetcher);
 }
 

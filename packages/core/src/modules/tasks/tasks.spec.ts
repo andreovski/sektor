@@ -334,4 +334,86 @@ describe('tarefas', () => {
       expectStatus(() => svc.getProject(ctx, project.id), 404);
     });
   });
+
+  it('captura grava a hora do prazo', () => {
+    const task = svc.captureTask(ctx, { text: 'entregar relatório amanhã 15h' });
+    expect(task).toMatchObject({
+      title: 'entregar relatório',
+      dueDate: '2026-10-19',
+      dueTime: '15:00',
+    });
+    const today = svc.captureTask(ctx, { text: 'ligar 9h', defaultDueDate: '2026-10-18' });
+    expect(today).toMatchObject({ title: 'ligar', dueDate: '2026-10-18', dueTime: '09:00' });
+  });
+
+  describe('recorrente', () => {
+    const repeat = (over = {}) =>
+      svc.createTask(ctx, { title: 'Pagar', dueDate: '2026-10-20', rrule: 'FREQ=WEEKLY', ...over });
+    const open = () =>
+      ctx.db
+        .select()
+        .from(tasks)
+        .all()
+        .filter((t) => !t.deletedAt && !t.completedAt)
+        .map((t) => t.dueDate);
+
+    it('concluir, reabrir e concluir não duplica a próxima', () => {
+      const task = repeat();
+      expect(svc.completeTask(ctx, task.id).next?.dueDate).toBe('2026-10-27');
+      svc.reopenTask(ctx, task.id);
+      expect(open()).toEqual(['2026-10-20']);
+      svc.completeTask(ctx, task.id);
+      expect(open()).toEqual(['2026-10-27']);
+    });
+
+    it('reabrir pelo updateTask remove a próxima intacta', () => {
+      const task = repeat();
+      svc.updateTask(ctx, task.id, { completed: true });
+      svc.updateTask(ctx, task.id, { completed: false });
+      expect(open()).toEqual(['2026-10-20']);
+    });
+
+    it('a próxima mexida fica, e concluir de novo a reaproveita', () => {
+      const task = repeat();
+      const next = svc.completeTask(ctx, task.id).next!;
+      vi.setSystemTime(NOW.getTime() + 1000);
+      svc.updateTask(ctx, next.id, { title: 'Pagar a luz' });
+      svc.reopenTask(ctx, task.id);
+      expect(open().sort()).toEqual(['2026-10-20', '2026-10-27']);
+      expect(svc.completeTask(ctx, task.id).next?.id).toBe(next.id);
+      expect(open()).toEqual(['2026-10-27']);
+    });
+
+    it('as subtarefas da próxima saem junto', () => {
+      const task = repeat();
+      svc.createTask(ctx, { title: 'Sub', parentTaskId: task.id });
+      svc.completeTask(ctx, task.id);
+      svc.reopenTask(ctx, task.id);
+      expect(open().filter(Boolean)).toEqual(['2026-10-20']);
+      const live = ctx.db.select().from(tasks).all().filter((t) => !t.deletedAt);
+      expect(live.map((t) => t.title).sort()).toEqual(['Pagar', 'Sub']);
+    });
+
+    it('mensal no dia 31 volta ao dia original depois do mês curto', () => {
+      const dates: (string | null)[] = [];
+      let id = svc.createTask(ctx, {
+        title: 'Aluguel',
+        dueDate: '2026-12-31',
+        rrule: 'FREQ=MONTHLY',
+      }).id;
+      for (let i = 0; i < 4; i++) {
+        const next = svc.completeTask(ctx, id).next!;
+        dates.push(next.dueDate);
+        id = next.id;
+      }
+      expect(dates).toEqual(['2027-01-31', '2027-02-28', '2027-03-31', '2027-04-30']);
+    });
+
+    it('mudar o prazo muda a âncora', () => {
+      const task = repeat({ dueDate: '2026-12-31', rrule: 'FREQ=MONTHLY' });
+      const next = svc.completeTask(ctx, task.id).next!;
+      svc.updateTask(ctx, next.id, { dueDate: '2027-02-10' });
+      expect(svc.completeTask(ctx, next.id).next?.dueDate).toBe('2027-03-10');
+    });
+  });
 });

@@ -5,20 +5,33 @@ import type {
   UpsertBudgetBody,
 } from '@sektor/contract';
 import {
+  addDays,
   addMonthsToMonth,
   budgetLevel,
   type LedgerTransaction,
   monthRange,
   projectBalances,
 } from '@sektor/finance-engine';
-import { and, eq, gte, inArray, isNull, lte } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, isNull, lte } from 'drizzle-orm';
 
 import { accounts, budgets, categories, invoices, transactions } from '../db/schema';
 
 import { AppError, type Ctx, notFound, stamp, todayIn } from './context';
-import { invoiceTotal, toLedgerAccount, toLedgerTx } from './finance';
+import { invoiceBalances, toLedgerAccount, toLedgerTx } from './finance';
 
 type Transaction = typeof transactions.$inferSelect;
+
+/** Fatura do período cujo cartão não tem conta pagadora ativa. */
+export interface UnassignedInvoice {
+  invoiceId: string;
+  accountId: string;
+  cardName: string;
+  referenceMonth: string;
+  dueDate: string;
+  totalCents: number;
+  /** Conta em que a previsão a contou. Nula quando não há conta nenhuma. */
+  payerAccountId: string | null;
+}
 
 function monthTransactions(ctx: Ctx, month: string) {
   const { first, last } = monthRange(month);
@@ -78,15 +91,20 @@ export function monthSummary(ctx: Ctx, month: string): MonthSummaryResponse {
 
 /**
  * Saldo dia a dia. Além dos previstos, cada fatura não paga entra como uma transferência prevista
- * da conta de pagamento para o cartão no vencimento.
+ * da conta de pagamento para o cartão no vencimento. Cartão sem conta pagadora ativa cai na primeira
+ * conta ativa, e a fatura volta em `unassignedInvoices` para a tela avisar.
  */
-export function forecast(ctx: Ctx, days: number): ForecastResponse {
+export function forecast(
+  ctx: Ctx,
+  days: number
+): ForecastResponse & { unassignedInvoices: UnassignedInvoice[] } {
   if (![30, 90, 365].includes(days)) throw new AppError(400, 'Período inválido.');
   const start = todayIn(ctx);
   const open = ctx.db
     .select()
     .from(accounts)
     .where(and(isNull(accounts.deletedAt), isNull(accounts.archivedAt)))
+    .orderBy(asc(accounts.type), asc(accounts.createdAt))
     .all();
   const ledger: LedgerTransaction[] = ctx.db
     .select()
@@ -95,20 +113,34 @@ export function forecast(ctx: Ctx, days: number): ForecastResponse {
     .all()
     .map(toLedgerTx);
   const ids = new Set(open.map((a) => a.id));
+  const fallback = open.find((a) => a.type !== 'CREDIT_CARD')?.id ?? null;
+  const lastDay = addDays(start, days - 1);
   const unpaid = ctx.db
-    .select({ invoice: invoices, payer: accounts.paymentAccountId })
+    .select({ invoice: invoices, card: accounts })
     .from(invoices)
     .innerJoin(accounts, eq(accounts.id, invoices.accountId))
     .where(and(isNull(invoices.deletedAt), isNull(invoices.paidAt)))
     .all();
-  for (const { invoice, payer } of unpaid) {
-    const items = ctx.db
-      .select()
-      .from(transactions)
-      .where(and(eq(transactions.invoiceId, invoice.id), isNull(transactions.deletedAt)))
-      .all();
-    const total = invoiceTotal(items);
-    if (total <= 0 || !payer || !ids.has(payer)) continue;
+  const balances = new Map<string, ReturnType<typeof invoiceBalances>>();
+  const unassignedInvoices: UnassignedInvoice[] = [];
+  for (const { invoice, card } of unpaid) {
+    if (!balances.has(card.id)) balances.set(card.id, invoiceBalances(ctx, card.id));
+    const total = balances.get(card.id)!.get(invoice.id)!.totalCents;
+    if (total <= 0) continue;
+    const assigned = card.paymentAccountId && ids.has(card.paymentAccountId);
+    const payer = assigned ? card.paymentAccountId : fallback;
+    if (!assigned && invoice.dueDate <= lastDay) {
+      unassignedInvoices.push({
+        invoiceId: invoice.id,
+        accountId: card.id,
+        cardName: card.name,
+        referenceMonth: invoice.referenceMonth,
+        dueDate: invoice.dueDate,
+        totalCents: total,
+        payerAccountId: payer,
+      });
+    }
+    if (!payer) continue;
     ledger.push({
       kind: 'TRANSFER',
       amountCents: total,
@@ -119,7 +151,8 @@ export function forecast(ctx: Ctx, days: number): ForecastResponse {
     });
   }
   const result = projectBalances(open.map(toLedgerAccount), ledger, start, days);
-  return { start, days: result.days, firstNegative: result.firstNegative };
+  unassignedInvoices.sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+  return { start, days: result.days, firstNegative: result.firstNegative, unassignedInvoices };
 }
 
 // ---------------------------------------------------------------- orçamentos
@@ -182,7 +215,7 @@ export function upsertBudget(ctx: Ctx, body: UpsertBudgetBody) {
     .from(categories)
     .where(and(eq(categories.id, body.categoryId), isNull(categories.deletedAt)))
     .get();
-  if (!category) throw notFound('Categoria');
+  if (!category) throw notFound('Categoria não encontrada.');
   if (category.kind !== 'EXPENSE') throw new AppError(400, 'Orçamento é só para despesas.');
   writeBudget(ctx, body.categoryId, body.month, body.limitCents);
   return budgetStatuses(ctx, body.month).find((s) => s.categoryId === body.categoryId)!;
@@ -210,5 +243,5 @@ export function deleteBudget(ctx: Ctx, id: string) {
     .set({ deletedAt: Date.now(), updatedAt: Date.now() })
     .where(and(eq(budgets.id, id), isNull(budgets.deletedAt)))
     .run();
-  if (changes === 0) throw notFound('Orçamento');
+  if (changes === 0) throw notFound('Orçamento não encontrado.');
 }

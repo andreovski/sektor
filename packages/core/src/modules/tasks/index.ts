@@ -28,7 +28,7 @@ import * as svc from './service';
 
 export { type ParsedCapture, parseCapture } from './capture';
 export type * from './contract';
-export { getProject, getTask, listProjects, listTasks } from './service';
+export { getProject, getTask, listProjects, listTasks, seriesLinks } from './service';
 
 export const handlers = (ctx: AppCtx) => {
   svc.inboxId(ctx);

@@ -1,10 +1,19 @@
-import { Minus, Plus, Repeat } from 'lucide-react';
+import { CreditCard, Minus, Plus, Repeat } from 'lucide-react';
 import { createContext, type ReactNode, useContext, useMemo, useState } from 'react';
+import { toast } from 'sonner';
 
 import { money, todayString } from '../../lib/format';
-import { useRpcMutation } from '../../lib/rpc';
+import { useRpc, useRpcMutation } from '../../lib/rpc';
 import { Button, cn, Dialog, Field, Input, Segmented, Select, Textarea } from '../../ui';
-import { CategorySelect, ConfirmDialog, MoneyInput, SwitchRow, useAccounts, useCategories } from './parts';
+import {
+  CategorySelect,
+  ConfirmDialog,
+  invoiceName,
+  MoneyInput,
+  SwitchRow,
+  useAccounts,
+  useCategories,
+} from './parts';
 import {
   defaultDone,
   installmentPreview,
@@ -66,6 +75,60 @@ function describeRule(rule: string) {
   return 'Repete';
 }
 
+type Scope = 'single' | 'future' | 'all';
+
+/** Avisa quando a compra caiu em outra fatura ou quando parcelas pagas ficaram como estavam. */
+function noticeAfterSave(saved: { rolledToInvoice?: { referenceMonth: string }; keptInPaidInvoices?: number }[]) {
+  const rolled = saved.find((tx) => tx.rolledToInvoice)?.rolledToInvoice;
+  if (rolled) toast.info(`Entrou na ${invoiceName(rolled).toLowerCase()}: a do ciclo já estava paga.`);
+  noticeKept(saved[0]?.keptInPaidInvoices);
+}
+
+function noticeKept(kept = 0) {
+  if (kept > 0) toast.info(kept === 1 ? 'A parcela de fatura paga ficou como estava.' : `${kept} parcelas de faturas pagas ficaram como estavam.`);
+}
+
+/** Transferência não quita fatura: aqui a pessoa paga a fatura mais antiga em aberto. */
+function PayCardHint({
+  cardId,
+  fromAccount,
+  date,
+  onPaid,
+}: {
+  cardId: string;
+  fromAccount?: { id: string; type: string };
+  date: string;
+  onPaid(): void;
+}) {
+  const invoices = useRpc('accounts.invoices', { id: cardId });
+  const pay = useRpcMutation('invoices.pay');
+  const oldest = (invoices.data ?? []).filter((i) => i.status !== 'PAID' && i.totalCents > 0).at(-1);
+  const fromCard = fromAccount?.type === 'CREDIT_CARD';
+  return (
+    <div className="flex flex-col gap-2 rounded-control border border-line p-3">
+      <p className="flex items-center gap-2 text-sm">
+        <CreditCard size={14} className="shrink-0 text-muted" />
+        Cartão se paga pela fatura: uma transferência não a quitaria.
+      </p>
+      {oldest ? (
+        <Button
+          disabled={pay.isPending || !fromAccount || fromCard}
+          onClick={() =>
+            pay.mutateAsync({ id: oldest.id, fromAccountId: fromAccount!.id, date }).then(onPaid, () => {})
+          }
+        >
+          Pagar {invoiceName(oldest).toLowerCase()}, {money(oldest.totalCents)}
+        </Button>
+      ) : (
+        <p className="text-xs text-subtle">Este cartão não tem fatura a pagar agora.</p>
+      )}
+      {oldest && fromCard && (
+        <p className="text-xs text-subtle">Escolha em "De" uma conta que não seja cartão.</p>
+      )}
+    </div>
+  );
+}
+
 function TransactionDialog({
   transaction,
   defaults,
@@ -108,6 +171,11 @@ function TransactionDialog({
 
   const effectiveAccount = accountId || firstAccount?.id || '';
   const recurring = Boolean(transaction?.recurrenceId);
+  const parcelled = Boolean(transaction?.installmentGroupId);
+  const onCard = accounts.find((a) => a.id === effectiveAccount)?.type === 'CREDIT_CARD';
+  const toCard = accounts.find((a) => a.id === toAccountId)?.type === 'CREDIT_CARD';
+  // Pagamento já feito e transferência antiga continuam editáveis.
+  const blockedCardTransfer = kind === 'TRANSFER' && toCard && toAccountId !== transaction?.toAccountId;
   const busy = create.isPending || update.isPending || remove.isPending;
   const isInstallments = repetition === 'installments';
   const valueIsPart = isInstallments && perInstallment;
@@ -120,11 +188,12 @@ function TransactionDialog({
     if (!effectiveAccount) return 'Crie uma conta antes de lançar.';
     if (kind === 'TRANSFER' && (!toAccountId || toAccountId === effectiveAccount))
       return 'Escolha a conta de destino.';
+    if (blockedCardTransfer) return 'Para pagar o cartão, use "Pagar fatura".';
     return '';
   }
 
   // Erro da mutação já vira toast; aqui só não fechamos o diálogo.
-  async function save(scope: 'single' | 'future' = 'single') {
+  async function save(scope: Scope = 'single') {
     const fields = {
       amountCents: totalCents,
       description: description.trim(),
@@ -135,13 +204,17 @@ function TransactionDialog({
       notes: notes.trim() || null,
       status: done ? ('DONE' as const) : ('PLANNED' as const),
     };
-    if (transaction) await update.mutateAsync({ id: transaction.id, ...fields, scope });
-    else await create.mutateAsync({ kind, ...fields, ...repetitionFields(repetition, installments) });
+    noticeAfterSave(
+      transaction
+        ? [await update.mutateAsync({ id: transaction.id, ...fields, scope })]
+        : await create.mutateAsync({ kind, ...fields, ...repetitionFields(repetition, installments) })
+    );
     onClose();
   }
 
-  async function destroy(scope: 'single' | 'future' = 'single') {
-    await remove.mutateAsync({ id: transaction!.id, scope });
+  async function destroy(scope: Scope = 'single') {
+    const { keptInPaidInvoices } = await remove.mutateAsync({ id: transaction!.id, scope });
+    noticeKept(keptInPaidInvoices);
     onClose();
   }
 
@@ -149,7 +222,7 @@ function TransactionDialog({
     const message = problem();
     setError(message);
     if (message || busy) return;
-    if (recurring) setPending('save');
+    if (recurring || parcelled) setPending('save');
     else save().catch(() => {});
   }
 
@@ -252,15 +325,27 @@ function TransactionDialog({
               />
             </Field>
           </div>
-          <SwitchRow
-            label={doneLabel}
-            hint="Efetivada entra no saldo; prevista só na previsão."
-            checked={done}
-            onChange={(value) => {
-              setDone(value);
-              setDoneTouched(true);
-            }}
-          />
+          {blockedCardTransfer && (
+            <PayCardHint
+              cardId={toAccountId}
+              fromAccount={accounts.find((a) => a.id === effectiveAccount)}
+              date={date}
+              onPaid={onClose}
+            />
+          )}
+          {onCard ? (
+            <p className="text-xs text-subtle">No cartão, o lançamento entra direto na fatura.</p>
+          ) : (
+            <SwitchRow
+              label={doneLabel}
+              hint="Efetivada entra no saldo; prevista só na previsão."
+              checked={done}
+              onChange={(value) => {
+                setDone(value);
+                setDoneTouched(true);
+              }}
+            />
+          )}
           {!transaction && (
             <Field label="Repetição">
               <Select
@@ -341,7 +426,9 @@ function TransactionDialog({
               <Button
                 variant="danger"
                 disabled={busy}
-                onClick={() => (recurring ? setPending('delete') : destroy().catch(() => {}))}
+                onClick={() =>
+                  recurring || parcelled ? setPending('delete') : destroy().catch(() => {})
+                }
               >
                 Apagar
               </Button>
@@ -355,24 +442,42 @@ function TransactionDialog({
       <ConfirmDialog
         open={pending === 'save'}
         onOpenChange={(open) => !open && setPending(null)}
-        title="Este lançamento se repete"
-        actions={[
-          { label: 'Só este', onSelect: () => save('single').catch(() => {}) },
-          { label: 'Este e os próximos', onSelect: () => save('future').catch(() => {}) },
-        ]}
+        title={parcelled ? `Parcela ${transaction?.installmentNumber} de ${transaction?.installmentTotal}` : 'Este lançamento se repete'}
+        message={parcelled ? 'Parcela de fatura paga fica como está.' : undefined}
+        actions={
+          parcelled
+            ? [
+                { label: 'Só esta', onSelect: () => save('single').catch(() => {}) },
+                { label: 'Esta e as seguintes', onSelect: () => save('future').catch(() => {}) },
+                { label: 'Todas', onSelect: () => save('all').catch(() => {}) },
+              ]
+            : [
+                { label: 'Só este', onSelect: () => save('single').catch(() => {}) },
+                { label: 'Este e os próximos', onSelect: () => save('future').catch(() => {}) },
+              ]
+        }
       />
       <ConfirmDialog
         open={pending === 'delete'}
         onOpenChange={(open) => !open && setPending(null)}
-        title="Este lançamento se repete"
-        actions={[
-          { label: 'Apagar só este', danger: true, onSelect: () => destroy('single').catch(() => {}) },
-          {
-            label: 'Apagar este e os próximos',
-            danger: true,
-            onSelect: () => destroy('future').catch(() => {}),
-          },
-        ]}
+        title={parcelled ? `Parcela ${transaction?.installmentNumber} de ${transaction?.installmentTotal}` : 'Este lançamento se repete'}
+        message={parcelled ? 'Parcela de fatura paga fica como está.' : undefined}
+        actions={
+          parcelled
+            ? [
+                { label: 'Apagar só esta', danger: true, onSelect: () => destroy('single').catch(() => {}) },
+                { label: 'Apagar esta e as seguintes', danger: true, onSelect: () => destroy('future').catch(() => {}) },
+                { label: 'Apagar todas', danger: true, onSelect: () => destroy('all').catch(() => {}) },
+              ]
+            : [
+                { label: 'Apagar só este', danger: true, onSelect: () => destroy('single').catch(() => {}) },
+                {
+                  label: 'Apagar este e os próximos',
+                  danger: true,
+                  onSelect: () => destroy('future').catch(() => {}),
+                },
+              ]
+        }
       />
     </>
   );

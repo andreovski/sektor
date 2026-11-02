@@ -9,6 +9,7 @@ import {
   LayoutGrid,
   type LucideIcon,
   Repeat2,
+  Settings,
   Target,
   Timer,
   Wallet,
@@ -28,6 +29,7 @@ const ITEMS: { to: string; label: string; icon: LucideIcon }[] = [
   { to: '/foco', label: 'Foco', icon: Timer },
   { to: '/revisao', label: 'Revisão', icon: CalendarCheck },
   { to: '/lembretes', label: 'Lembretes', icon: Bell },
+  { to: '/ajustes', label: 'Ajustes', icon: Settings },
 ];
 
 function Dock() {

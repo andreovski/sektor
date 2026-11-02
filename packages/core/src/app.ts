@@ -2,6 +2,13 @@ import type { KeyStore } from './bank/client';
 import { type DbHandle, openDatabase } from './db/client';
 import { appMeta } from './db/schema';
 import { handlers as agenda, jobs as agendaJobs } from './modules/agenda';
+import {
+  chooseFolder,
+  type DbStore,
+  handlers as backup,
+  jobs as backupJobs,
+  savedTimeZone,
+} from './modules/backup';
 import { handlers as finance, jobs as financeJobs } from './modules/finance';
 import { handlers as financePlus, jobs as financePlusJobs } from './modules/financePlus';
 import { handlers as focus, jobs as focusJobs } from './modules/focus';
@@ -33,7 +40,7 @@ export interface Job {
   run(ctx: AppCtx): unknown;
 }
 
-const buildHandlers = (ctx: AppCtx) => ({
+const buildHandlers = (ctx: AppCtx, store: DbStore, systemTimeZone: string) => ({
   ...finance(ctx),
   ...financePlus(ctx),
   ...tasks(ctx),
@@ -44,6 +51,7 @@ const buildHandlers = (ctx: AppCtx) => ({
   ...health(ctx),
   ...focus(ctx),
   ...review(ctx),
+  ...backup(ctx, store, systemTimeZone),
 });
 
 export type Rpc = ReturnType<typeof buildHandlers>;
@@ -75,6 +83,8 @@ export interface App {
   /** Resposta serializável: nunca lança para o outro lado do canal. */
   call(method: string, input: unknown): Promise<RpcResult>;
   tick(): Promise<void>;
+  /** Fora do RPC: o caminho vem do diálogo do main, nunca da tela. */
+  chooseBackupFolder(folder: string): { folder: string; recoveryPassword: string | null };
 }
 
 export type RpcResult =
@@ -82,6 +92,9 @@ export type RpcResult =
   | { ok: false; status: number; message: string };
 
 const SECRET_NAME = 'pluggy';
+
+// O intervalo de 60 s do relógio oscila alguns ms. A folga faz um job de 60 s rodar em todo tick.
+const TICK_SLACK_MS = 5_000;
 
 export function createApp(options: AppOptions): App {
   const handle = openDatabase(options.dbPath, options.keyHex);
@@ -101,8 +114,14 @@ export function createApp(options: AppOptions): App {
     secrets: options.secrets,
     notify: options.notify,
   };
+  ctx.timeZone = savedTimeZone(ctx) ?? options.timeZone;
   ensureCategories(ctx);
-  const handlers = buildHandlers(ctx) as Record<string, (input: never) => unknown>;
+  const store: DbStore = { raw: handle.raw, path: options.dbPath, keyHex: options.keyHex };
+  const handlers = buildHandlers(ctx, store, options.timeZone) as Record<
+    string,
+    (input: never) => unknown
+  >;
+  const jobs = [...JOBS, ...backupJobs(store)];
 
   const running = new Set<string>();
   return {
@@ -112,7 +131,7 @@ export function createApp(options: AppOptions): App {
       const handler = handlers[method];
       if (!handler) return { ok: false, status: 404, message: `Método ${method} não existe.` };
       try {
-        return { ok: true, value: await handler(input as never) };
+        return { ok: true, value: await handler((input ?? {}) as never) };
       } catch (error) {
         if (error instanceof AppError) {
           return { ok: false, status: error.status, message: error.message };
@@ -122,17 +141,19 @@ export function createApp(options: AppOptions): App {
       }
     },
     async tick() {
-      for (const job of JOBS) {
+      for (const job of jobs) {
         if (running.has(job.name)) continue;
         const key = `job:${job.name}`;
         const last = Number(
           ctx.db.select().from(appMeta).all().find((row) => row.key === key)?.value ?? 0
         );
-        if (Date.now() - last < job.everyMs) continue;
+        // A rodada conta de quando começou: um job demorado não empurra o próximo.
+        const started = Date.now();
+        if (started - last + TICK_SLACK_MS < job.everyMs) continue;
         running.add(job.name);
         try {
           await job.run(ctx);
-          const value = String(Date.now());
+          const value = String(started);
           ctx.db
             .insert(appMeta)
             .values({ key, value, updatedAt: Date.now() })
@@ -145,5 +166,6 @@ export function createApp(options: AppOptions): App {
         }
       }
     },
+    chooseBackupFolder: (folder) => chooseFolder(ctx, store, folder),
   };
 }

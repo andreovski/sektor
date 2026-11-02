@@ -1,0 +1,338 @@
+// Prova dos defeitos corrigidos, no app de verdade. Uso, depois do build:
+//   node e2e/hardening.mjs
+import assert from 'node:assert/strict';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { _electron as electron } from 'playwright';
+
+const root = mkdtempSync(join(tmpdir(), 'sektor-hard-'));
+let count = 0;
+const newDir = () => {
+  const dir = join(root, `d${++count}`);
+  mkdirSync(dir);
+  return dir;
+};
+const results = [];
+const test = async (name, run) => {
+  try {
+    await run();
+    results.push(`ok    ${name}`);
+  } catch (error) {
+    results.push(`FALHA ${name}\n      ${String(error.stack ?? error).split('\n').slice(0, 4).join('\n      ')}`);
+  }
+  console.log(results.at(-1));
+};
+
+async function launch(dir, env = {}) {
+  const full = { ...process.env, SEKTOR_TEST_DIR: dir, ...env };
+  delete full.ELECTRON_RUN_AS_NODE;
+  const app = await electron.launch({ args: ['.'], env: full });
+  const page = await app.firstWindow();
+  await page.waitForLoadState('domcontentloaded');
+  return { app, page };
+}
+const go = (page, route) => page.evaluate((r) => (location.hash = `#${r}`), route);
+const stubOpen = (app, path) =>
+  app.evaluate(({ dialog }, p) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [p] });
+  }, path);
+const closed = (app) => new Promise((resolve) => app.process().once('exit', resolve));
+
+await test('1. janela não navega para file:///tmp/x.html', async () => {
+  const marker = join(root, 'x.html');
+  writeFileSync(
+    marker,
+    `<title>FORA</title><script>
+      window.got = 0;
+      addEventListener('message', (e) => { window.got += e.ports.length; document.title = 'PORTA'; });
+    </script>`
+  );
+  writeFileSync('/tmp/x.html', readFileSync(marker));
+  const { app, page } = await launch(newDir());
+  const start = page.url();
+  await page.evaluate(() => {
+    location.href = 'file:///tmp/x.html';
+  });
+  await page.waitForTimeout(500);
+  assert.equal(page.url(), start);
+  await page.evaluate(() => {
+    const link = document.createElement('a');
+    link.href = 'file:///tmp/x.html';
+    document.body.append(link);
+    link.click();
+  });
+  await page.waitForTimeout(500);
+  assert.equal(page.url(), start);
+  await page.evaluate(() => {
+    location.href = 'https://example.com/';
+  });
+  await page.waitForTimeout(500);
+  assert.equal(page.url(), start);
+  await go(page, '/ajustes');
+  await page.getByText('Pasta de backup').first().waitFor({ timeout: 5000 });
+
+  // O caminho que o will-navigate não pega: mesmo assim a página de fora não recebe nada.
+  await app.evaluate(({ BrowserWindow }) => {
+    void BrowserWindow.getAllWindows()[0].loadURL('file:///tmp/x.html');
+  });
+  await page.waitForFunction(() => document.title === 'FORA');
+  await page.waitForTimeout(800);
+  assert.equal(await page.title(), 'FORA');
+  assert.equal(await page.evaluate(() => window.got), 0);
+  const refused = await page.evaluate(() => window.sektor.info().then(() => 'abriu', (e) => e.message));
+  assert.match(refused, /Origem não autorizada/);
+  await app.close();
+});
+
+await test('1. arquivo arrastado não abre na janela, fora da área marcada', async () => {
+  const { app, page } = await launch(newDir());
+  const fired = await page.evaluate(() => {
+    const send = (target, type) => {
+      const data = new DataTransfer();
+      data.items.add(new File(['x'], 'a.html', { type: 'text/html' }));
+      const event = new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: data });
+      target.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+    const zone = document.createElement('div');
+    zone.dataset.fileDrop = '';
+    document.body.append(zone);
+    return {
+      over: send(document.body, 'dragover'),
+      drop: send(document.body, 'drop'),
+      zone: send(zone, 'drop'),
+    };
+  });
+  assert.deepEqual(fired, { over: true, drop: true, zone: false });
+  await app.close();
+});
+
+await test('3. CSP, menu sem DevTools no pacote é conferido no smoke; menu em português', async () => {
+  const { app, page } = await launch(newDir());
+  const csp = await page.evaluate(
+    () => document.querySelector('meta[http-equiv="Content-Security-Policy"]').content
+  );
+  assert.match(csp, /form-action 'none'/);
+  assert.match(csp, /base-uri 'none'/);
+  const menu = await app.evaluate(({ Menu }) =>
+    Menu.getApplicationMenu().items.map((item) => ({
+      label: item.label,
+      items: item.submenu.items.map((sub) => sub.label),
+    }))
+  );
+  assert.deepEqual(menu.map((m) => m.label).slice(0, 3), ['Sektor', 'Editar', 'Janela']);
+  assert.ok(menu[1].items.includes('Copiar') && menu[1].items.includes('Colar'));
+  await app.close();
+});
+
+await test('4. banco corrompido: tela de erro com causa e pasta, e nada apagado', async () => {
+  const dir = newDir();
+  const junk = 'lixo'.repeat(5000);
+  writeFileSync(join(dir, 'sektor.db'), junk);
+  writeFileSync(join(dir, 'database.key'), 'd'.repeat(64));
+  const { app, page } = await launch(dir);
+  await page.getByText('O Sektor não conseguiu abrir seus dados').waitFor({ timeout: 5000 });
+  await page.getByText('file is not a database').waitFor();
+  await page.getByText(dir).waitFor();
+  await page.screenshot({ path: '/tmp/sektor-fatal.png' });
+  assert.equal(readFileSync(join(dir, 'sektor.db'), 'utf8'), junk);
+  await app.close();
+});
+
+await test('4. cofre indisponível: tela de erro, e a chave não é tocada', async () => {
+  const dir = newDir();
+  const { app, page } = await launch(dir, { SEKTOR_TEST_VAULT: 'off' });
+  await page.getByText('O cofre do sistema não respondeu').waitFor({ timeout: 5000 });
+  await page.getByText('O cofre do sistema não está disponível.').waitFor();
+  assert.equal(existsSync(join(dir, 'database.key')), false);
+  await app.close();
+});
+
+await test('4. banco sem chave não ganha chave nova', async () => {
+  const dir = newDir();
+  writeFileSync(join(dir, 'sektor.db'), 'lixo'.repeat(5000));
+  const { app, page } = await launch(dir);
+  await page.getByText('A chave do banco sumiu').waitFor({ timeout: 5000 });
+  assert.equal(existsSync(join(dir, 'database.key')), false);
+  await app.close();
+});
+
+await test('4. núcleo morre: chamada pendente rejeita com mensagem clara', async () => {
+  const { app, page } = await launch(newDir());
+  await go(page, '/ajustes');
+  await page.getByRole('button', { name: 'Salvar' }).waitFor({ timeout: 5000 });
+  const pid = await app.evaluate(
+    ({ app: electronApp }) =>
+      electronApp.getAppMetrics().find((m) => m.type === 'Utility' && m.name === 'sektor-core')?.pid
+  );
+  assert.ok(pid);
+  process.kill(pid, 'SIGSTOP');
+  await page.getByRole('button', { name: 'Salvar' }).click();
+  await page.waitForTimeout(300);
+  process.kill(pid, 'SIGKILL');
+  await page.getByText('O núcleo do Sektor parou').first().waitFor({ timeout: 5000 });
+  await page.getByText(/Esta chamada não foi concluída/).waitFor({ timeout: 5000 });
+  await app.close();
+});
+
+await test('6. fechar a janela e clicar no Dock reabre, com o núcleo ligado', async () => {
+  const { app, page } = await launch(newDir());
+  await page.getByText('Hoje').first().waitFor({ timeout: 5000 });
+  const next = app.waitForEvent('window');
+  await page.close();
+  await app.evaluate(async ({ app: electronApp, BrowserWindow }) => {
+    while (BrowserWindow.getAllWindows().length) await new Promise((r) => setTimeout(r, 50));
+    electronApp.emit('activate');
+  });
+  const window = await next;
+  await window.getByText('Hoje').first().waitFor({ timeout: 5000 });
+  await window.evaluate(() => (location.hash = '#/ajustes'));
+  await window.getByRole('button', { name: 'Salvar' }).waitFor({ timeout: 5000 });
+  await app.close();
+});
+
+await test('6. segunda instância sai e foca a primeira', async () => {
+  const dir = newDir();
+  const { app } = await launch(dir);
+  await app.evaluate(({ app: electronApp, BrowserWindow }) => {
+    globalThis.seen = 0;
+    electronApp.on('second-instance', () => (globalThis.seen += 1));
+    BrowserWindow.getAllWindows()[0].minimize();
+  });
+  const env = { ...process.env, SEKTOR_TEST_DIR: dir };
+  delete env.ELECTRON_RUN_AS_NODE;
+  const { spawn } = await import('node:child_process');
+  const electronPath = (await import('electron')).default;
+  const second = spawn(electronPath, ['.'], { env, stdio: 'ignore' });
+  const code = await new Promise((resolve) => second.once('exit', resolve));
+  assert.equal(code, 0);
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  const state = await app.evaluate(({ BrowserWindow }) => ({
+    seen: globalThis.seen,
+    windows: BrowserWindow.getAllWindows().length,
+    minimized: BrowserWindow.getAllWindows()[0].isMinimized(),
+  }));
+  assert.deepEqual(state, { seen: 1, windows: 1, minimized: false });
+  await app.close();
+});
+
+const recovery = {};
+await test('8/9. ajustes: nome no Início, backup com senha uma vez', async () => {
+  const dir = newDir();
+  const folder = newDir();
+  recovery.dir = dir;
+  recovery.folder = folder;
+  const { app, page } = await launch(dir);
+  await go(page, '/ajustes');
+  await page.getByText('Pasta de dados').first().waitFor({ timeout: 5000 });
+  await page.getByTestId('data-dir').getByText(dir).waitFor();
+  await page.getByLabel('Seu nome').fill('André');
+  await page.getByLabel('Fuso horário').selectOption('Asia/Tokyo');
+  await page.getByRole('button', { name: 'Salvar' }).click();
+  await page.getByText('Ajustes salvos.').waitFor();
+
+  await stubOpen(app, folder);
+  await page.getByRole('button', { name: 'Escolher pasta' }).click();
+  const code = page.getByTestId('recovery-password');
+  await code.waitFor({ timeout: 5000 });
+  recovery.password = await code.innerText();
+  assert.match(recovery.password, /^[0-9A-Z]{4}(-[0-9A-Z]{4}){5}$/);
+  await page.screenshot({ path: '/tmp/sektor-recovery.png' });
+  await page.getByRole('button', { name: 'Já guardei' }).click();
+  await page.getByTestId('backup-folder').getByText(folder).waitFor();
+  await page.getByRole('button', { name: 'Fazer backup agora' }).click();
+  await page.getByText('Backup feito.').waitFor();
+  await page.screenshot({ path: '/tmp/sektor-ajustes.png', fullPage: true });
+  const files = readdirSync(folder);
+  assert.ok(files.includes('sektor-recuperacao.json'));
+  const backups = files.filter((f) => f.endsWith('.db'));
+  assert.ok(backups.length >= 1, files.join());
+  const header = readFileSync(join(folder, backups[0])).subarray(0, 15).toString('latin1');
+  assert.notEqual(header, 'SQLite format 3');
+  recovery.file = join(folder, backups[0]);
+
+  await go(page, '/');
+  await page.getByRole('heading', { name: /, André$/ }).waitFor({ timeout: 5000 });
+  await app.close();
+});
+
+await test('8. restaura na mesma máquina: confirma, reinicia e guarda a base anterior', async () => {
+  const { app, page } = await launch(recovery.dir);
+  await go(page, '/ajustes');
+  await page.getByLabel('Seu nome').fill('Depois do backup');
+  await page.getByRole('button', { name: 'Salvar' }).click();
+  await page.getByText('Ajustes salvos.').waitFor();
+  await stubOpen(app, recovery.file);
+  await page.getByRole('button', { name: 'Restaurar de um arquivo' }).click();
+  const gone = closed(app);
+  await page.getByRole('button', { name: 'Restaurar e reiniciar' }).click();
+  await gone;
+  assert.equal(existsSync(join(recovery.dir, 'restauracao-pendente.json')), true);
+
+  const again = await launch(recovery.dir);
+  await go(again.page, '/ajustes');
+  await again.page.getByRole('button', { name: 'Salvar' }).waitFor({ timeout: 5000 });
+  await again.page.waitForFunction(
+    () => document.querySelector('input')?.value === 'André',
+    undefined,
+    { timeout: 5000 }
+  );
+  assert.equal(existsSync(join(recovery.dir, 'restauracao-pendente.json')), false);
+  assert.ok(readdirSync(join(recovery.dir, 'antes-da-restauracao')).some((f) => f.endsWith('.db')));
+  await again.app.close();
+});
+
+await test('8. restaura em outra máquina com a senha', async () => {
+  const dir = newDir();
+  const { app, page } = await launch(dir);
+  await go(page, '/ajustes');
+  await stubOpen(app, recovery.file);
+  await page.getByRole('button', { name: 'Restaurar de um arquivo' }).click();
+  await page.getByRole('button', { name: 'Restaurar e reiniciar' }).click();
+  await page.getByText('Digite a senha de recuperação').waitFor({ timeout: 5000 });
+  await page.getByLabel('Senha de recuperação').fill('AAAA-BBBB-CCCC-DDDD-EEEE-FFFF');
+  await page.getByRole('button', { name: 'Restaurar e reiniciar' }).click();
+  await page.getByText('Senha de recuperação incorreta.').waitFor({ timeout: 5000 });
+  await page.getByLabel('Senha de recuperação').fill(recovery.password);
+  const gone = closed(app);
+  await page.getByRole('button', { name: 'Restaurar e reiniciar' }).click();
+  await gone;
+
+  const again = await launch(dir);
+  await again.page.getByRole('heading', { name: /, André$/ }).waitFor({ timeout: 5000 });
+  await go(again.page, '/ajustes');
+  await again.page.getByText('Nenhuma. Sem pasta').waitFor({ timeout: 5000 });
+  await again.app.close();
+});
+
+await test('8. cofre perdeu a chave: a tela de erro restaura com a senha', async () => {
+  const dir = newDir();
+  const first = await launch(dir);
+  await first.page.getByText('Hoje').first().waitFor({ timeout: 5000 });
+  await first.app.close();
+  const oldKey = readFileSync(join(dir, 'database.key'));
+
+  const { app, page } = await launch(dir, { SEKTOR_TEST_VAULT: 'locked' });
+  await page.getByText('O cofre do sistema não respondeu').waitFor({ timeout: 5000 });
+  await stubOpen(app, recovery.file);
+  await page.getByRole('button', { name: 'Restaurar um backup' }).click();
+  await page.getByRole('button', { name: 'Restaurar e reiniciar' }).click();
+  await page.getByLabel('Senha de recuperação').fill(recovery.password);
+  const gone = closed(app);
+  await page.getByRole('button', { name: 'Restaurar e reiniciar' }).click();
+  await gone;
+
+  const again = await launch(dir);
+  await again.page.getByRole('heading', { name: /, André$/ }).waitFor({ timeout: 8000 });
+  const kept = readdirSync(join(dir, 'antes-da-restauracao'));
+  const oldCopy = kept.find((f) => f.endsWith('.key'));
+  assert.deepEqual(readFileSync(join(dir, 'antes-da-restauracao', oldCopy)), oldKey);
+  await again.app.close();
+});
+
+rmSync(root, { recursive: true, force: true });
+rmSync('/tmp/x.html', { force: true });
+const failed = results.filter((line) => line.startsWith('FALHA'));
+console.log(`\n${results.length - failed.length}/${results.length} ok`);
+process.exit(failed.length ? 1 : 0);

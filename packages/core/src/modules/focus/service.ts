@@ -179,7 +179,7 @@ function requireFinished(ctx: Ctx, id: string) {
       )
     )
     .get();
-  if (!session) throw notFound('Sessão');
+  if (!session) throw notFound('Sessão não encontrada.');
   return session;
 }
 
@@ -314,10 +314,12 @@ export function runClock(ctx: AppCtx) {
     ? now - session.pausedAt! >= MAX_SESSION_SECONDS * 1000
     : elapsed >= MAX_SESSION_SECONDS;
   if (forgotten) {
-    const end = held
-      ? session.pausedAt!
-      : session.startedAt + pauseSpentMs(session, now) + MAX_SESSION_SECONDS * 1000;
-    close(ctx, session, end);
+    // Ninguém viu passar do planejado: o que ficou contando depois disso não foi foco.
+    const limit = Math.min(session.plannedSeconds ?? MAX_SESSION_SECONDS, MAX_SESSION_SECONDS);
+    const paused = held ? session.pausedAt! : now;
+    const spent = pauseSpentMs({ ...session, pausedUntil: null }, paused);
+    const atLimit = session.startedAt + spent + limit * 1000;
+    close(ctx, session, held ? Math.min(paused, atLimit) : atLimit);
     ctx.notify('Sessão de foco encerrada', 'Ela ficou aberta tempo demais e foi fechada sozinha.');
     return;
   }

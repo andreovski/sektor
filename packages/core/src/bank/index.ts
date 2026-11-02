@@ -19,13 +19,15 @@ import {
   pluggyItems,
   transactions,
 } from '../db/schema';
+import { type CategoryRule, matchRule } from '../modules/financePlus/rules';
+import { categoryRules } from '../modules/financePlus/schema';
 import { AppError, type Ctx, notFound, stamp, todayIn } from '../services/context';
 import {
   completeInstallments,
   createTransactions,
   findBillInvoice,
   invoicePayment,
-  invoiceTotal,
+  invoiceBalances,
   listInvoices,
   payInvoice,
   placeCardItems,
@@ -276,7 +278,7 @@ export function removeItem(ctx: BankCtx, id: string) {
     .set({ deletedAt: now, updatedAt: now })
     .where(and(eq(pluggyItems.id, id), isNull(pluggyItems.deletedAt)))
     .run();
-  if (!changes) throw notFound('Banco');
+  if (!changes) throw notFound('Banco não encontrado.');
   ctx.db
     .update(bankAccounts)
     .set({ deletedAt: now, updatedAt: now, accountId: null })
@@ -346,7 +348,7 @@ function bankAccountById(ctx: Ctx, id: string) {
 
 export async function linkAccount(ctx: BankCtx, id: string, body: LinkBankAccountBody) {
   const bankAccount = bankAccountById(ctx, id);
-  if (!bankAccount) throw notFound('Conta do banco');
+  if (!bankAccount) throw notFound('Conta do banco não encontrada.');
   const today = todayIn(ctx);
 
   // O que esperava revisão era para a conta antiga.
@@ -379,7 +381,7 @@ export async function linkAccount(ctx: BankCtx, id: string, body: LinkBankAccoun
         )
       )
       .get();
-    if (!account) throw notFound('Conta');
+    if (!account) throw notFound('Conta não encontrada.');
     if (!COMPATIBLE[bankAccount.type].includes(account.type)) {
       throw new AppError(
         400,
@@ -441,6 +443,7 @@ export async function linkAccount(ctx: BankCtx, id: string, body: LinkBankAccoun
 interface Suggester {
   memory: CategoryMemory;
   system: SystemCategoryIds;
+  rules: CategoryRule[];
 }
 
 function suggester(ctx: Ctx): Suggester {
@@ -461,20 +464,33 @@ function suggester(ctx: Ctx): Suggester {
     .from(categories)
     .where(isNotNull(categories.systemKey))
     .all();
+  const rules = ctx.db
+    .select({
+      patternKey: categoryRules.patternKey,
+      kind: categoryRules.kind,
+      categoryId: categoryRules.categoryId,
+    })
+    .from(categoryRules)
+    .innerJoin(categories, eq(categories.id, categoryRules.categoryId))
+    .where(and(isNull(categoryRules.deletedAt), isNull(categories.deletedAt)))
+    .all();
   return {
+    rules,
     memory: categoryMemory(history),
     system: new Map(system.map((c) => [`${c.kind}:${c.systemKey}`, c.id])),
   };
 }
 
-/** A sugestão: o histórico; sem ele, a regra fixa (Pix → Transferência › Pix). */
+/** A sugestão: o histórico; sem ele, as regras da pessoa e a regra fixa (Pix → Transferência › Pix). */
 function suggestionFor(
-  { memory, system }: Suggester,
+  { memory, system, rules }: Suggester,
   movement: { kind: 'INCOME' | 'EXPENSE'; description: string },
   accountType: 'BANK' | 'CREDIT'
 ) {
   const history = suggestCategory(memory, movement);
   if (history) return { suggestedCategoryId: history, suggestionSource: 'HISTORY' as const };
+  const own = matchRule(rules, movement);
+  if (own) return { suggestedCategoryId: own.categoryId, suggestionSource: 'RULE' as const };
   // Pagamento de fatura vira transferência para o cartão ao aceitar: não leva categoria.
   if (movement.kind === 'EXPENSE' && looksLikeInvoicePayment(movement.description)) {
     return { suggestedCategoryId: null, suggestionSource: null };
@@ -1016,7 +1032,11 @@ function reconcileInvoicePayments(ctx: Ctx) {
 
   const unpaid = unpaidCardInvoices(ctx);
   const open = unpaid
-    .map((i) => ({ id: i.id, dueDate: i.dueDate, totalCents: invoiceTotal(itemsOf(ctx, i.id)) }))
+    .map((i) => ({
+      id: i.id,
+      dueDate: i.dueDate,
+      totalCents: invoiceBalances(ctx, i.accountId).get(i.id)!.totalCents,
+    }))
     .filter((i) => i.totalCents > 0);
 
   for (const { movement, accountId } of payments) {
@@ -1222,7 +1242,7 @@ export function acceptMovement(ctx: Ctx, id: string, body: AcceptBankMovementBod
     .innerJoin(bankAccounts, eq(bankAccounts.id, bankMovements.bankAccountId))
     .where(and(eq(bankMovements.id, id), eq(bankMovements.status, 'PENDING')))
     .get();
-  if (!row) throw notFound('Lançamento do banco');
+  if (!row) throw notFound('Lançamento do banco não encontrado.');
   const { movement, accountId } = row;
   if (!accountId) throw new AppError(400, 'Ligue a conta do banco a uma conta do Sektor.');
 
@@ -1368,7 +1388,7 @@ export function ignoreMovement(ctx: Ctx, id: string) {
     .set({ status: 'IGNORED', updatedAt: Date.now() })
     .where(and(eq(bankMovements.id, id), eq(bankMovements.status, 'PENDING')))
     .run();
-  if (!changes) throw notFound('Lançamento do banco');
+  if (!changes) throw notFound('Lançamento do banco não encontrado.');
 }
 
 // ---------------------------------------------------------------- conferência do cartão
@@ -1387,7 +1407,7 @@ export async function cardCheck(ctx: BankCtx, accountId: string): Promise<BankCa
       )
     )
     .get();
-  if (!row) throw notFound('Cartão ligado ao banco');
+  if (!row) throw notFound('Cartão ligado ao banco não encontrado.');
   const { bankAccount, item } = row;
   const [remote, bills] = await friendly(() =>
     Promise.all([fetchAccounts(ctx.keys, item.itemId), fetchBills(ctx.keys, bankAccount.externalId)])

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 
+import { useRpc } from '../../lib/rpc';
 import { SectionLabel } from '../../ui';
 
 import { CaptureBox } from './capture';
@@ -63,12 +64,16 @@ function Sections() {
 
 function HomePage() {
   const now = useNow();
+  const name = useRpc('settings.get').data?.name;
   return (
     // O -mt-8 desfaz o respiro do `main`: a capa encosta no topo da janela.
     <div className="relative -mt-8">
       <Cover />
       <header className="relative flex min-h-[430px] flex-col items-center pt-[116px] pb-8 text-center">
-        <h1 className="text-[36px] leading-tight font-semibold">{greeting(now.getHours())}</h1>
+        <h1 className="text-[36px] leading-tight font-semibold">
+          {greeting(now.getHours())}
+          {name ? `, ${name}` : ''}
+        </h1>
         <p className="mt-1 mb-8 text-muted first-letter:uppercase">{coverDate(now)}</p>
         <CaptureBox />
       </header>

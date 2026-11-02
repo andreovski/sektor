@@ -37,9 +37,29 @@ export function ForecastTab() {
   const negative = data?.firstNegative;
   const account = accounts.find((a) => a.id === negative?.accountId);
   const end = data?.days.at(-1);
+  const unassigned = data?.unassignedInvoices ?? [];
+  const payer = accounts.find((a) => a.id === unassigned[0]?.payerAccountId);
+  const cards = [...new Set(unassigned.map((invoice) => invoice.cardName))].join(', ');
 
   return (
     <div className="flex flex-col gap-4">
+      {unassigned.length > 0 && (
+        <div className="flex items-center gap-3 rounded-panel border border-warning/30 bg-warning/10 p-4">
+          <CreditCard size={18} className="shrink-0 text-warning" />
+          <div>
+            <p className="font-medium">
+              {unassigned.length === 1
+                ? 'Uma fatura sem conta que paga'
+                : `${unassigned.length} faturas sem conta que paga`}
+            </p>
+            <p className="text-sm text-muted">
+              {payer
+                ? `${cards}: contamos em ${payer.name}. Escolha a conta que paga em Contas, no cartão.`
+                : `${cards}: crie uma conta para a previsão contar essas faturas.`}
+            </p>
+          </div>
+        </div>
+      )}
       {negative && (
         <div className="flex items-center gap-3 rounded-panel border border-danger/30 bg-danger/10 p-4">
           <TriangleAlert size={18} className="shrink-0 text-danger" />

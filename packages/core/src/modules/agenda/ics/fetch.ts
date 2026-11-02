@@ -6,9 +6,10 @@ import { isIP } from 'node:net';
 import { looksLikeIcs } from './parse';
 
 // Busca do arquivo ICS. O link é segredo (quem tem o link vê a agenda): ele nunca entra em log nem
-// em mensagem de erro. Como é um endereço digitado, só vale http(s) para a internet, nem depois de
-// um redirecionamento. A conferência do IP fica na própria conexão (`publicLookup`): conferir
-// antes e deixar o fetch resolver de novo abriria a brecha do DNS que muda de resposta.
+// em mensagem de erro. Como é um endereço digitado, só vale https para a internet, nem depois de
+// um redirecionamento (http só no servidor local dos testes, o `trustedHost`). A conferência do IP
+// fica na própria conexão (`publicLookup`): conferir antes e deixar o fetch resolver de novo abriria
+// a brecha do DNS que muda de resposta.
 
 const TIMEOUT_MS = 20_000;
 const MAX_BYTES = 10 * 1024 * 1024;
@@ -18,7 +19,7 @@ export class IcsFetchError extends Error {}
 
 const NOT_PUBLIC = 'Esse endereço não é público.';
 
-/** webcal:// vira https://; devolve null se não for um link http(s) válido. */
+/** webcal:// vira https://; devolve null se não for um link https válido. */
 export function normalizeIcsUrl(input: string): string | null {
   const trimmed = input.trim().replace(/^webcals?:\/\//i, 'https://');
   let url: URL;
@@ -27,7 +28,7 @@ export function normalizeIcsUrl(input: string): string | null {
   } catch {
     return null;
   }
-  if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
+  if (url.protocol !== 'https:') return null;
   if (url.username || url.password) return null;
   return url.toString();
 }
@@ -174,7 +175,10 @@ export const fetchIcs: IcsFetcher = async (link, options = {}) => {
   const signal = AbortSignal.timeout(timeoutMs);
 
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-    if (url.host !== trustedHost) assertPublicHost(url);
+    if (url.host !== trustedHost) {
+      assertPublicHost(url);
+      if (url.protocol !== 'https:') throw new IcsFetchError('O link precisa usar https.');
+    }
     let response: RawResponse;
     try {
       response = await request(

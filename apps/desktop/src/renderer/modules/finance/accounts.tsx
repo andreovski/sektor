@@ -78,14 +78,22 @@ function AccountList({ onSelect }: { onSelect(id: string): void }) {
   const cards = active.filter((a) => a.type === 'CREDIT_CARD');
   const archived = all.filter((a) => a.archived);
   const available = plain.reduce((sum, a) => sum + a.balanceCents, 0);
-  const owed = cards.reduce((sum, a) => sum + (a.openInvoiceCents ?? 0), 0);
+  const owed = cards.reduce((sum, a) => sum + (a.unpaidInvoiceCents ?? 0), 0);
+  const overdue = cards.reduce((sum, a) => sum + (a.overdueInvoiceCents ?? 0), 0);
 
   if (query.isPending) return <Skeleton className="h-40" />;
   return (
     <>
       <Card className="flex items-center gap-8">
         <Metric size="xl" label="Saldo nas contas" value={money(available)} tone={available < 0 ? 'danger' : undefined} />
-        {cards.length > 0 && <Metric label="Faturas abertas" value={money(owed)} />}
+        {cards.length > 0 && (
+          <Metric
+            label="Faturas a pagar"
+            value={money(owed)}
+            hint={overdue > 0 ? `${money(overdue)} vencidas` : undefined}
+            tone={overdue > 0 ? 'danger' : undefined}
+          />
+        )}
         <Button variant="primary" className="ml-auto" onClick={() => setCreating(true)}>
           <Plus size={14} /> Nova conta ou cartão
         </Button>
@@ -118,7 +126,8 @@ function AccountGroup({
       <div className="grid grid-cols-3 gap-4">
         {list.map((account) => {
           const isCard = account.type === 'CREDIT_CARD';
-          const value = isCard ? (account.openInvoiceCents ?? 0) : account.balanceCents;
+          const value = isCard ? (account.unpaidInvoiceCents ?? 0) : account.balanceCents;
+          const overdue = account.overdueInvoiceCents ?? 0;
           return (
             <button
               key={account.id}
@@ -135,7 +144,7 @@ function AccountGroup({
               </p>
               <p className="text-xs text-subtle">
                 {isCard
-                  ? `Fatura aberta · fecha dia ${account.closingDay}, vence dia ${account.dueDay}`
+                  ? `${overdue > 0 ? `${money(overdue)} vencidas` : 'A pagar'} · fecha dia ${account.closingDay}, vence dia ${account.dueDay}`
                   : ACCOUNT_TYPE_LABELS[account.type]}
               </p>
             </button>

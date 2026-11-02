@@ -16,7 +16,7 @@ import {
   type ScheduleRule,
 } from './schedule';
 import { type ReminderRow, reminders } from './schema';
-import { readTask } from './tasks';
+import { readTask, taskSeries } from './tasks';
 
 /** Atrasou mais que isto (app fechado): não avisa, só agenda o próximo. */
 const STALE_MS = 60 * 60_000;
@@ -256,7 +256,7 @@ function find(ctx: Ctx, id: string) {
     .from(reminders)
     .where(and(eq(reminders.id, id), alive))
     .get();
-  if (!row) throw notFound('Lembrete');
+  if (!row) throw notFound('Lembrete não encontrado.');
   return row;
 }
 
@@ -310,7 +310,7 @@ function assertFree(ctx: Ctx, kind: 'EVENT' | 'TASK', ownerId: string, minutes: 
 
 export function createForEvent(ctx: Ctx, body: { eventId: string; minutesBefore: number }) {
   const found = eventRows(ctx, body.eventId);
-  if (!found) throw notFound('Evento');
+  if (!found) throw notFound('Evento não encontrado.');
   assertFree(ctx, 'EVENT', body.eventId, body.minutesBefore);
   return insertScheduled(ctx, {
     ...stamp(),
@@ -394,6 +394,45 @@ function messageFor(ctx: Ctx, row: ReminderRow, start: Date) {
 }
 
 /**
+ * Tarefa recorrente concluída passa o lembrete à próxima da série, e a reaberta o recebe de volta
+ * quando a próxima sai. Devolve `null` se a tarefa de destino já tem esse lembrete.
+ */
+function followSeries(ctx: AppCtx, row: ReminderRow): ReminderRow | null {
+  let ownerId = row.ownerId!;
+  let task = readTask(ctx, ownerId);
+  if (task === 'gone') {
+    ownerId = taskSeries(ctx, ownerId).previousTaskId ?? ownerId;
+    task = readTask(ctx, ownerId);
+  }
+  while (task && task !== 'gone' && task.done) {
+    const next = taskSeries(ctx, ownerId).nextTaskId;
+    const following = next ? readTask(ctx, next) : 'gone';
+    if (!following || following === 'gone') break;
+    ownerId = next!;
+    task = following;
+  }
+  if (ownerId === row.ownerId) return row;
+  const taken = ctx.db
+    .select({ id: reminders.id })
+    .from(reminders)
+    .where(
+      and(
+        eq(reminders.kind, 'TASK'),
+        eq(reminders.ownerId, ownerId),
+        eq(reminders.minutesBefore, row.minutesBefore),
+        alive
+      )
+    )
+    .get();
+  if (taken) {
+    save(ctx, row.id, { deletedAt: Date.now(), nextFireAt: null });
+    return null;
+  }
+  save(ctx, row.id, { ownerId });
+  return { ...row, ownerId };
+}
+
+/**
  * O módulo de Tarefas não avisa quando uma tarefa muda: a cada passada, os lembretes de tarefa
  * conferem a cópia do prazo. Tarefa apagada leva o lembrete junto.
  */
@@ -403,7 +442,9 @@ function syncTaskReminders(ctx: AppCtx, now: Date) {
     .from(reminders)
     .where(and(eq(reminders.kind, 'TASK'), isNull(reminders.pausedAt), alive))
     .all();
-  for (const row of rows) {
+  for (const original of rows) {
+    const row = followSeries(ctx, original);
+    if (!row) continue;
     const task = readTask(ctx, row.ownerId!);
     if (task === undefined) continue;
     if (task === 'gone') {
