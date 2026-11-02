@@ -4,10 +4,20 @@
   "version": "0.0.0",
   "main": "src/index.ts",
   "types": "src/index.ts",
-  "scripts": { "typecheck": "tsc -p ." },
+  "scripts": {
+    "typecheck": "tsc -p .",
+    "test": "vitest run"
+  },
   "dependencies": {
     "better-sqlite3-multiple-ciphers": "13.0.3",
-    "drizzle-orm": "0.45.4"
+    "drizzle-orm": "0.45.4",
+    "@sektor/finance-engine": "workspace:*"
   },
-  "devDependencies": { "@types/better-sqlite3": "7.6.13", "@types/node": "22.19.1", "typescript": "7.0.2", "vite": "8.3.5" }
+  "devDependencies": {
+    "@types/better-sqlite3": "7.6.13",
+    "@types/node": "22.19.1",
+    "typescript": "7.0.2",
+    "vite": "8.3.5",
+    "vitest": "5.1.0"
+  }
 }
