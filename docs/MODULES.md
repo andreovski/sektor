@@ -35,12 +35,14 @@ Português do Brasil em toda tela e comentário. Comentário só quando a regra 
 ```bash
 pnpm --filter @sektor/core exec tsc -p .
 pnpm --filter @sektor/core test
-cd apps/desktop && pnpm exec tsc -p . && ../../node_modules/.bin/electron-vite build
-perl -e 'alarm 60; exec @ARGV' node e2e/shot.mjs /tmp/tela.png /rota
+cd apps/desktop && pnpm exec tsc -p .
+e2e/locked.sh sh -c "../../node_modules/.bin/electron-vite build && perl -e 'alarm 60; exec @ARGV' node e2e/shot.mjs /tmp/tela-<módulo>.png /rota"
 ```
 
 O `shot.mjs` abre o app num banco vazio e temporário e fotografa a rota; um terceiro argumento aponta um
 script que recebe a `page` do Playwright. Leia a imagem para conferir a tela.
+
+Outros módulos estão sendo escritos ao mesmo tempo: erro de tipo ou de build na pasta de outro não é seu; tente de novo em instantes. Use sempre `locked.sh`, porque a pasta `out/` é compartilhada.
 
 ## Limites
 

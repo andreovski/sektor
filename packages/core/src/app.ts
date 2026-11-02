@@ -3,6 +3,7 @@ import { type DbHandle, openDatabase } from './db/client';
 import { appMeta } from './db/schema';
 import { handlers as agenda, jobs as agendaJobs } from './modules/agenda';
 import { handlers as finance, jobs as financeJobs } from './modules/finance';
+import { handlers as financePlus, jobs as financePlusJobs } from './modules/financePlus';
 import { handlers as focus, jobs as focusJobs } from './modules/focus';
 import { handlers as goals, jobs as goalsJobs } from './modules/goals';
 import { handlers as habits, jobs as habitsJobs } from './modules/habits';
@@ -34,6 +35,7 @@ export interface Job {
 
 const buildHandlers = (ctx: AppCtx) => ({
   ...finance(ctx),
+  ...financePlus(ctx),
   ...tasks(ctx),
   ...agenda(ctx),
   ...reminders(ctx),
@@ -48,6 +50,7 @@ export type Rpc = ReturnType<typeof buildHandlers>;
 
 const JOBS: Job[] = [
   ...financeJobs,
+  ...financePlusJobs,
   ...tasksJobs,
   ...agendaJobs,
   ...remindersJobs,
