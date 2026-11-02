@@ -4,7 +4,7 @@ import { drizzle } from 'drizzle-orm/better-sqlite3';
 import * as schema from './schema';
 
 // Migrações embutidas no bundle: o app empacotado não depende de arquivos soltos. A ordem dos
-// nomes (`NNNN_nome.sql`) é a versão guardada em `user_version`.
+// nomes dá a sequência, e `user_version` guarda o número do último arquivo aplicado.
 const files = import.meta.glob<string>('./migrations/*.sql', {
   query: '?raw',
   import: 'default',
@@ -12,7 +12,10 @@ const files = import.meta.glob<string>('./migrations/*.sql', {
 });
 const MIGRATIONS = Object.keys(files)
   .sort()
-  .map((name) => files[name]!);
+  .map((name) => ({
+    version: Number(/(\d+)_[^/]+\.sql$/.exec(name)?.[1]),
+    sql: files[name]!,
+  }));
 
 export interface DbHandle {
   raw: Database.Database;
@@ -38,10 +41,11 @@ export function openDatabase(path: string, keyHex: string): DbHandle {
 
 function migrate(raw: Database.Database) {
   const current = raw.pragma('user_version', { simple: true }) as number;
-  for (let version = current; version < MIGRATIONS.length; version++) {
+  for (const { version, sql } of MIGRATIONS) {
+    if (version <= current) continue;
     raw.transaction(() => {
-      raw.exec(MIGRATIONS[version]!);
-      raw.pragma(`user_version = ${version + 1}`);
+      raw.exec(sql);
+      raw.pragma(`user_version = ${version}`);
     })();
   }
 }

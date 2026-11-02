@@ -947,7 +947,11 @@ export function updateTransaction(
         ...merged,
         date,
         status: fields.status ?? existing.status,
-        invoiceId: invoiceIdFor(ctx, account, date, existing.paysInvoiceId),
+        // A fatura só muda se a data ou a conta mudou: o item pode estar na fatura que o banco disse.
+        invoiceId:
+          date === existing.date && merged.accountId === existing.accountId
+            ? existing.invoiceId
+            : invoiceIdFor(ctx, account, date, existing.paysInvoiceId),
         isRecurrenceException:
           existing.recurrenceId && scope === 'single' ? true : existing.isRecurrenceException,
         updatedAt: Date.now(),

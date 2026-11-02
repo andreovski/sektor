@@ -1,4 +1,4 @@
-import { app, BrowserWindow, MessageChannelMain, utilityProcess } from 'electron';
+import { app, BrowserWindow, MessageChannelMain, shell, utilityProcess } from 'electron';
 import { randomBytes } from 'node:crypto';
 import { mkdtempSync, openSync, readSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -48,7 +48,13 @@ function createWindow(core: Electron.UtilityProcess) {
     },
   });
   window.once('ready-to-show', () => window.show());
-  window.webContents.once('did-finish-load', () => {
+  // Link externo abre no navegador; dentro da janela só o próprio app navega.
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('https://')) void shell.openExternal(url);
+    return { action: 'deny' };
+  });
+  // A cada carga da página, inclusive recarregar: a porta anterior morreu com ela.
+  window.webContents.on('did-finish-load', () => {
     const { port1, port2 } = new MessageChannelMain();
     core.postMessage({ type: 'port' } satisfies CoreCommand, [port1]);
     window.webContents.postMessage('core-port', null, [port2]);

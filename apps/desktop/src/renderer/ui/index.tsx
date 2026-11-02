@@ -1,9 +1,10 @@
 import clsx from 'clsx';
+import { twMerge } from 'tailwind-merge';
 import { Dialog as RadixDialog } from 'radix-ui';
 import { type ComponentProps, type ReactNode } from 'react';
 import { type LucideIcon, X } from 'lucide-react';
 
-export { clsx as cn };
+export const cn = (...inputs: Parameters<typeof clsx>) => twMerge(clsx(inputs));
 
 type ButtonProps = ComponentProps<'button'> & {
   variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
@@ -143,11 +144,11 @@ const fieldClass =
   'h-8 w-full rounded-control border border-line bg-sunken px-2.5 text-sm placeholder:text-subtle';
 
 export function Input({ className, ...props }: ComponentProps<'input'>) {
-  return <input className={clsx(fieldClass, className)} {...props} />;
+  return <input className={cn(fieldClass, className)} {...props} />;
 }
 
 export function Select({ className, ...props }: ComponentProps<'select'>) {
-  return <select className={clsx(fieldClass, className)} {...props} />;
+  return <select className={cn(fieldClass, className)} {...props} />;
 }
 
 export function Textarea({ className, ...props }: ComponentProps<'textarea'>) {
@@ -185,8 +186,8 @@ export function Dialog({
   return (
     <RadixDialog.Root open={open} onOpenChange={onOpenChange}>
       <RadixDialog.Portal>
-        <RadixDialog.Overlay className="fixed inset-0 bg-[var(--overlay)]" />
-        <RadixDialog.Content className="fixed top-1/2 left-1/2 max-h-[85vh] w-[480px] max-w-[92vw] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-panel bg-raised p-5 shadow-popover">
+        <RadixDialog.Overlay className="fixed inset-0 z-50 bg-[var(--overlay)]" />
+        <RadixDialog.Content className="fixed top-1/2 left-1/2 z-50 max-h-[85vh] w-[480px] max-w-[92vw] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-panel bg-raised p-5 shadow-popover">
           <div className="mb-4 flex items-center">
             <RadixDialog.Title className="font-semibold">{title}</RadixDialog.Title>
             <RadixDialog.Close asChild>

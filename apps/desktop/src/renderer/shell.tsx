@@ -1,5 +1,7 @@
 import { Link, Outlet, useRouterState } from '@tanstack/react-router';
 import {
+  Bell,
+  CalendarCheck,
   CalendarDays,
   CheckSquare,
   FolderKanban,
@@ -24,6 +26,8 @@ const ITEMS: { to: string; label: string; icon: LucideIcon }[] = [
   { to: '/metas', label: 'Metas', icon: Target },
   { to: '/saude', label: 'Saúde', icon: HeartPulse },
   { to: '/foco', label: 'Foco', icon: Timer },
+  { to: '/revisao', label: 'Revisão', icon: CalendarCheck },
+  { to: '/lembretes', label: 'Lembretes', icon: Bell },
 ];
 
 function Dock() {
