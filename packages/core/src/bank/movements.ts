@@ -291,58 +291,6 @@ export function ruleCategory(
   return key ? (ids.get(`${movement.kind}:${key}`) ?? null) : null;
 }
 
-/** Abaixo disso o Jev não convence: vale a regra fixa. */
-export const AI_MIN_CONFIDENCE = 0.6;
-
-/** Como o Haiku e o Jev chegaram à sugestão. */
-export type AiAgreement = 'SAME' | 'SUBCATEGORY' | 'PARENT';
-
-export interface AiDecision {
-  categoryId: string;
-  confidence: number;
-  /**
-   * SAME: os dois na mesma categoria. SUBCATEGORY: o Haiku ficou na mãe e o Jev, seguro, numa
-   * subcategoria dela. PARENT: divergiram dentro da mesma mãe, então vale a mãe.
-   */
-  agreement: AiAgreement;
-}
-
-/**
- * A sugestão da IA: o Haiku escolhe pelo nome e o Jev dá a probabilidade de cada categoria
- * (`parents` diz a mãe de cada subcategoria). Vale quando a mais provável do Jev é a do Haiku e
- * passa do mínimo. Se divergirem mas a mãe for a mesma: o Haiku na mãe e o Jev seguro numa
- * subcategoria dela fica a subcategoria; senão fica a mãe, se o Jev somar o mínimo nela e nas
- * filhas. Sem o Jev, em mães diferentes ou com pouca confiança, null (fica a regra fixa).
- */
-export function decideAiCategory(
-  haiku: string | null,
-  jev: Map<string, number> | null,
-  parents: Map<string, string | null> = new Map()
-): AiDecision | null {
-  if (!haiku || !jev) return null;
-  let best: { categoryId: string; confidence: number } | null = null;
-  for (const [categoryId, confidence] of jev) {
-    if (!best || confidence > best.confidence) best = { categoryId, confidence };
-  }
-  if (!best) return null;
-  if (best.categoryId === haiku) {
-    return best.confidence >= AI_MIN_CONFIDENCE ? { ...best, agreement: 'SAME' } : null;
-  }
-
-  const root = (id: string) => parents.get(id) ?? id;
-  const family = root(haiku);
-  if (root(best.categoryId) !== family) return null;
-  // O Haiku ficou na mãe e o Jev, seguro, foi além numa filha dela: a filha.
-  if (haiku === family && best.confidence >= AI_MIN_CONFIDENCE) {
-    return { ...best, agreement: 'SUBCATEGORY' };
-  }
-  let total = 0;
-  for (const [categoryId, confidence] of jev) if (root(categoryId) === family) total += confidence;
-  const confidence = Math.min(1, total);
-  if (confidence < AI_MIN_CONFIDENCE) return null;
-  return { categoryId: family, confidence, agreement: 'PARENT' };
-}
-
 /** Descrição do lançamento importado: a parcela vai no fim, como "Loja (2/10)". */
 export function importedDescription(movement: {
   description: string;

@@ -69,7 +69,7 @@ function softDeleteTransactions(ctx: Ctx, where: ReturnType<typeof eq>) {
 
 // ---------------------------------------------------------------- donos
 
-function ownedAccount(ctx: Ctx, id: string): Account {
+export function ownedAccount(ctx: Ctx, id: string): Account {
   const account = ctx.db
     .select()
     .from(accounts)
@@ -200,6 +200,11 @@ function openInvoiceIds(ctx: Ctx, accountId: string): Invoice[] {
     .where(and(eq(invoices.accountId, accountId), liveInvoice, isNull(invoices.paidAt)))
     .all()
     .filter((invoice) => !invoicePayment(ctx, invoice.id));
+}
+
+/** Apaga um lançamento sem as regras da tela (a linha fica, marcada). */
+export function removeTransaction(ctx: Ctx, id: string) {
+  softDeleteTransactions(ctx, eq(transactions.id, id));
 }
 
 /** Fechamento ou vencimento mudou: as faturas em aberto passam às datas novas. */

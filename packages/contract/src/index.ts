@@ -5,3 +5,4 @@ export * from './common';
 export * from './invoices';
 export * from './reports';
 export * from './transactions';
+export * from './bank';

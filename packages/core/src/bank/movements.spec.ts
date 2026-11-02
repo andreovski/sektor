@@ -3,9 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { PluggyTransaction } from './pluggy-types';
 import {
   billPayment,
-  AI_MIN_CONFIDENCE,
   categoryMemory,
-  decideAiCategory,
   findMatch,
   importedDescription,
   type InstallmentPiece,
@@ -370,94 +368,6 @@ describe('categoria pela nota, regra fixa e IA', () => {
     expect(rule('EXPENSE', 'Padaria Pão Quente')).toBeNull();
   });
 
-  it('a IA só vale com o Jev confiante e de acordo com o Haiku', () => {
-    const jev = new Map([
-      ['transporte', 0.82],
-      ['lazer', 0.1],
-    ]);
-    expect(decideAiCategory('transporte', jev)).toEqual({
-      categoryId: 'transporte',
-      confidence: 0.82,
-      agreement: 'SAME',
-    });
-    expect(decideAiCategory('lazer', jev)).toBeNull();
-    expect(decideAiCategory(null, jev)).toBeNull();
-    expect(decideAiCategory('transporte', null)).toBeNull();
-    expect(
-      decideAiCategory('transporte', new Map([['transporte', AI_MIN_CONFIDENCE - 0.01]]))
-    ).toBeNull();
-  });
-
-  describe('mesma categoria-mãe', () => {
-    const parents = new Map<string, string | null>([
-      ['alimentacao', null],
-      ['fastfood', 'alimentacao'],
-      ['restaurante', 'alimentacao'],
-      ['transporte', null],
-    ]);
-
-    it('Haiku na mãe e Jev seguro numa filha dela: a filha', () => {
-      const jev = new Map([
-        ['fastfood', 0.67],
-        ['alimentacao', 0.2],
-        ['transporte', 0.13],
-      ]);
-      expect(decideAiCategory('alimentacao', jev, parents)).toEqual({
-        categoryId: 'fastfood',
-        confidence: 0.67,
-        agreement: 'SUBCATEGORY',
-      });
-    });
-
-    it('filhas diferentes da mesma mãe: a mãe, com a soma do Jev na família', () => {
-      const jev = new Map([
-        ['restaurante', 0.45],
-        ['fastfood', 0.3],
-        ['transporte', 0.25],
-      ]);
-      expect(decideAiCategory('fastfood', jev, parents)).toEqual({
-        categoryId: 'alimentacao',
-        confidence: 0.75,
-        agreement: 'PARENT',
-      });
-    });
-
-    it('Haiku na filha e Jev na mãe: a mãe', () => {
-      const jev = new Map([
-        ['alimentacao', 0.5],
-        ['fastfood', 0.3],
-        ['transporte', 0.2],
-      ]);
-      expect(decideAiCategory('fastfood', jev, parents)?.categoryId).toBe('alimentacao');
-    });
-
-    it('Haiku na mãe e Jev pouco seguro na filha: a mãe, se a família somar o mínimo', () => {
-      const jev = new Map([
-        ['fastfood', 0.4],
-        ['alimentacao', 0.25],
-        ['transporte', 0.35],
-      ]);
-      expect(decideAiCategory('alimentacao', jev, parents)).toEqual({
-        categoryId: 'alimentacao',
-        confidence: 0.65,
-        agreement: 'PARENT',
-      });
-    });
-
-    it('família abaixo do mínimo ou mães diferentes: nada', () => {
-      const weak = new Map([
-        ['restaurante', 0.3],
-        ['fastfood', 0.2],
-        ['transporte', 0.5],
-      ]);
-      expect(decideAiCategory('fastfood', weak, parents)).toBeNull();
-      const other = new Map([
-        ['transporte', 0.9],
-        ['fastfood', 0.1],
-      ]);
-      expect(decideAiCategory('fastfood', other, parents)).toBeNull();
-    });
-  });
 });
 
 describe('parcelas da mesma compra', () => {
