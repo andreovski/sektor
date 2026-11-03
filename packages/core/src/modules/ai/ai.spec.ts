@@ -158,7 +158,7 @@ describe('IA', () => {
     it('as áreas seguem o modelo de cada chamada: local lê tudo, nuvem respeita as chaves', async () => {
       const local = useOllama();
       const claude = useClaude();
-      const { model, calls } = fakeModel(() => 'ok');
+      const { model, calls } = fakeModel(() => '{"journal":"ok"}');
       setModelForTests(model);
       ctx.db.run(
         sql`INSERT INTO reviews (id, created_at, updated_at, week_start, went_well, blocked, priorities)
@@ -274,12 +274,19 @@ describe('IA', () => {
       useClaude();
       spend('2026-11-03', 12_345);
       spend('2026-10-28', 5_000);
-      const { model, calls } = fakeModel(() => 'Você gastou [[12345]] nesta semana.');
+      const { model, calls } = fakeModel(
+        () => '{"finance":"Você gastou [[12345]] nesta semana.","tasks":"Nenhuma tarefa concluída."}'
+      );
       setModelForTests(model);
 
       expect(rpc['ai.insight']({ kind: 'weekly' })).toMatchObject({ period: '2026-11-02', text: null });
       const generated = await rpc['ai.insight.generate']({ kind: 'weekly' });
-      expect(generated).toMatchObject({ text: 'Você gastou [[12345]] nesta semana.', stale: false });
+      expect(generated.stale).toBe(false);
+      // Um cartão por área, na ordem das áreas, com o texto de cada uma.
+      expect(generated.sections).toEqual([
+        { area: 'finance', text: 'Você gastou [[12345]] nesta semana.' },
+        { area: 'tasks', text: 'Nenhuma tarefa concluída.' },
+      ]);
       expect(calls[0]!.prompt).toContain('[[12345]]');
       expect(calls[0]!.prompt).not.toContain('humor');
       expect(ctx.db.select().from(aiCalls).get()!.areas).not.toContain('health');

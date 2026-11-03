@@ -1,6 +1,7 @@
 import { addMonthsToMonth } from '@sektor/finance-engine';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { createHash } from 'node:crypto';
+import { z } from 'zod';
 
 import type { AppCtx } from '../../app';
 import { categories } from '../../db/schema';
@@ -12,7 +13,7 @@ import { stats } from '../review/service';
 
 import { ask, resolveModel } from './run';
 import { aiInsights } from './schema';
-import { allowedAreas, type Area, modelFor, readSettings } from './settings';
+import { allowedAreas, AREAS, type Area, modelFor, readSettings } from './settings';
 
 export const INSIGHTS = ['weekly', 'financeChanges'] as const;
 export type InsightKind = (typeof INSIGHTS)[number];
@@ -144,8 +145,9 @@ function financePayload(ctx: Ctx, month: string | undefined, areas: Area[]): Pay
 
 const SYSTEM: Record<InsightKind, string> = {
   weekly: `Você escreve o resumo da semana no Sektor, um app pessoal de organização.
-Compare esta semana com a passada nos números que vierem e aponte o que mais chama atenção.
-${STYLE}`,
+Escreva um texto separado para cada área pedida, só com os dados daquela área: compare esta semana com a passada e aponte o que mais chama atenção.
+Cada texto tem de 1 a 3 frases curtas.
+${STYLE.replace('de 3 a 5 frases curtas', 'curto')}`,
   financeChanges: `Você explica o que mudou nas finanças pessoais de um mês para o outro no Sektor.
 Diga quais categorias mais subiram ou caíram e o efeito no total. Se for o mês corrente, lembre que ele ainda não acabou.
 ${STYLE}`,
@@ -184,10 +186,22 @@ export interface InsightResponse {
   /** Quem escreveu o texto guardado. */
   provider: string | null;
   model: string | null;
+  /** No resumo da semana, um texto por área, cada um no seu cartão. */
+  sections: { area: Area; text: string }[] | null;
   /** Os dados mudaram desde que o texto foi gerado. */
   stale: boolean;
   /** Nenhuma área liberada tem dado neste período. */
   empty: boolean;
+}
+
+/** O resumo por áreas é guardado como JSON; o texto corrido de antes continua valendo. */
+function sectionsOf(text: string | null): InsightResponse['sections'] {
+  if (!text?.startsWith('[')) return null;
+  try {
+    return JSON.parse(text) as InsightResponse['sections'];
+  } catch {
+    return null;
+  }
 }
 
 /** O texto guardado, sem chamar o modelo. */
@@ -197,6 +211,7 @@ export function getInsight(ctx: AppCtx, kind: InsightKind, period?: string): Ins
   return {
     period: payload.period,
     text: saved?.text ?? null,
+    sections: sectionsOf(saved?.text ?? null),
     createdAt: saved?.updatedAt ?? null,
     provider: saved?.provider ?? null,
     model: saved?.model ?? null,
@@ -217,15 +232,28 @@ export async function generateInsight(
   if (payload.areas.length === 0) {
     throw new AppError(409, 'Nenhuma área liberada para a IA tem dados neste período.');
   }
-  const text = await ask(ctx, {
+  const request = {
     feature: `insight.${kind}`,
     use: kind,
     modelId: config.id,
     system: SYSTEM[kind],
     prompt: JSON.stringify(payload.data),
     areas: payload.areas,
-    maxOutputTokens: 600,
-  });
+  };
+  let text: string;
+  if (kind === 'weekly') {
+    // Uma chamada só, com uma chave por área que foi no pedido.
+    const schema = z.object(
+      Object.fromEntries(payload.areas.map((area) => [area, z.string().optional()])) as Record<Area, z.ZodOptional<z.ZodString>>
+    );
+    const answer = await ask(ctx, { ...request, schema, maxOutputTokens: 1200 });
+    const sections = AREAS.filter((area) => payload.areas.includes(area))
+      .map((area) => ({ area, text: String(answer[area] ?? '').trim() }))
+      .filter((section) => section.text);
+    text = JSON.stringify(sections);
+  } else {
+    text = await ask(ctx, { ...request, maxOutputTokens: 600 });
+  }
   const values = {
     text,
     provider: config.provider,

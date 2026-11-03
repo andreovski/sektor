@@ -1,11 +1,34 @@
 import { Link } from '@tanstack/react-router';
-import { RefreshCw, Sparkles } from 'lucide-react';
+import {
+  CalendarDays,
+  CheckSquare,
+  FolderKanban,
+  HeartPulse,
+  type LucideIcon,
+  NotebookPen,
+  RefreshCw,
+  Repeat,
+  Sparkles,
+  Timer,
+  Wallet,
+} from 'lucide-react';
 import { useState } from 'react';
 
 import { useRpc, useRpcMutation } from '../../lib/rpc';
 import { Button, Card, CardHeader, Select } from '../../ui';
 
-import { AiText, PROVIDER_INFO } from './shared';
+import { AiText, type Area, AREA_LABELS, PROVIDER_INFO } from './shared';
+
+const AREA_ICONS: Record<Area, LucideIcon> = {
+  finance: Wallet,
+  tasks: CheckSquare,
+  agenda: CalendarDays,
+  projects: FolderKanban,
+  habits: Repeat,
+  focus: Timer,
+  health: HeartPulse,
+  journal: NotebookPen,
+};
 
 const when = (at: number) =>
   new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(at);
@@ -55,7 +78,7 @@ export function InsightCard({
   const modelId = chosen || status.data.resolved[kind].modelId;
   const model = models.find((m) => m.id === modelId);
   const ready = Boolean(model && !model.problem);
-  return (
+  const card = (
     <Card>
       <CardHeader
         icon={Sparkles}
@@ -99,6 +122,11 @@ export function InsightCard({
         </p>
       ) : data?.empty ? (
         <p className="text-sm text-muted">Nenhuma área liberada para a IA tem dados aqui.</p>
+      ) : data?.sections ? (
+        <p className="text-xs text-subtle">
+          Gerado por {data.model} em {when(data.createdAt!)}.
+          {data.stale ? ' Os dados mudaram desde então.' : ''}
+        </p>
       ) : data?.text ? (
         <div className="flex flex-col gap-2">
           <p className="text-sm leading-relaxed">
@@ -115,5 +143,21 @@ export function InsightCard({
         </p>
       )}
     </Card>
+  );
+  if (!ready || !data?.sections?.length) return card;
+  return (
+    <div className="flex flex-col gap-4">
+      {card}
+      <div className="grid grid-cols-2 gap-4">
+        {data.sections.map((section) => (
+          <Card key={section.area}>
+            <CardHeader icon={AREA_ICONS[section.area]} title={AREA_LABELS[section.area].replace(' (textos da Revisão)', '')} />
+            <p className="text-sm leading-relaxed">
+              <AiText text={section.text} />
+            </p>
+          </Card>
+        ))}
+      </div>
+    </div>
   );
 }
