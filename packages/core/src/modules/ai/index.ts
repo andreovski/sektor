@@ -5,6 +5,7 @@ import type { AppCtx, Job } from '../../app';
 import { AppError, newId } from '../../services/context';
 import { parse } from '../finance';
 
+import * as assistant from './assistant';
 import { pendingForAi, suggestCategories } from './bank-category';
 import { generateInsight, getInsight, INSIGHTS, type InsightKind } from './insights';
 import { hasJev, jevUsable } from './jev';
@@ -67,6 +68,13 @@ const insightSchema = z.object({
   modelId: z.string().nullable().optional(),
 });
 type InsightInput = { kind: InsightKind; period?: string; modelId?: string | null };
+
+const chatSchema = z.object({
+  conversationId: z.string().nullable().optional(),
+  text: z.string().trim().min(1, 'Escreva a pergunta.').max(2000, 'Pergunta longa demais.'),
+  modelId: z.string().nullable().optional(),
+});
+type ChatInput = z.infer<typeof chatSchema>;
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -275,8 +283,13 @@ export const handlers = (ctx: AppCtx) => ({
     return generateInsight(ctx, kind, period, modelId);
   },
   'ai.bankCategory.run': async () => ({ suggested: await suggestCategories(ctx) }),
+  'ai.chat.list': () => assistant.listConversations(ctx),
+  'ai.chat.get': ({ id }: { id: string }) => assistant.getConversation(ctx, id),
+  'ai.chat.send': (input: ChatInput) => assistant.send(ctx, parse<ChatInput>(chatSchema as never, input)),
+  'ai.chat.delete': ({ id }: { id: string }) => assistant.deleteConversation(ctx, id),
 });
 
 export const jobs: Job[] = [
   { name: 'ai.bankCategory', everyMs: 15 * 60_000, run: (ctx) => suggestCategories(ctx) },
+  { name: 'ai.chat.purge', everyMs: 6 * 60 * 60_000, run: (ctx) => assistant.purgeOld(ctx) },
 ];
