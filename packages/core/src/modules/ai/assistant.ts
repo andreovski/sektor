@@ -74,6 +74,7 @@ export function getConversation(ctx: AppCtx, id: string) {
       createdAt: m.createdAt,
       model: m.model,
       tools: m.tools.map((name) => TOOL_LABELS[name] ?? name),
+      areas: m.areas ? (m.areas.split(',') as Area[]) : [],
     })),
   };
 }

@@ -22,7 +22,6 @@ import { routes as health } from './modules/health';
 import { routes as focus } from './modules/focus';
 import { routes as review } from './modules/review';
 import { routes as settings } from './modules/settings';
-import { routes as assistant } from './modules/ai/assistant-page';
 import { FatalScreen } from './modules/settings/fatal';
 import { useCoreFailure } from './lib/rpc';
 import { applyStoredTheme, useTheme } from './lib/theme';
@@ -43,7 +42,6 @@ const moduleRoutes = [
   ...health,
   ...focus,
   ...review,
-  ...assistant,
   ...settings,
 ];
 

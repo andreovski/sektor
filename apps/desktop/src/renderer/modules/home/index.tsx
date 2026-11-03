@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 
 import { useRpc } from '../../lib/rpc';
-import { SectionLabel } from '../../ui';
+import { cn, SectionLabel } from '../../ui';
 
-import { CaptureBox } from './capture';
+import { AssistantConversation, AssistantInput, useHomeAssistant } from './assistant';
 import { Cover } from './cover';
 import { coverDate, greeting, localDate } from './dates';
 import { FinanceCard, GoalsCard, ProjectsCard } from './progress-cards';
@@ -65,20 +65,39 @@ function Sections() {
 function HomePage() {
   const now = useNow();
   const name = useRpc('settings.get').data?.name;
+  const assistant = useHomeAssistant();
+  const open = assistant.open;
   return (
     // O -mt-8 desfaz o respiro do `main`: a capa encosta no topo da janela.
     <div className="relative -mt-8">
-      <Cover />
-      <header className="relative flex min-h-[430px] flex-col items-center pt-[116px] pb-8 text-center">
-        <h1 className="text-[36px] leading-tight font-semibold">
+      <Cover className={cn('transition-[height] duration-500', open && 'h-[150px]')} />
+      <header
+        className={cn(
+          'relative flex flex-col items-center text-center transition-all duration-500',
+          open ? 'min-h-[150px] pt-12 pb-6' : 'min-h-[430px] pt-[116px] pb-8'
+        )}
+      >
+        <h1
+          className={cn(
+            'leading-tight font-semibold transition-all duration-500',
+            open ? 'text-2xl' : 'text-[36px]'
+          )}
+        >
           {greeting(now.getHours())}
           {name ? `, ${name}` : ''}
         </h1>
-        <p className="mt-1 mb-8 text-muted first-letter:uppercase">{coverDate(now)}</p>
-        <CaptureBox />
+        <p className={cn('mt-1 text-muted first-letter:uppercase', !open && 'mb-8')}>{coverDate(now)}</p>
+        {!open && <AssistantInput assistant={assistant} />}
       </header>
-      {/* A chave recarrega os cartões na virada do dia, com o app aberto na bandeja. */}
-      <Sections key={localDate(now.getTime())} />
+      {open ? (
+        <div className="tab-panel flex flex-col gap-4">
+          <AssistantConversation assistant={assistant} />
+          <AssistantInput assistant={assistant} docked />
+        </div>
+      ) : (
+        /* A chave recarrega os cartões na virada do dia, com o app aberto na bandeja. */
+        <Sections key={localDate(now.getTime())} />
+      )}
     </div>
   );
 }

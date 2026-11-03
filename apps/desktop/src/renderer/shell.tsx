@@ -11,7 +11,6 @@ import {
   type LucideIcon,
   Repeat2,
   Settings,
-  Sparkles,
   Target,
   Timer,
   Wallet,
@@ -31,7 +30,6 @@ const ITEMS: { to: string; label: string; icon: LucideIcon }[] = [
   { to: '/foco', label: 'Foco', icon: Timer },
   { to: '/revisao', label: 'Revisão', icon: CalendarCheck },
   { to: '/lembretes', label: 'Lembretes', icon: Bell },
-  { to: '/assistente', label: 'Assistente', icon: Sparkles },
   { to: '/ajustes', label: 'Ajustes', icon: Settings },
 ];
 

@@ -24,11 +24,10 @@ import { Button, cn } from '../../ui';
 import { ENERGY, ScorePicker } from '../health/shared';
 import { PriorityBars } from '../tasks/chips';
 
-import { CAPTURE_INPUT_ID } from './capture';
 import { Empty, HomeCard, Loaded, Meter, More } from './card';
 import { localDate, minutesLabel, shiftDate, weekdayName } from './dates';
 
-const MOODS = [
+export const MOODS = [
   { label: 'Muito mal', icon: Frown },
   { label: 'Mal', icon: Annoyed },
   { label: 'Neutro', icon: Meh },
@@ -173,8 +172,8 @@ export function TasksCard() {
             <Empty
               icon={CheckSquare}
               title="Nada com prazo para hoje"
-              action="Capturar tarefa"
-              onAction={() => document.getElementById(CAPTURE_INPUT_ID)?.focus()}
+              action="Nova tarefa"
+              to="/tarefas"
             />
           ) : (
             <>
