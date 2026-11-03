@@ -19,9 +19,10 @@ export function isAppUrl(url: string) {
 
 const BACKGROUNDS = { dark: '#0e120e', light: '#f5f6ef' };
 
-export function applyWindowTheme(window: BrowserWindow, theme: keyof typeof BACKGROUNDS) {
+/** `system` deixa o macOS decidir, e a página lê o resultado pelo `prefers-color-scheme`. */
+export function applyWindowTheme(window: BrowserWindow, theme: 'dark' | 'light' | 'system') {
   nativeTheme.themeSource = theme;
-  window.setBackgroundColor(BACKGROUNDS[theme]);
+  window.setBackgroundColor(BACKGROUNDS[nativeTheme.shouldUseDarkColors ? 'dark' : 'light']);
 }
 
 export function createWindow(onLoad: (window: BrowserWindow) => void, hidden = false) {

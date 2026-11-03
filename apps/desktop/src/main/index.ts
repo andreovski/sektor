@@ -180,8 +180,8 @@ function registerIpc() {
   handle('app:failure', () => failure);
   handle('app:open-data-dir', () => shell.openPath(dataDir()).then(() => undefined));
   handle('app:relaunch', restart);
-  handle('app:theme', (event, theme: 'dark' | 'light') =>
-    applyWindowTheme(parent(event), theme === 'light' ? 'light' : 'dark')
+  handle('app:theme', (event, theme: 'dark' | 'light' | 'system') =>
+    applyWindowTheme(parent(event), theme === 'light' || theme === 'system' ? theme : 'dark')
   );
   handle('backup:pick-folder', async (event): Promise<FolderChoice> => {
     if (!core || failure) throw new Error('O núcleo não está no ar.');

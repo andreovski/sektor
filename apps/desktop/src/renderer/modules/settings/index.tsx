@@ -253,7 +253,7 @@ const GROUPS: {
         value: 'aparencia',
         label: 'Aparência',
         icon: Palette,
-        description: 'Modo claro ou escuro e a paleta de cores.',
+        description: 'Modo claro, escuro ou o do sistema, e a paleta de cores.',
         panel: Appearance,
       },
     ],

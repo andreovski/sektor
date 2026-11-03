@@ -1,19 +1,27 @@
-import { type LucideIcon, Moon, Sun } from 'lucide-react';
+import { type LucideIcon, Monitor, Moon, Sun } from 'lucide-react';
 
-import { PALETTES, setPalette, setTheme, type Theme, usePalette, useTheme } from '../../lib/theme';
+import {
+  PALETTES,
+  setPalette,
+  setTheme,
+  type ThemeChoice,
+  usePalette,
+  useThemeChoice,
+} from '../../lib/theme';
 import { Card, cn } from '../../ui';
 
-const THEMES: { value: Theme; label: string; icon: LucideIcon }[] = [
+const THEMES: { value: ThemeChoice; label: string; icon: LucideIcon }[] = [
   { value: 'dark', label: 'Escuro', icon: Moon },
   { value: 'light', label: 'Claro', icon: Sun },
+  { value: 'system', label: 'Sistema', icon: Monitor },
 ];
 
 export function Appearance() {
-  const theme = useTheme();
+  const theme = useThemeChoice();
   const palette = usePalette();
   return (
     <Card className="flex flex-col gap-4">
-      <div role="radiogroup" aria-label="Tema" className="grid grid-cols-2 gap-3">
+      <div role="radiogroup" aria-label="Tema" className="grid grid-cols-3 gap-3">
         {THEMES.map(({ value, label, icon: Icon }) => (
           <button
             key={value}
