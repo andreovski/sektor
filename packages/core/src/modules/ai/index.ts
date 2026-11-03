@@ -169,7 +169,7 @@ async function testModel(ctx: AppCtx, modelId?: string) {
     system: 'Responda em português do Brasil, numa frase curta.',
     prompt: 'Diga olá e o seu nome de modelo.',
     areas: [],
-    maxOutputTokens: 100,
+    maxOutputTokens: 2000,
   });
   let json = false;
   try {
@@ -180,7 +180,7 @@ async function testModel(ctx: AppCtx, modelId?: string) {
       prompt: 'Devolva soma = 2 + 3 e capital = a capital do Brasil.',
       areas: [],
       schema: z.object({ soma: z.number(), capital: z.string() }),
-      maxOutputTokens: 100,
+      maxOutputTokens: 2000,
     });
     json = value.soma === 5 && /bras[ií]lia/i.test(value.capital);
   } catch {

@@ -246,13 +246,13 @@ export async function generateInsight(
     const schema = z.object(
       Object.fromEntries(payload.areas.map((area) => [area, z.string().optional()])) as Record<Area, z.ZodOptional<z.ZodString>>
     );
-    const answer = await ask(ctx, { ...request, schema, maxOutputTokens: 1200 });
+    const answer = await ask(ctx, { ...request, schema, maxOutputTokens: 6000 });
     const sections = AREAS.filter((area) => payload.areas.includes(area))
       .map((area) => ({ area, text: String(answer[area] ?? '').trim() }))
       .filter((section) => section.text);
     text = JSON.stringify(sections);
   } else {
-    text = await ask(ctx, { ...request, maxOutputTokens: 600 });
+    text = await ask(ctx, { ...request, maxOutputTokens: 4000 });
   }
   const values = {
     text,

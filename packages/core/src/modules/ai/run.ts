@@ -1,4 +1,11 @@
-import { APICallError, generateText, NoObjectGeneratedError, Output, RetryError } from 'ai';
+import {
+  APICallError,
+  generateText,
+  NoObjectGeneratedError,
+  NoOutputGeneratedError,
+  Output,
+  RetryError,
+} from 'ai';
 import type { ZodType } from 'zod';
 
 import type { AppCtx } from '../../app';
@@ -84,13 +91,15 @@ export async function ask<T = string>(ctx: AppCtx, request: AiRequest<T>): Promi
       model,
       system: request.system,
       prompt,
-      maxOutputTokens: request.maxOutputTokens ?? 1200,
+      // Folga para os modelos que pensam antes: o pensamento conta no limite.
+      maxOutputTokens: request.maxOutputTokens ?? 4000,
       abortSignal: AbortSignal.timeout(isLocal(config) ? TIMEOUT_MS.local : TIMEOUT_MS.cloud),
       ...(request.schema ? { output: Output.object({ schema: request.schema }) } : {}),
     });
     const inputTokens = result.usage.inputTokens ?? 0;
     const outputTokens = result.usage.outputTokens ?? 0;
     const value = (request.schema ? result.output : result.text.trim()) as T;
+    if (value === '') throw new NoOutputGeneratedError({ message: 'Resposta vazia.' });
     log({
       ok: true,
       inputTokens,
@@ -154,6 +163,9 @@ export const scrub = (message: string) =>
 function explain(error: unknown, provider: string) {
   // Depois das novas tentativas, o SDK embrulha o último erro.
   const last = RetryError.isInstance(error) ? error.lastError : error;
+  if (NoOutputGeneratedError.isInstance(last)) {
+    return 'O modelo não respondeu nada: pode ter gastado o limite pensando. Tente de novo ou use outro modelo.';
+  }
   if (NoObjectGeneratedError.isInstance(last)) {
     return 'O modelo respondeu, mas fora do formato pedido. Tente outro modelo.';
   }

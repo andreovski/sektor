@@ -209,7 +209,7 @@ async function run(ctx: AppCtx): Promise<number> {
         prompt: JSON.stringify(input),
         areas: ['finance'],
         schema,
-        maxOutputTokens: 4000,
+        maxOutputTokens: 12000,
       });
       picks = batch.map((m, i) => {
         const label = answer.itens.find((item) => item.n === i + 1)?.categoria;
