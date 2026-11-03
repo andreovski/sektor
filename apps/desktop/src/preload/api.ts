@@ -44,6 +44,12 @@ export interface SektorApi {
   popOutNote(noteId: string): Promise<void>;
   /** Fecha a janela de onde veio o pedido (o pop-up da nota, que não tem moldura). */
   closeWindow(): Promise<void>;
+  /** Abre o login do banco pedido pelo widget da Pluggy; devolve os parâmetros da volta, ou nulo. */
+  pluggyOauth(url: string): Promise<Record<string, string> | null>;
+  /** Abre no navegador o link que o widget pede (o site do Meu Pluggy, por exemplo). */
+  pluggyOpenLink(url: string): Promise<void>;
+  /** Anota no registro o tipo de cada mensagem do widget (sem o conteúdo). */
+  pluggyLog(text: string): Promise<void>;
 }
 
 declare global {

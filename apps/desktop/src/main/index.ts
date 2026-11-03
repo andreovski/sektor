@@ -29,7 +29,7 @@ import { setAppMenu } from './menu';
 import { clearOpenedCopies, projectFileChannels, sweepProjectFiles } from './project-files';
 import { applyPendingRestore, filesPath, scheduleRestore, stagedFilesPath, stagePath } from './restore';
 import { createTray, hasOpenWindow, notify } from './tray';
-import { appWindows, applyWindowTheme, createWindow, isAppUrl, openNoteWindow } from './window';
+import { appWindows, applyWindowTheme, createWindow, isAppUrl, logWindowOpen, openNoteWindow, openPluggyOauth } from './window';
 
 // O smoke é a prova do pacote: roda sempre em pasta e banco temporários, sem o cofre.
 const SMOKE = process.env.SEKTOR_SMOKE === '1';
@@ -227,6 +227,18 @@ function registerIpc() {
     openNoteWindow(noteId, givePort);
   });
   handle('notes:close-window', (event) => BrowserWindow.fromWebContents(event.sender)?.close());
+  handle('pluggy:log', (_event, text: string) => {
+    if (typeof text === 'string') logWindowOpen(text.slice(0, 200), 'mensagem do widget');
+  });
+  handle('pluggy:open-link', (_event, url: string) => {
+    if (typeof url !== 'string' || !url.startsWith('https://')) throw new Error('Endereço inválido.');
+    logWindowOpen(url, 'link do widget, no navegador');
+    return shell.openExternal(url);
+  });
+  handle('pluggy:oauth', (event, url: string) => {
+    if (typeof url !== 'string' || !url.startsWith('https://')) throw new Error('Endereço inválido.');
+    return openPluggyOauth(parent(event), url);
+  });
 }
 
 /** Prova sem cofre: banco e chave temporários, e a janela de verdade, que o asar precisa abrir. */

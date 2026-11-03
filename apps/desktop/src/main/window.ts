@@ -46,11 +46,65 @@ function guardPluggyWindow(child: BrowserWindow) {
   });
 }
 
+/**
+ * O login do banco (OAuth) que o widget da Pluggy pede para abrir. Fora do navegador o widget não
+ * abre a janela sozinho: avisa a página, e quem abre é o app. A janela é isolada (sem preload) e
+ * termina quando chega à página de retorno da Pluggy; os parâmetros dela voltam para o widget.
+ */
+export function openPluggyOauth(parent: BrowserWindow, url: string): Promise<Record<string, string> | null> {
+  logWindowOpen(url, 'login do banco pedido pelo widget');
+  return new Promise((resolve) => {
+    let settled = false;
+    const login = new BrowserWindow({
+      parent,
+      width: 520,
+      height: 760,
+      backgroundColor: BACKGROUNDS[nativeTheme.shouldUseDarkColors ? 'dark' : 'light'],
+      webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, devTools: false },
+    });
+    login.setMenuBarVisibility(false);
+    const finish = (result: Record<string, string> | null) => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+      if (!login.isDestroyed()) login.close();
+    };
+    const check = (target: string) => {
+      if (!isPluggyCallback(target)) return false;
+      finish(Object.fromEntries(new URL(target).searchParams.entries()));
+      return true;
+    };
+    const watch = (event: Electron.Event, target: string) => {
+      if (check(target)) return event.preventDefault();
+      if (!target.startsWith('https://')) event.preventDefault();
+    };
+    login.webContents.on('will-navigate', watch);
+    login.webContents.on('will-redirect', watch);
+    login.webContents.on('did-navigate', (_event, target) => void check(target));
+    login.webContents.setWindowOpenHandler(({ url: next }) => {
+      if (next.startsWith('https://')) void shell.openExternal(next);
+      return { action: 'deny' };
+    });
+    login.on('closed', () => finish(null));
+    void login.loadURL(url);
+  });
+}
+
+/** A página de retorno do OAuth da Pluggy, a mesma que o SDK procura no Cordova. */
+function isPluggyCallback(url: string) {
+  return (
+    (url.startsWith('https://api.pluggy.ai/') || url.startsWith('https://api.pluggy.dev/')) &&
+    url.includes('/oauthCallback.html')
+  );
+}
+
 /** Para entender o que o widget tenta abrir: só a origem, nunca o caminho (pode ter token). */
-function logWindowOpen(url: string, where: string) {
+export function logWindowOpen(url: string, where: string) {
   let origin = url;
   try {
-    origin = new URL(url).origin;
+    const parsed = new URL(url);
+    // about:blank, blob: e data: têm origem "null": vale o esquema.
+    origin = parsed.origin === 'null' ? `${parsed.protocol}…` : parsed.origin;
   } catch {
     // fica como veio
   }
@@ -164,7 +218,19 @@ function buildWindow(
   });
   window.webContents.on('did-create-window', (child) => guardPluggyWindow(child));
   window.webContents.on('will-navigate', (event, url) => {
-    if (!isAppUrl(url)) event.preventDefault();
+    if (isAppUrl(url)) return;
+    logWindowOpen(url, 'navegação bloqueada');
+    event.preventDefault();
+  });
+  // O que o widget da Pluggy faz dentro do iframe: navegações e o que a CSP barrou.
+  window.webContents.on('did-start-navigation', ({ url, isMainFrame }) => {
+    if (!isMainFrame) logWindowOpen(url, 'iframe navegou para');
+  });
+  window.webContents.on('console-message', ({ message }) => {
+    if (/Content Security Policy|Refused to/i.test(message)) {
+      const url = /https?:\/\/[^\s'"]+/.exec(message)?.[0] ?? 'sem endereço';
+      logWindowOpen(url, 'barrado pela CSP');
+    }
   });
   // A cada carga da página, inclusive recarregar: a porta anterior morreu com ela.
   window.webContents.on('did-finish-load', () => {

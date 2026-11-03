@@ -27,6 +27,9 @@ const api: SektorApi = {
   googleCancelLogin: () => ipcRenderer.invoke('google:cancel-login'),
   popOutNote: (noteId) => ipcRenderer.invoke('notes:pop-out', noteId),
   closeWindow: () => ipcRenderer.invoke('notes:close-window'),
+  pluggyOauth: (url) => ipcRenderer.invoke('pluggy:oauth', url),
+  pluggyLog: (text) => ipcRenderer.invoke('pluggy:log', text),
+  pluggyOpenLink: (url) => ipcRenderer.invoke('pluggy:open-link', url),
 };
 contextBridge.exposeInMainWorld('sektor', api);
 
