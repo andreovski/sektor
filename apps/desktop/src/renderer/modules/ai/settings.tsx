@@ -216,6 +216,66 @@ function ModelsCard({ status }: { status: Status }) {
   );
 }
 
+/** Campo do modelo com a lista do provedor, que rola e filtra pelo que se digita. */
+function ModelPicker({
+  value,
+  options,
+  onChange,
+}: {
+  value: string;
+  options: string[];
+  onChange(value: string): void;
+}) {
+  const [open, setOpen] = useState(false);
+  const term = value.trim().toLowerCase();
+  const matches = options.filter((name) => name.toLowerCase().includes(term));
+  return (
+    <div className="relative">
+      <Input
+        value={value}
+        placeholder="nome do modelo"
+        role="combobox"
+        aria-expanded={open && matches.length > 0}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        onChange={(event) => {
+          onChange(event.target.value);
+          setOpen(true);
+        }}
+        onKeyDown={(event) => event.key === 'Escape' && setOpen(false)}
+      />
+      {open && matches.length > 0 && (
+        <ul
+          role="listbox"
+          className="absolute top-full right-0 left-0 z-20 mt-1 max-h-56 overflow-y-auto rounded-control border border-line bg-raised p-1 shadow-popover"
+        >
+          {matches.map((name) => (
+            <li key={name}>
+              <button
+                type="button"
+                role="option"
+                aria-selected={name === value}
+                // mousedown antes do blur do campo, senão a lista fecha sem escolher.
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  onChange(name);
+                  setOpen(false);
+                }}
+                className={cn(
+                  'block w-full truncate rounded-control px-2 py-1 text-left text-sm hover:bg-hover',
+                  name === value && 'text-primary'
+                )}
+              >
+                {name}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function AddModel({ status, onAdded }: { status: Status; onAdded(model: ModelRow): void }) {
   const add = useRpcMutation('ai.models.add');
   const [provider, setProvider] = useState<Provider>('ollama');
@@ -248,35 +308,8 @@ function AddModel({ status, onAdded }: { status: Status; onAdded(model: ModelRow
       </Field>
       <p className="-mt-1 text-xs text-subtle">{PROVIDER_INFO[provider].hint}</p>
       <Field label="Modelo">
-        <Input
-          list="ai-models"
-          value={model}
-          placeholder={suggestions[0] ?? 'nome do modelo'}
-          onChange={(event) => setModel(event.target.value)}
-        />
-        <datalist id="ai-models">
-          {suggestions.map((name) => (
-            <option key={name} value={name} />
-          ))}
-        </datalist>
+        <ModelPicker value={model} options={suggestions} onChange={setModel} />
       </Field>
-      {suggestions.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {suggestions.slice(0, 8).map((name) => (
-            <button
-              key={name}
-              type="button"
-              onClick={() => setModel(name)}
-              className={cn(
-                'rounded-full border px-2 py-0.5 text-xs transition-colors',
-                model === name ? 'border-primary text-primary' : 'border-line-strong text-muted hover:bg-hover'
-              )}
-            >
-              {name}
-            </button>
-          ))}
-        </div>
-      )}
       {provider === 'ollama' && (
         <>
           <Field label="Endereço do Ollama">
