@@ -43,8 +43,51 @@ export function costMicros(
   return Math.round(inputTokens * price[0] + outputTokens * price[1]);
 }
 
-/** Os modelos que o provedor tem agora. Sem rede, as sugestões fixas. */
-export async function providerModels(provider: Provider, ollamaUrl: string | null): Promise<string[]> {
+/**
+ * Os gratuitos do OpenRouter que fazem sentido no Sektor, escolhidos pela ficha deles em 03/11/2026:
+ * JSON com schema (a categoria do banco precisa), ferramentas (o assistente da 3b vai precisar),
+ * imagem (recibo, na 3d) e português. Só aparecem os que ainda estão na lista ao vivo.
+ */
+export const RECOMMENDED: Partial<Record<Provider, { id: string; note: string }[]>> = {
+  openrouter: [
+    {
+      id: 'nvidia/nemotron-3.5-super-vl:free',
+      note: 'O mais completo: JSON, ferramentas e imagem. Bom para tudo.',
+    },
+    {
+      id: 'google/gemma-4-31b-it:free',
+      note: 'Melhor português para os resumos; o JSON é menos garantido.',
+    },
+    {
+      id: 'dots-studio/dots-3-note-preview:free',
+      note: 'JSON, ferramentas e imagem. É prévia: pode sair do ar.',
+    },
+    {
+      id: 'xingchen-agi/xing4.0-29b-a4b:free',
+      note: 'JSON e ferramentas, só texto. Alternativa quando os outros limitarem.',
+    },
+  ],
+  anthropic: [
+    { id: 'claude-haiku-5-5', note: 'Rápido e barato. Dá conta da categoria do banco e dos resumos.' },
+    { id: 'claude-sonnet-5-5', note: 'Textos e ferramentas melhores, por um custo maior.' },
+    { id: 'claude-opus-5-5', note: 'O mais capaz e o mais caro. Raramente precisa aqui.' },
+  ],
+};
+
+export interface ProviderModels {
+  models: string[];
+  recommended: { id: string; note: string }[];
+}
+
+/** Os modelos que o provedor tem agora, com os recomendados primeiro. Sem rede, as sugestões fixas. */
+export async function providerModels(provider: Provider, ollamaUrl: string | null): Promise<ProviderModels> {
+  const models = await listModels(provider, ollamaUrl);
+  const recommended = (RECOMMENDED[provider] ?? []).filter((r) => models.includes(r.id));
+  const picked = new Set(recommended.map((r) => r.id));
+  return { recommended, models: models.filter((id) => !picked.has(id)) };
+}
+
+async function listModels(provider: Provider, ollamaUrl: string | null): Promise<string[]> {
   try {
     if (provider === 'ollama') {
       const base = (ollamaUrl || OLLAMA_URL).replace(/\/v1\/?$/, '');

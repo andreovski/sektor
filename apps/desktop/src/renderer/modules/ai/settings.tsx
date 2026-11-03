@@ -220,22 +220,33 @@ function ModelsCard({ status }: { status: Status }) {
 function ModelPicker({
   value,
   options,
+  recommended,
   onChange,
 }: {
   value: string;
   options: string[];
+  recommended: { id: string; note: string }[];
   onChange(value: string): void;
 }) {
   const [open, setOpen] = useState(false);
   const term = value.trim().toLowerCase();
-  const matches = options.filter((name) => name.toLowerCase().includes(term));
+  const fits = (name: string) => name.toLowerCase().includes(term);
+  const picks = recommended.filter((r) => fits(r.id));
+  const rest = options.filter(fits);
+  const choose = (name: string) => (event: React.MouseEvent) => {
+    // mousedown antes do blur do campo, senão a lista fecha sem escolher.
+    event.preventDefault();
+    onChange(name);
+    setOpen(false);
+  };
+  const item = 'block w-full rounded-control px-2 py-1 text-left text-sm hover:bg-hover';
   return (
     <div className="relative">
       <Input
         value={value}
         placeholder="nome do modelo"
         role="combobox"
-        aria-expanded={open && matches.length > 0}
+        aria-expanded={open && picks.length + rest.length > 0}
         onFocus={() => setOpen(true)}
         onBlur={() => setOpen(false)}
         onChange={(event) => {
@@ -244,33 +255,49 @@ function ModelPicker({
         }}
         onKeyDown={(event) => event.key === 'Escape' && setOpen(false)}
       />
-      {open && matches.length > 0 && (
-        <ul
+      {open && picks.length + rest.length > 0 && (
+        <div
           role="listbox"
-          className="absolute top-full right-0 left-0 z-20 mt-1 max-h-56 overflow-y-auto rounded-control border border-line bg-raised p-1 shadow-popover"
+          className="absolute top-full right-0 left-0 z-20 mt-1 max-h-72 overflow-y-auto rounded-control border border-line bg-raised p-1 shadow-popover"
         >
-          {matches.map((name) => (
-            <li key={name}>
-              <button
-                type="button"
-                role="option"
-                aria-selected={name === value}
-                // mousedown antes do blur do campo, senão a lista fecha sem escolher.
-                onMouseDown={(event) => {
-                  event.preventDefault();
-                  onChange(name);
-                  setOpen(false);
-                }}
-                className={cn(
-                  'block w-full truncate rounded-control px-2 py-1 text-left text-sm hover:bg-hover',
-                  name === value && 'text-primary'
-                )}
-              >
-                {name}
-              </button>
-            </li>
+          {picks.length > 0 && (
+            <>
+              <p className="px-2 pt-1 pb-0.5 text-[11px] font-medium tracking-[0.14em] text-subtle uppercase">
+                Recomendados para o Sektor
+              </p>
+              {picks.map((r) => (
+                <button
+                  key={r.id}
+                  type="button"
+                  role="option"
+                  aria-selected={r.id === value}
+                  onMouseDown={choose(r.id)}
+                  className={cn(item, r.id === value && 'text-primary')}
+                >
+                  <span className="block truncate">{r.id}</span>
+                  <span className="block text-xs text-subtle">{r.note}</span>
+                </button>
+              ))}
+              {rest.length > 0 && (
+                <p className="px-2 pt-2 pb-0.5 text-[11px] font-medium tracking-[0.14em] text-subtle uppercase">
+                  Todos
+                </p>
+              )}
+            </>
+          )}
+          {rest.map((name) => (
+            <button
+              key={name}
+              type="button"
+              role="option"
+              aria-selected={name === value}
+              onMouseDown={choose(name)}
+              className={cn(item, 'truncate', name === value && 'text-primary')}
+            >
+              {name}
+            </button>
           ))}
-        </ul>
+        </div>
       )}
     </div>
   );
@@ -286,7 +313,10 @@ function AddModel({ status, onAdded }: { status: Status; onAdded(model: ModelRow
     baseUrl: provider === 'ollama' ? baseUrl || null : null,
   });
   const taken = new Set(status.models.filter((m) => m.provider === provider).map((m) => m.model));
-  const suggestions = (available.data ?? status.suggestedModels[provider]).filter((name) => !taken.has(name));
+  const suggestions = (available.data?.models ?? status.suggestedModels[provider]).filter(
+    (name) => !taken.has(name)
+  );
+  const recommended = (available.data?.recommended ?? []).filter((r) => !taken.has(r.id));
 
   return (
     <div className="flex flex-col gap-2 rounded-control border border-line p-3">
@@ -308,7 +338,7 @@ function AddModel({ status, onAdded }: { status: Status; onAdded(model: ModelRow
       </Field>
       <p className="-mt-1 text-xs text-subtle">{PROVIDER_INFO[provider].hint}</p>
       <Field label="Modelo">
-        <ModelPicker value={model} options={suggestions} onChange={setModel} />
+        <ModelPicker value={model} options={suggestions} recommended={recommended} onChange={setModel} />
       </Field>
       {provider === 'ollama' && (
         <>
@@ -319,7 +349,7 @@ function AddModel({ status, onAdded }: { status: Status; onAdded(model: ModelRow
               onChange={(event) => setBaseUrl(event.target.value)}
             />
           </Field>
-          {available.data && available.data.length === 0 && (
+          {available.data && available.data.models.length + available.data.recommended.length === 0 && (
             <p className="text-xs text-warning">
               Não achei o Ollama neste endereço, ou ele não tem modelo baixado.
             </p>
