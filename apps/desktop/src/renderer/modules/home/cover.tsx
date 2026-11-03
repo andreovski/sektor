@@ -4,7 +4,8 @@ import { cn } from '../../ui';
 
 const CELL = 10;
 const GAP = 2;
-const FRAME_MS = 110;
+const FRAME_MS = 45;
+const TWINKLE_MS = 420;
 
 const noise = (x: number, y: number) => {
   const value = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
@@ -36,7 +37,7 @@ function draw(canvas: HTMLCanvasElement, time: number) {
       // O centro fica mais escuro para a saudação e a caixa de captura lerem bem.
       const center = Math.hypot((x - 0.5) / 0.36, (y - 0.42) / 0.62);
       const quiet = Math.min(1, 0.22 + center * 0.72);
-      const twinkle = 0.72 + 0.28 * Math.sin(time / 1400 + seed * Math.PI * 2);
+      const twinkle = 0.62 + 0.38 * Math.sin(time / TWINKLE_MS + seed * Math.PI * 2);
       const alpha = (0.12 + seed * seed * 0.78) * quiet * twinkle;
       if (alpha < 0.03) continue;
       context.globalAlpha = alpha;
@@ -47,15 +48,15 @@ function draw(canvas: HTMLCanvasElement, time: number) {
   // A cor vem do tema: pinta o degradê só onde já há pixel.
   const styles = getComputedStyle(canvas);
   const gradient = context.createLinearGradient(0, 0, width, height * 0.4);
-  gradient.addColorStop(0, styles.getPropertyValue('--primary'));
-  gradient.addColorStop(1, styles.getPropertyValue('--tone-amber'));
+  gradient.addColorStop(0, styles.getPropertyValue('--cover-from'));
+  gradient.addColorStop(1, styles.getPropertyValue('--cover-to'));
   context.globalAlpha = 1;
   context.globalCompositeOperation = 'source-in';
   context.fillStyle = gradient;
   context.fillRect(0, 0, width, height);
 }
 
-/** Pixels que cintilam devagar. Só anima à vista, e fica parado com movimento reduzido. */
+/** Pixels que cintilam. Só anima à vista, e fica parado com movimento reduzido. */
 function PixelField() {
   const ref = useRef<HTMLCanvasElement>(null);
 
@@ -88,12 +89,16 @@ function PixelField() {
       if (visible) restart();
     });
     sight.observe(canvas);
+    // Parado por movimento reduzido, ainda precisa trocar de cor com o tema.
+    const theme = new MutationObserver(restart);
+    theme.observe(document.documentElement, { attributeFilter: ['data-theme'] });
     motion.addEventListener('change', restart);
     document.addEventListener('visibilitychange', restart);
     return () => {
       cancelAnimationFrame(frame);
       resize.disconnect();
       sight.disconnect();
+      theme.disconnect();
       motion.removeEventListener('change', restart);
       document.removeEventListener('visibilitychange', restart);
     };

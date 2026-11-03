@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell } from 'electron';
+import { app, BrowserWindow, nativeTheme, shell } from 'electron';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -17,13 +17,20 @@ export function isAppUrl(url: string) {
   }
 }
 
+const BACKGROUNDS = { dark: '#0e120e', light: '#f5f6ef' };
+
+export function applyWindowTheme(window: BrowserWindow, theme: keyof typeof BACKGROUNDS) {
+  nativeTheme.themeSource = theme;
+  window.setBackgroundColor(BACKGROUNDS[theme]);
+}
+
 export function createWindow(onLoad: (window: BrowserWindow) => void, hidden = false) {
   const window = new BrowserWindow({
     width: 1440,
     height: 900,
     minWidth: 960,
     minHeight: 640,
-    backgroundColor: '#0e120e',
+    backgroundColor: BACKGROUNDS.dark,
     show: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),

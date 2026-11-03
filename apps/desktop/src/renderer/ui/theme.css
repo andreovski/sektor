@@ -45,7 +45,49 @@
   --glow-primary: 0 0 0 1px oklch(0.84 0.15 128 / 0.5), 0 6px 24px -6px oklch(0.84 0.15 128 / 0.4);
   --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
   --app-backdrop: radial-gradient(60rem 36rem at 78% -14%, oklch(60% 0.13 135 / 0.13), transparent 60%);
+  --cover-from: var(--primary);
+  --cover-to: var(--tone-amber);
   color-scheme: dark;
+}
+
+:root[data-theme='light'] {
+  --background: oklch(97% 0.012 125);
+  --surface: oklch(99.3% 0.005 125);
+  --surface-raised: oklch(100% 0 0);
+  --surface-sunken: oklch(94.5% 0.014 125);
+  --foreground: oklch(24% 0.03 150);
+  --muted-foreground: oklch(43% 0.03 148);
+  --subtle-foreground: oklch(52% 0.03 148);
+  --border: oklch(30% 0.04 150 / 0.11);
+  --border-strong: oklch(30% 0.04 150 / 0.2);
+  --primary: oklch(0.47 0.13 var(--accent-h));
+  --primary-hover: oklch(0.42 0.13 var(--accent-h));
+  --primary-foreground: oklch(0.98 0.02 var(--accent-h));
+  --ring: oklch(0.47 0.13 var(--accent-h) / 0.6);
+  --hover: oklch(25% 0.03 150 / 0.05);
+  --active: oklch(25% 0.03 150 / 0.09);
+  --overlay: oklch(25% 0.03 150 / 0.36);
+  --success: oklch(50% 0.13 158);
+  --warning: oklch(57% 0.13 72);
+  --danger: oklch(53% 0.2 25);
+  --info: oklch(51% 0.12 240);
+  --tone-violet: oklch(52% 0.16 290);
+  --tone-blue: oklch(52% 0.14 250);
+  --tone-green: oklch(52% 0.13 160);
+  --tone-amber: oklch(60% 0.13 72);
+  --tone-orange: oklch(58% 0.16 48);
+  --tone-rose: oklch(55% 0.18 10);
+  --tone-cyan: oklch(53% 0.1 205);
+  --chart-grid: oklch(25% 0.03 150 / 0.08);
+  --shadow-card: 0 1px 2px oklch(30% 0.04 150 / 0.07);
+  --shadow-popover:
+    0 0 0 1px oklch(30% 0.04 150 / 0.08), 0 12px 40px -8px oklch(30% 0.04 150 / 0.22),
+    0 4px 12px -4px oklch(30% 0.04 150 / 0.14);
+  --glow-primary: 0 4px 14px -6px oklch(0.47 0.13 128 / 0.55);
+  --app-backdrop: radial-gradient(60rem 36rem at 78% -14%, oklch(85% 0.11 125 / 0.3), transparent 60%);
+  --cover-from: oklch(76% 0.15 128);
+  --cover-to: oklch(84% 0.13 78);
+  color-scheme: light;
 }
 
 @theme inline {
@@ -110,6 +152,121 @@ h3 {
 :focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
+}
+
+::view-transition {
+  pointer-events: none;
+}
+::view-transition-group(*),
+::view-transition-old(*),
+::view-transition-new(*) {
+  animation-duration: 240ms;
+  animation-timing-function: var(--ease-standard);
+}
+/* O fundo é igual nas duas telas: só o conteúdo se move, e o dock fica parado. */
+html:active-view-transition-type(page-forward),
+html:active-view-transition-type(page-back) {
+  &::view-transition-old(root) {
+    display: none;
+  }
+  &::view-transition-new(root) {
+    animation: none;
+  }
+  &::view-transition-group(page) {
+    animation: none;
+  }
+  &::view-transition-old(page) {
+    animation-name: page-out;
+  }
+  &::view-transition-new(page) {
+    animation-name: page-in;
+  }
+  &::view-transition-old(dock) {
+    display: none;
+  }
+  &::view-transition-new(dock) {
+    animation: none;
+  }
+}
+html:active-view-transition-type(page-forward) {
+  --page-shift: 18px;
+}
+html:active-view-transition-type(page-back) {
+  --page-shift: -18px;
+}
+@keyframes page-out {
+  to {
+    opacity: 0;
+    transform: translateX(calc(var(--page-shift) * -1));
+  }
+}
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateX(var(--page-shift));
+  }
+}
+
+.page {
+  view-transition-name: page;
+}
+.dock {
+  view-transition-name: dock;
+}
+
+.dialog-overlay[data-state='open'] {
+  animation: fade-in 180ms var(--ease-standard);
+}
+.dialog-overlay[data-state='closed'] {
+  animation: fade-out 160ms ease-in forwards;
+}
+.dialog-panel[data-state='open'] {
+  animation: panel-in 220ms var(--ease-standard);
+}
+.dialog-panel[data-state='closed'] {
+  animation: panel-out 160ms ease-in forwards;
+}
+.tab-panel {
+  animation: tab-in 200ms var(--ease-standard);
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes fade-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.97);
+  }
+}
+@keyframes panel-out {
+  to {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+}
+@keyframes tab-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*),
+  .dialog-overlay,
+  .dialog-panel,
+  .tab-panel {
+    animation: none !important;
+  }
 }
 
 ::-webkit-scrollbar {

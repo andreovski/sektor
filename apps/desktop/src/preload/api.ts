@@ -31,6 +31,7 @@ export interface SektorApi {
   restore(password?: string): Promise<RestoreResult>;
   openDataDir(): Promise<void>;
   relaunch(): Promise<void>;
+  setTheme(theme: 'dark' | 'light'): Promise<void>;
   pickProjectFiles(projectId: string): Promise<ProjectFilesResult>;
   addProjectFile(projectId: string, name: string, bytes: ArrayBuffer): Promise<ProjectFilesResult>;
   /** Devolve a mensagem de erro, ou nulo se abriu. */

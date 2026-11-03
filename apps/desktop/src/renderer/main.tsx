@@ -24,7 +24,10 @@ import { routes as review } from './modules/review';
 import { routes as settings } from './modules/settings';
 import { FatalScreen } from './modules/settings/fatal';
 import { useCoreFailure } from './lib/rpc';
-import { Shell } from './shell';
+import { applyStoredTheme, useTheme } from './lib/theme';
+import { pageTransition, Shell } from './shell';
+
+applyStoredTheme();
 
 const rootRoute = createRootRoute({ component: Shell });
 
@@ -45,6 +48,7 @@ const moduleRoutes = [
 // Rotas por hash: o app abre de arquivo, sem servidor.
 const router = createRouter({
   history: createHashHistory(),
+  defaultViewTransition: pageTransition,
   routeTree: rootRoute.addChildren(
     moduleRoutes.map((route) => createRoute({ getParentRoute: () => rootRoute, ...route }))
   ),
@@ -59,11 +63,15 @@ function Root() {
   return failure ? <FatalScreen failure={failure} /> : <RouterProvider router={router} />;
 }
 
+function ThemedToaster() {
+  return <Toaster theme={useTheme()} position="top-right" />;
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <Root />
-      <Toaster theme="dark" position="top-right" />
+      <ThemedToaster />
     </QueryClientProvider>
   </StrictMode>
 );

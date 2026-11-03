@@ -29,7 +29,7 @@ import { setAppMenu } from './menu';
 import { clearOpenedCopies, projectFileChannels, sweepProjectFiles } from './project-files';
 import { applyPendingRestore, filesPath, scheduleRestore, stagedFilesPath, stagePath } from './restore';
 import { createTray, hasOpenWindow, notify } from './tray';
-import { createWindow, isAppUrl } from './window';
+import { applyWindowTheme, createWindow, isAppUrl } from './window';
 
 // O smoke é a prova do pacote: roda sempre em pasta e banco temporários, sem o cofre.
 const SMOKE = process.env.SEKTOR_SMOKE === '1';
@@ -180,6 +180,9 @@ function registerIpc() {
   handle('app:failure', () => failure);
   handle('app:open-data-dir', () => shell.openPath(dataDir()).then(() => undefined));
   handle('app:relaunch', restart);
+  handle('app:theme', (event, theme: 'dark' | 'light') =>
+    applyWindowTheme(parent(event), theme === 'light' ? 'light' : 'dark')
+  );
   handle('backup:pick-folder', async (event): Promise<FolderChoice> => {
     if (!core || failure) throw new Error('O núcleo não está no ar.');
     const { canceled, filePaths } = await dialog.showOpenDialog(parent(event), {

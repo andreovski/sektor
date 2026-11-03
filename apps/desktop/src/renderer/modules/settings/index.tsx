@@ -15,6 +15,7 @@ import {
   Select,
 } from '../../ui';
 
+import { Appearance } from './appearance';
 import { GoogleSettings } from './google';
 import { useRestore } from './restore';
 
@@ -225,6 +226,10 @@ function SettingsPage() {
       <section>
         <SectionLabel>Você</SectionLabel>
         <Profile />
+      </section>
+      <section>
+        <SectionLabel>Aparência</SectionLabel>
+        <Appearance />
       </section>
       <section>
         <SectionLabel>Google</SectionLabel>

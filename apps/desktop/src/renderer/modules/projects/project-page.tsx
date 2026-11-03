@@ -90,7 +90,7 @@ function Tabs({
           aria-selected={tab.value === value}
           onClick={() => onChange(tab.value)}
           className={cn(
-            '-mb-px flex h-9 items-center gap-1.5 border-b-2 px-3 text-sm',
+            '-mb-px flex h-9 items-center gap-1.5 border-b-2 px-3 text-sm transition-colors',
             tab.value === value
               ? 'border-primary text-foreground'
               : 'border-transparent text-muted hover:text-foreground'
@@ -221,11 +221,13 @@ export function ProjectPage() {
         ]}
       />
 
-      {tab === 'visao' && <Overview page={page.data} />}
-      {tab === 'kanban' && <ProjectTasks projectId={id} mode="kanban" />}
-      {tab === 'tarefas' && <ProjectTasks projectId={id} mode="lista" />}
-      {tab === 'notas' && <NotesTab projectId={id} />}
-      {tab === 'arquivos' && <FilesTab projectId={id} />}
+      <div key={tab} className="tab-panel">
+        {tab === 'visao' && <Overview page={page.data} />}
+        {tab === 'kanban' && <ProjectTasks projectId={id} mode="kanban" />}
+        {tab === 'tarefas' && <ProjectTasks projectId={id} mode="lista" />}
+        {tab === 'notas' && <NotesTab projectId={id} />}
+        {tab === 'arquivos' && <FilesTab projectId={id} />}
+      </div>
 
       <ProjectDialog
         open={editing}
