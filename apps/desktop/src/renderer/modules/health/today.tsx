@@ -28,6 +28,7 @@ import {
   dayLabel,
   DoseList,
   durationLabel,
+  ENERGY,
   litersLabel,
   Loading,
   Meter,
@@ -43,7 +44,6 @@ const MOODS = [
   { label: 'Bem', icon: Smile },
   { label: 'Muito bem', icon: Laugh },
 ];
-const ENERGY = ['Sem energia', 'Baixa', 'Média', 'Boa', 'Alta'].map((label) => ({ label }));
 
 function Gratitude({ date }: { date: string }) {
   const client = useQueryClient();

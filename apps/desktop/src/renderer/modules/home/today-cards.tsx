@@ -21,7 +21,7 @@ import { toast } from 'sonner';
 import { money, shortDate, todayString } from '../../lib/format';
 import { useRpc, useRpcMutation } from '../../lib/rpc';
 import { Button, cn } from '../../ui';
-import { ScorePicker } from '../health/shared';
+import { ENERGY, ScorePicker } from '../health/shared';
 import { PriorityBars } from '../tasks/chips';
 
 import { CAPTURE_INPUT_ID } from './capture';
@@ -35,7 +35,6 @@ const MOODS = [
   { label: 'Bem', icon: Smile },
   { label: 'Muito bem', icon: Laugh },
 ];
-const ENERGY = ['Sem energia', 'Baixa', 'Média', 'Boa', 'Alta'].map((label) => ({ label }));
 
 function Round({
   label,

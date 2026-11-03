@@ -1,5 +1,18 @@
 import type { Rpc } from '@sektor/core';
-import { Check, ChevronLeft, ChevronRight, Clock, type LucideIcon, Pill, Undo2 } from 'lucide-react';
+import {
+  Battery,
+  BatteryCharging,
+  BatteryFull,
+  BatteryLow,
+  BatteryMedium,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  type LucideIcon,
+  Pill,
+  Undo2,
+} from 'lucide-react';
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 
 import { longDate, shortDate, todayString } from '../../lib/format';
@@ -68,6 +81,14 @@ export interface ScoreOption {
   label: string;
   icon?: LucideIcon;
 }
+
+export const ENERGY: ScoreOption[] = [
+  { label: 'Sem energia', icon: Battery },
+  { label: 'Baixa', icon: BatteryLow },
+  { label: 'Média', icon: BatteryMedium },
+  { label: 'Boa', icon: BatteryFull },
+  { label: 'Alta', icon: BatteryCharging },
+];
 
 /** Escala de 1 a 5. Clicar de novo no escolhido limpa. */
 export function ScorePicker({
