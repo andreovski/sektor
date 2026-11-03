@@ -1,4 +1,4 @@
-import { useRouterState } from '@tanstack/react-router';
+import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { Plus, Wallet } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
@@ -45,7 +45,8 @@ function FinancePage() {
   useEffect(() => {
     if (wanted) setTab(wanted);
   }, [wanted]);
-  const [panel, setPanel] = useState<'accounts' | 'banks' | 'categories'>('accounts');
+  const [panel, setPanel] = useState<'accounts' | 'categories'>('accounts');
+  const navigate = useNavigate();
   const pending = useRpc('bank.status').data?.pendingCount ?? 0;
 
   return (
@@ -82,10 +83,7 @@ function FinancePage() {
       {tab === 'contas' && <AccountsTab panel={panel} onPanel={setPanel} />}
       {tab === 'revisar' && (
         <ReviewTab
-          onOpenBanks={() => {
-            setPanel('banks');
-            setTab('contas');
-          }}
+          onOpenBanks={() => void navigate({ to: '/ajustes', search: { secao: 'bancos' } as never })}
         />
       )}
       {tab === 'dividas' && <DebtsTab />}

@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { longDate, money, shortDate, todayString } from '../../lib/format';
 import { useRpc, useRpcMutation } from '../../lib/rpc';
 import { Button, Card, cn, Dialog, EmptyState, Field, Input, SectionLabel, Segmented, Select } from '../../ui';
-import { BanksPanel } from './banks';
 import { CategoriesPanel } from './categories';
 import { InvoicePanel } from './invoice';
 import {
@@ -33,7 +32,7 @@ import {
   monthOfDay,
 } from './utils';
 
-type Panel = 'accounts' | 'banks' | 'categories';
+type Panel = 'accounts' | 'categories';
 
 export function AccountsTab({ panel, onPanel }: { panel: Panel; onPanel(panel: Panel): void }) {
   const [selected, setSelected] = useState<string | null>(null);
@@ -57,13 +56,11 @@ export function AccountsTab({ panel, onPanel }: { panel: Panel; onPanel(panel: P
           onChange={onPanel}
           options={[
             { value: 'accounts', label: 'Contas e cartões' },
-            { value: 'banks', label: 'Bancos' },
             { value: 'categories', label: 'Categorias' },
           ]}
         />
       </div>
       {panel === 'accounts' && <AccountList onSelect={setSelected} />}
-      {panel === 'banks' && <BanksPanel />}
       {panel === 'categories' && <CategoriesPanel />}
     </div>
   );

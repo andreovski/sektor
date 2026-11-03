@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import {
   CalendarSync,
+  Landmark,
   DatabaseBackup,
   Info,
   type LucideIcon,
@@ -27,6 +28,7 @@ import {
 } from '../../ui';
 
 import { AiSettings } from '../ai/settings';
+import { BanksPanel } from '../finance/banks';
 import { Appearance } from './appearance';
 import { GoogleSettings } from './google';
 import { useRestore } from './restore';
@@ -269,6 +271,13 @@ const GROUPS: {
         icon: CalendarSync,
         description: 'Seus calendários e tarefas do Google aqui dentro.',
         panel: GoogleSettings,
+      },
+      {
+        value: 'bancos',
+        label: 'Bancos',
+        icon: Landmark,
+        description: 'A sua chave do Meu Pluggy, os bancos conectados e em que conta cada um entra.',
+        panel: BanksPanel,
       },
       {
         value: 'ia',
