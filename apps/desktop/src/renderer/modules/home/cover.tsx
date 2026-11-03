@@ -5,7 +5,7 @@ import { cn } from '../../ui';
 const CELL = 10;
 const GAP = 2;
 const FRAME_MS = 45;
-const TWINKLE_MS = 420;
+const TWINKLE_MS = 750;
 
 const noise = (x: number, y: number) => {
   const value = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
