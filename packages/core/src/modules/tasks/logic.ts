@@ -313,13 +313,13 @@ export interface TaskForm {
   tags: string[];
   priority: TaskPriority | null;
   status: TaskStatus;
+  /** A lista diz também o projeto: a de um projeto é a dele. */
   listId: string;
-  projectId: string;
 }
 
 export function formFromTask(
   task: TaskResponse | null,
-  defaults: { listId: string; projectId?: string; today: string; date?: string }
+  defaults: { listId: string; today: string; date?: string }
 ): TaskForm {
   if (!task) {
     return {
@@ -335,7 +335,6 @@ export function formFromTask(
       priority: null,
       status: 'TODO',
       listId: defaults.listId,
-      projectId: defaults.projectId ?? '',
     };
   }
   return {
@@ -351,7 +350,6 @@ export function formFromTask(
     priority: task.priority,
     status: task.status,
     listId: task.listId,
-    projectId: task.projectId ?? '',
   };
 }
 
@@ -379,7 +377,6 @@ export function bodyFromForm(form: TaskForm) {
     priority: form.priority,
     status: form.status,
     listId: form.listId || undefined,
-    projectId: form.projectId || null,
   } satisfies CreateTaskBody;
 }
 

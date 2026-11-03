@@ -1,17 +1,18 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseCapture } from './capture';
+import { matchPlace, parseCapture } from './capture';
 
 // 18/10/2026 é um domingo.
 const TODAY = '2026-10-18';
 
 describe('captura', () => {
   it('lê o exemplo inteiro', () => {
-    expect(parseCapture('pagar a luz sexta #casa !alta', TODAY)).toEqual({
+    expect(parseCapture('pagar a luz sexta #casa @reforma !alta', TODAY)).toEqual({
       title: 'pagar a luz',
       dueDate: '2026-10-23',
       dueTime: null,
       tags: ['casa'],
+      place: 'reforma',
       priority: 'HIGH',
     });
   });
@@ -127,6 +128,7 @@ describe('captura', () => {
       dueDate: null,
       dueTime: null,
       tags: [],
+      place: null,
       priority: null,
     });
     expect(parseCapture('c !altamente', TODAY)).toMatchObject({
@@ -137,5 +139,29 @@ describe('captura', () => {
 
   it('só marcadores deixa o título vazio', () => {
     expect(parseCapture('amanhã #casa', TODAY).title).toBe('');
+  });
+
+  it('vale o primeiro @, e e-mail não é lista', () => {
+    expect(parseCapture('a @Yuni @outro', TODAY)).toMatchObject({ title: 'a', place: 'Yuni' });
+    expect(parseCapture('mandar para joao@site.com', TODAY)).toMatchObject({
+      title: 'mandar para joao@site.com',
+      place: null,
+    });
+  });
+
+  it('acha a lista pelo nome dela ou do projeto', () => {
+    const lists = [
+      { name: 'Mercado Livre', project: null },
+      { name: 'Cozinha', project: { name: 'Reforma da Cozinha' } },
+      { name: 'Trânsito', project: null },
+      { name: 'Trabalho', project: null },
+    ];
+    expect(matchPlace(lists, 'mercado-livre')).toBe(lists[0]);
+    expect(matchPlace(lists, 'mercado_livre')).toBe(lists[0]);
+    expect(matchPlace(lists, 'COZINHA')).toBe(lists[1]);
+    expect(matchPlace(lists, 'reforma')).toBe(lists[1]);
+    expect(matchPlace(lists, 'transito')).toBe(lists[2]);
+    expect(matchPlace(lists, 'tra')).toBeNull();
+    expect(matchPlace(lists, 'casa')).toBeNull();
   });
 });

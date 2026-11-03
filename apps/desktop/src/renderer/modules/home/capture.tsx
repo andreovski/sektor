@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { todayString } from '../../lib/format';
 import { useRpcMutation } from '../../lib/rpc';
 import { Button, cn } from '../../ui';
+import { CapturePlace } from '../tasks/capture-field';
 import { Chip, PriorityBars } from '../tasks/chips';
 
 export const CAPTURE_INPUT_ID = 'inicio-captura';
@@ -46,7 +47,7 @@ export function CaptureBox() {
       {
         onSuccess: () => {
           setText('');
-          toast.success(parsed.dueDate ? 'Tarefa criada.' : 'Tarefa criada na Entrada.');
+          toast.success(parsed.dueDate || parsed.place ? 'Tarefa criada.' : 'Tarefa criada na Entrada.');
         },
       }
     );
@@ -67,7 +68,7 @@ export function CaptureBox() {
           aria-label="Capturar tarefa"
           value={text}
           onChange={(event) => setText(event.target.value)}
-          placeholder="Ligar para o contador amanhã #trabalho !alta"
+          placeholder="Ligar para o contador amanhã @trabalho #impostos !alta"
           style={{ outline: 'none' }}
           className="h-9 min-w-0 flex-1 bg-transparent text-[15px] placeholder:text-subtle"
         />
@@ -89,10 +90,12 @@ export function CaptureBox() {
                 {parsed.dueTime ? ` às ${parsed.dueTime}` : ''}
               </Chip>
             ) : (
-              <Chip>
-                <Inbox size={11} />
-                Entrada, sem prazo
-              </Chip>
+              !parsed.place && (
+                <Chip>
+                  <Inbox size={11} />
+                  Entrada, sem prazo
+                </Chip>
+              )
             )}
             {parsed.priority && (
               <Chip>
@@ -100,6 +103,7 @@ export function CaptureBox() {
                 {TASK_PRIORITY_LABELS[parsed.priority]}
               </Chip>
             )}
+            <CapturePlace place={parsed.place} />
             {parsed.tags.map((tag) => (
               <span key={tag} className="text-subtle">
                 #{tag}
@@ -107,7 +111,7 @@ export function CaptureBox() {
             ))}
           </>
         ) : (
-          <span className="text-subtle">Escreva com o dia, #etiqueta e !prioridade. O que for entendido aparece aqui.</span>
+          <span className="text-subtle">Escreva com o dia, @lista ou @projeto, #etiqueta e !prioridade. O que for entendido aparece aqui.</span>
         )}
       </div>
     </form>

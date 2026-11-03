@@ -137,6 +137,8 @@ const projectFields = {
   startDate: dateSchema.nullable().optional(),
   dueDate: dateSchema.nullable().optional(),
   calendarId: z.string().min(1).nullable().optional(),
+  /** A lista do projeto. Ao criar, sem ela nasce uma lista nova com o nome e a cor do projeto. */
+  listId: z.string().min(1).optional(),
 };
 
 export const createProjectSchema = z.object(projectFields);
@@ -181,6 +183,8 @@ export interface TaskListResponse {
   sortOrder: number;
   isInbox: boolean;
   openCount: number;
+  /** O projeto dono da lista: as tarefas dela são do projeto. */
+  project: { id: string; name: string; color: Tone | null } | null;
 }
 
 export interface TagResponse {
@@ -211,6 +215,8 @@ export interface ProjectResponse {
   completedAt: number | null;
   /** Calendário da Agenda ligado ao projeto. Nulo também quando o calendário saiu. */
   calendarId: string | null;
+  /** A lista do projeto, onde moram as tarefas dele. */
+  listId: string | null;
   progress: { total: number; done: number; percent: number };
   nextTask: { id: string; title: string; dueDate: string | null; dueTime: string | null } | null;
 }

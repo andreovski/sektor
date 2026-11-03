@@ -3,7 +3,7 @@ import { and, asc, eq, inArray, isNotNull, isNull, max, ne, or, sql } from 'driz
 import type { AppCtx } from '../../app';
 import { stamp } from '../../services/context';
 import { taskLists, tasks } from '../tasks/schema';
-import { completeTask, inboxId, reopenTask } from '../tasks/service';
+import { completeTask, inboxId, projectOfList, reopenTask } from '../tasks/service';
 
 import { GoogleAuthError, googleFetch, isAccountWide, isNotFound, saveAccount } from './client';
 
@@ -269,6 +269,7 @@ function applyRemote(ctx: AppCtx, list: ListRow, item: GoogleTask, order: () => 
     // Hora feita no Sektor: o Google só tem o dia, então vale enquanto o dia for o mesmo.
     dueTime: existing && existing.dueDate === dueDate ? existing.dueTime : null,
     listId: list.id,
+    projectId: projectOfList(ctx, list.id),
     externalId: item.id,
     externalEtag: item.etag ?? null,
     externalListId: list.externalId,

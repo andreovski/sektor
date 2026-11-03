@@ -1,16 +1,33 @@
-import { parseCapture } from '@sektor/core/src/modules/tasks/capture';
+import { matchPlace, parseCapture } from '@sektor/core/src/modules/tasks/capture';
 import { TASK_PRIORITY_LABELS } from '@sektor/core/src/modules/tasks/contract';
 import { relativeDay } from '@sektor/core/src/modules/tasks/logic';
-import { CalendarDays, CornerDownLeft, Plus } from 'lucide-react';
+import { CalendarDays, CornerDownLeft, FolderKanban, Plus } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
 
 import { todayString } from '../../lib/format';
-import { useRpcMutation } from '../../lib/rpc';
-import { Input } from '../../ui';
+import { useRpc, useRpcMutation } from '../../lib/rpc';
+import { cn, Input } from '../../ui';
 
-import { Chip, PriorityBars } from './chips';
+import { Chip, placeLabel, PriorityBars, toneBg } from './chips';
 
-/** Uma linha só: "pagar a luz sexta #casa !alta". O que foi entendido aparece antes de criar. */
+/** A lista de "@nome", já achada pelo nome dela ou do projeto; em vermelho quando não existe. */
+export function CapturePlace({ place }: { place: string | null }) {
+  const lists = useRpc('taskLists.list');
+  if (!place) return null;
+  const list = matchPlace(lists.data ?? [], place);
+  return (
+    <Chip className={cn(!list && lists.data && 'border-danger/40 text-danger')}>
+      {list?.project || !list ? (
+        <FolderKanban size={11} className="shrink-0" />
+      ) : (
+        <span className={cn('size-1.5 shrink-0 rounded-full', toneBg(list.color))} />
+      )}
+      {list ? placeLabel(list) : `@${place} não existe`}
+    </Chip>
+  );
+}
+
+/** Uma linha só: "pagar a luz sexta @casa #contas !alta". O que foi entendido aparece antes de criar. */
 export function CaptureField({
   defaults,
   projectId,
@@ -23,7 +40,8 @@ export function CaptureField({
   const today = todayString();
   const parsed = parseCapture(text, today, { hasDefaultDate: Boolean(defaults.defaultDueDate) });
   const due = parsed.dueDate ?? defaults.defaultDueDate ?? null;
-  const understood = text.trim() !== '' && (parsed.dueDate || parsed.priority || parsed.tags.length);
+  const understood =
+    text.trim() !== '' && (parsed.dueDate || parsed.priority || parsed.place || parsed.tags.length);
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -39,7 +57,7 @@ export function CaptureField({
           aria-label="Capturar tarefa"
           value={text}
           onChange={(event) => setText(event.target.value)}
-          placeholder="pagar a luz sexta #casa !alta"
+          placeholder="pagar a luz sexta @casa #contas !alta"
           className="h-9 pr-9 pl-8"
         />
         <CornerDownLeft
@@ -63,6 +81,7 @@ export function CaptureField({
               {TASK_PRIORITY_LABELS[parsed.priority]}
             </Chip>
           )}
+          <CapturePlace place={parsed.place} />
           {parsed.tags.map((tag) => (
             <span key={tag} className="text-subtle">
               #{tag}

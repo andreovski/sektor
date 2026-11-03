@@ -8,7 +8,35 @@ export interface ParsedCapture {
   /** "HH:MM". Só com data, a do texto ou a padrão da tela. */
   dueTime: string | null;
   tags: string[];
+  /** Nome digitado depois de "@": a lista ou o projeto. Quem acha a lista é `matchPlace`. */
+  place: string | null;
   priority: TaskPriority | null;
+}
+
+/** Sem acento, em minúsculas e com hífen no lugar de espaço: "Mercado Livre" vira "mercado-livre". */
+export const slugName = (name: string) =>
+  name
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase()
+    .trim()
+    .replace(/[\s_]+/g, '-');
+
+/**
+ * A lista de "@nome", pelo nome dela ou do projeto dono. O nome exato (sem acento e maiúsculas)
+ * ganha; senão, a única que começa com ele.
+ */
+export function matchPlace<T extends { name: string; project?: { name: string } | null }>(
+  lists: T[],
+  ref: string
+): T | null {
+  const wanted = slugName(ref);
+  if (!wanted) return null;
+  const names = (list: T) => [list.name, list.project?.name ?? ''].map(slugName).filter(Boolean);
+  const exact = lists.find((list) => names(list).includes(wanted));
+  if (exact) return exact;
+  const starts = lists.filter((list) => names(list).some((name) => name.startsWith(wanted)));
+  return starts.length === 1 ? starts[0]! : null;
 }
 
 const PRIORITIES: Record<string, TaskPriority> = {
@@ -100,18 +128,24 @@ function nextWeekday(today: string, weekday: number) {
   return addDays(today, (weekday - current + 7) % 7 || 7);
 }
 
-/** Interpreta "pagar a luz sexta #casa !alta". `today` é AAAA-MM-DD. Sem IA e sem rede. */
+/** Interpreta "pagar a luz sexta #casa @reforma !alta". `today` é AAAA-MM-DD. Sem IA e sem rede. */
 export function parseCapture(
   text: string,
   today: string,
   options: { hasDefaultDate?: boolean } = {}
 ): ParsedCapture {
   const tags: string[] = [];
+  let place: string | null = null;
   let priority: TaskPriority | null = null;
 
   let rest = text.replace(/(^|\s)#([\p{L}\p{N}_-]+)/gu, (_, space: string, tag: string) => {
     const name = tag.toLowerCase().slice(0, 30);
     if (!tags.includes(name) && tags.length < 10) tags.push(name);
+    return space;
+  });
+  // Vale o primeiro "@"; os seguintes só saem do título.
+  rest = rest.replace(/(^|\s)@([\p{L}\p{N}_-]+)/gu, (_, space: string, name: string) => {
+    place ??= name;
     return space;
   });
   rest = rest.replace(/(^|\s)!(alta|m[eé]dia|baixa)(?![\p{L}\p{N}_-])/giu, (_, space, word) => {
@@ -143,5 +177,5 @@ export function parseCapture(
     }
   }
 
-  return { title: rest.replace(/\s+/g, ' ').trim(), dueDate, dueTime, tags, priority };
+  return { title: rest.replace(/\s+/g, ' ').trim(), dueDate, dueTime, tags, place, priority };
 }

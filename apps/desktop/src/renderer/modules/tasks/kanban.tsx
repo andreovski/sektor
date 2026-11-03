@@ -22,7 +22,15 @@ import { BoardCardBody } from './task-row';
 
 const DONE_SHOWN = 30;
 
-function BoardCard({ task, onOpen }: { task: TaskResponse; onOpen(id: string): void }) {
+function BoardCard({
+  task,
+  showPlace,
+  onOpen,
+}: {
+  task: TaskResponse;
+  showPlace?: boolean;
+  onOpen(id: string): void;
+}) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: task.id });
   return (
     <li
@@ -36,12 +44,20 @@ function BoardCard({ task, onOpen }: { task: TaskResponse; onOpen(id: string): v
         isDragging && 'opacity-40'
       )}
     >
-      <BoardCardBody task={task} />
+      <BoardCardBody task={task} showPlace={showPlace} />
     </li>
   );
 }
 
-function Column({ column, onOpen }: { column: StatusGroup; onOpen(id: string): void }) {
+function Column({
+  column,
+  showPlace,
+  onOpen,
+}: {
+  column: StatusGroup;
+  showPlace?: boolean;
+  onOpen(id: string): void;
+}) {
   const { setNodeRef, isOver } = useDroppable({ id: column.status });
   const shown = column.status === 'DONE' ? column.tasks.slice(0, DONE_SHOWN) : column.tasks;
   return (
@@ -60,7 +76,7 @@ function Column({ column, onOpen }: { column: StatusGroup; onOpen(id: string): v
       </h3>
       <ul className="flex flex-col gap-2">
         {shown.map((task) => (
-          <BoardCard key={task.id} task={task} onOpen={onOpen} />
+          <BoardCard key={task.id} task={task} showPlace={showPlace} onOpen={onOpen} />
         ))}
       </ul>
       {shown.length < column.tasks.length && (
@@ -74,9 +90,12 @@ function Column({ column, onOpen }: { column: StatusGroup; onOpen(id: string): v
 
 export function Kanban({
   tasks,
+  showPlace,
   onOpen,
 }: {
   tasks: TaskResponse[];
+  /** Marca em cada cartão o projeto e a lista (na visão Todas). */
+  showPlace?: boolean;
   onOpen(id: string): void;
 }) {
   const update = useRpcMutation('tasks.update');
@@ -116,14 +135,14 @@ export function Kanban({
       <div className="overflow-x-auto pb-1">
         <div className="grid min-w-[860px] grid-cols-5 gap-2">
           {boardColumns(tasks, moved).map((column) => (
-            <Column key={column.status} column={column} onOpen={onOpen} />
+            <Column key={column.status} column={column} showPlace={showPlace} onOpen={onOpen} />
           ))}
         </div>
       </div>
       <DragOverlay>
         {active && (
           <div className="cursor-grabbing rounded-control border border-primary/50 bg-raised p-2.5 shadow-popover">
-            <BoardCardBody task={active} />
+            <BoardCardBody task={active} showPlace={showPlace} />
           </div>
         )}
       </DragOverlay>

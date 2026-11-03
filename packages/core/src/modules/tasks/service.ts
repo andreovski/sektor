@@ -25,7 +25,7 @@ import type { z } from 'zod';
 import { AppError, type Ctx, notFound, stamp, todayIn } from '../../services/context';
 import { assertLinkableCalendar, dropProjectContent, liveCalendarIds } from '../projects/links';
 
-import { parseCapture } from './capture';
+import { matchPlace, parseCapture } from './capture';
 import type {
   captureTaskSchema,
   CompleteTaskResponse,
@@ -67,7 +67,11 @@ export function inboxId(ctx: Ctx): string {
   return row.id;
 }
 
-function toList(row: ListRow, openCount: number): TaskListResponse {
+function toList(
+  row: ListRow,
+  openCount: number,
+  project: TaskListResponse['project'] = null
+): TaskListResponse {
   return {
     id: row.id,
     name: row.name,
@@ -75,7 +79,37 @@ function toList(row: ListRow, openCount: number): TaskListResponse {
     sortOrder: row.sortOrder,
     isInbox: row.isInbox,
     openCount,
+    project,
   };
+}
+
+/** O projeto dono da lista, se houver: a tarefa é do projeto por estar na lista dele. */
+export function projectOfList(ctx: Ctx, listId: string): string | null {
+  return (
+    ctx.db
+      .select({ id: projects.id })
+      .from(projects)
+      .where(and(eq(projects.listId, listId), isNull(projects.deletedAt)))
+      .get()?.id ?? null
+  );
+}
+
+/** A lista do projeto; projeto antigo sem lista ganha uma com o nome e a cor dele. */
+function projectList(ctx: Ctx, projectId: string): string {
+  const project = findProject(ctx, projectId);
+  if (project.listId) return project.listId;
+  const list = createTaskList(ctx, { name: project.name, color: project.color });
+  ctx.db.update(projects).set({ listId: list.id }).where(eq(projects.id, projectId)).run();
+  return list.id;
+}
+
+/** A lista que o projeto quer usar: existe, não é a Entrada e não é de outro projeto. */
+function assertFreeList(ctx: Ctx, listId: string, projectId: string | null) {
+  const list = getList(ctx, listId);
+  if (list.isInbox) throw new AppError(400, 'A Entrada não pode ser a lista de um projeto.');
+  const owner = projectOfList(ctx, listId);
+  if (owner && owner !== projectId) throw new AppError(400, 'Esta lista já é de outro projeto.');
+  return list.id;
 }
 
 export function listTaskLists(ctx: Ctx): TaskListResponse[] {
@@ -89,13 +123,21 @@ export function listTaskLists(ctx: Ctx): TaskListResponse[] {
       .all()
       .map((row) => [row.listId, row.n])
   );
+  const owners = new Map(
+    ctx.db
+      .select({ id: projects.id, name: projects.name, color: projects.color, listId: projects.listId })
+      .from(projects)
+      .where(and(isNull(projects.deletedAt), isNotNull(projects.listId)))
+      .all()
+      .map(({ listId, ...project }) => [listId!, project])
+  );
   return ctx.db
     .select()
     .from(taskLists)
     .where(isNull(taskLists.deletedAt))
     .orderBy(desc(taskLists.isInbox), asc(taskLists.sortOrder), asc(taskLists.createdAt))
     .all()
-    .map((row) => toList(row, open.get(row.id) ?? 0));
+    .map((row) => toList(row, open.get(row.id) ?? 0, owners.get(row.id) ?? null));
 }
 
 function getList(ctx: Ctx, id: string) {
@@ -143,6 +185,9 @@ export function updateTaskList(
 
 export function deleteTaskList(ctx: Ctx, id: string) {
   if (getList(ctx, id).isInbox) throw new AppError(400, 'A Entrada não pode ser apagada.');
+  if (projectOfList(ctx, id)) {
+    throw new AppError(400, 'Esta lista é de um projeto. Troque a lista do projeto ou apague-o antes.');
+  }
   const now = Date.now();
   ctx.db.transaction(() => {
     ctx.db
@@ -415,11 +460,6 @@ function syncTags(ctx: Ctx, taskId: string, names: string[]) {
   }
 }
 
-function assertProject(ctx: Ctx, id: string | null | undefined) {
-  if (!id) return;
-  findProject(ctx, id);
-}
-
 function nextSortOrder(ctx: Ctx, listId: string, parentTaskId: string | null) {
   const last = ctx.db
     .select({ value: max(tasks.sortOrder) })
@@ -437,9 +477,15 @@ function nextSortOrder(ctx: Ctx, listId: string, parentTaskId: string | null) {
 
 export function createTask(ctx: Ctx, body: z.output<typeof createTaskSchema>): TaskResponse {
   const parent = body.parentTaskId ? findParent(ctx, body.parentTaskId) : null;
-  const listId = parent?.listId ?? (body.listId ? getList(ctx, body.listId).id : inboxId(ctx));
-  const projectId = parent ? parent.projectId : (body.projectId ?? null);
-  assertProject(ctx, projectId);
+  // A lista manda; só o projeto leva para a lista dele.
+  const listId =
+    parent?.listId ??
+    (body.listId
+      ? getList(ctx, body.listId).id
+      : body.projectId
+        ? projectList(ctx, body.projectId)
+        : inboxId(ctx));
+  const projectId = parent ? parent.projectId : projectOfList(ctx, listId);
   const row = {
     ...stamp(),
     listId,
@@ -473,16 +519,24 @@ function findParent(ctx: Ctx, id: string) {
   return parent;
 }
 
-/** Cria uma tarefa a partir de uma linha digitada. */
+/** Cria uma tarefa a partir de uma linha digitada. "@lista" ou "@projeto" vale mais que a tela. */
 export function captureTask(ctx: Ctx, body: z.output<typeof captureTaskSchema>): TaskResponse {
   const parsed = parseCapture(body.text, todayIn(ctx), {
     hasDefaultDate: Boolean(body.defaultDueDate),
   });
   if (!parsed.title) throw new AppError(400, 'Escreva o que precisa ser feito.');
-  return createTask(ctx, {
-    title: parsed.title.slice(0, 300),
+  let place: { listId?: string; projectId?: string | null } = {
     listId: body.listId,
     projectId: body.projectId,
+  };
+  if (parsed.place) {
+    const list = matchPlace(listTaskLists(ctx), parsed.place);
+    if (!list) throw new AppError(400, `Nenhuma lista ou projeto chamado "@${parsed.place}".`);
+    place = { listId: list.id };
+  }
+  return createTask(ctx, {
+    title: parsed.title.slice(0, 300),
+    ...place,
     dueDate: parsed.dueDate ?? body.defaultDueDate ?? null,
     dueTime: parsed.dueTime,
     priority: parsed.priority,
@@ -646,14 +700,21 @@ export function updateTask(
   if (!dueDate) patch.dueTime = null;
   else if (fields.dueTime !== undefined) patch.dueTime = fields.dueTime;
 
-  if (listId !== undefined && listId !== task.listId) {
+  // Trocar o projeto é trocar para a lista dele; sair do projeto é voltar para a Entrada.
+  const nextList =
+    listId !== undefined
+      ? listId !== task.listId
+        ? getList(ctx, listId).id
+        : null
+      : projectId !== undefined && projectId !== task.projectId
+        ? projectId
+          ? projectList(ctx, projectId)
+          : inboxId(ctx)
+        : null;
+  if (nextList) {
     if (task.parentTaskId) throw new AppError(400, 'Mova a tarefa-mãe para trocar a lista.');
-    patch.listId = getList(ctx, listId).id;
-  }
-  if (projectId !== undefined && projectId !== task.projectId) {
-    if (task.parentTaskId) throw new AppError(400, 'Mova a tarefa-mãe para trocar o projeto.');
-    assertProject(ctx, projectId);
-    patch.projectId = projectId;
+    patch.listId = nextList;
+    patch.projectId = projectOfList(ctx, nextList);
   }
   if (parentTaskId !== undefined && parentTaskId !== task.parentTaskId) {
     if (parentTaskId === id) throw new AppError(400, 'A tarefa não pode ser mãe de si mesma.');
@@ -796,6 +857,7 @@ function withProgress(ctx: Ctx, rows: ProjectRow[]): ProjectResponse[] {
       createdAt: row.createdAt,
       completedAt: row.completedAt,
       calendarId: row.calendarId && calendarsAlive.has(row.calendarId) ? row.calendarId : null,
+      listId: row.listId,
       progress: { total, done, percent: total ? Math.round((done / total) * 100) : 0 },
       nextTask: next
         ? { id: next.id, title: next.title, dueDate: next.dueDate, dueTime: next.dueTime }
@@ -843,8 +905,10 @@ export function createProject(
 ): ProjectResponse {
   assertProjectDates(body.startDate, body.dueDate);
   assertLinkableCalendar(ctx, body.calendarId);
+  if (body.listId) assertFreeList(ctx, body.listId, null);
   const row = {
     ...stamp(),
+    listId: body.listId ?? '',
     name: body.name,
     type: body.type ?? ('PERSONAL' as const),
     description: body.description ?? null,
@@ -853,7 +917,15 @@ export function createProject(
     dueDate: body.dueDate ?? null,
     calendarId: body.calendarId ?? null,
   };
-  ctx.db.insert(projects).values(row).run();
+  ctx.db.transaction(() => {
+    row.listId ||= createTaskList(ctx, { name: body.name, color: body.color ?? null }).id;
+    ctx.db.insert(projects).values(row).run();
+    ctx.db
+      .update(tasks)
+      .set({ projectId: row.id, updatedAt: Date.now() })
+      .where(and(eq(tasks.listId, row.listId), live))
+      .run();
+  });
   return getProject(ctx, row.id);
 }
 
@@ -871,6 +943,10 @@ export function updateProject(
   assertLinkableCalendar(ctx, fields.calendarId);
   const now = Date.now();
   const patch: Partial<ProjectRow> = { ...fields, updatedAt: now };
+  const newList =
+    fields.listId && fields.listId !== project.listId
+      ? assertFreeList(ctx, fields.listId, id)
+      : null;
   // Reabrir só mexe em quem estava concluído: um projeto pausado continua pausado.
   const next =
     status ??
@@ -879,7 +955,30 @@ export function updateProject(
     patch.status = next;
     patch.completedAt = next === 'DONE' ? (project.completedAt ?? now) : null;
   }
-  ctx.db.update(projects).set(patch).where(eq(projects.id, id)).run();
+  ctx.db.transaction(() => {
+    ctx.db.update(projects).set(patch).where(eq(projects.id, id)).run();
+    // A lista que levava o nome do projeto acompanha o nome novo.
+    const ownList = project.listId ? getList(ctx, project.listId) : null;
+    if (!newList && ownList && fields.name && ownList.name === project.name) {
+      ctx.db
+        .update(taskLists)
+        .set({ name: fields.name, updatedAt: now, syncState: 'PENDING' })
+        .where(eq(taskLists.id, ownList.id))
+        .run();
+    }
+    if (!newList) return;
+    // A lista antiga fica, sem projeto; a nova traz as tarefas dela para o projeto.
+    ctx.db
+      .update(tasks)
+      .set({ projectId: null, updatedAt: now })
+      .where(eq(tasks.projectId, id))
+      .run();
+    ctx.db
+      .update(tasks)
+      .set({ projectId: id, updatedAt: now })
+      .where(and(eq(tasks.listId, newList), live))
+      .run();
+  });
   return getProject(ctx, id);
 }
 

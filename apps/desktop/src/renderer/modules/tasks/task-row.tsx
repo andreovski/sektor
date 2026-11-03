@@ -8,7 +8,7 @@ import { toast } from 'sonner';
 import { useRpcMutation } from '../../lib/rpc';
 import { cn } from '../../ui';
 
-import { Chip, DueChip, PriorityBars, ProjectChip } from './chips';
+import { Chip, DueChip, PlaceChip, PriorityBars, ProjectChip } from './chips';
 
 export function CheckButton({ task }: { task: TaskResponse }) {
   const complete = useRpcMutation('tasks.complete');
@@ -47,7 +47,8 @@ export function CheckButton({ task }: { task: TaskResponse }) {
   );
 }
 
-function TaskMeta({ task, showProject = true }: { task: TaskResponse; showProject?: boolean }) {
+/** `showPlace` troca o projeto pelo marcador de onde a tarefa mora (na visão Todas). */
+function TaskMeta({ task, showPlace }: { task: TaskResponse; showPlace?: boolean }) {
   const done = task.subtasks.filter((sub) => sub.completedAt).length;
   const finished = completedLabel(task, new Date());
   return (
@@ -57,7 +58,11 @@ function TaskMeta({ task, showProject = true }: { task: TaskResponse; showProjec
       ) : (
         <DueChip task={task} />
       )}
-      {showProject && task.project && <ProjectChip project={task.project} />}
+      {showPlace ? (
+        <PlaceChip task={task} />
+      ) : (
+        task.project && <ProjectChip project={task.project} />
+      )}
       {task.subtasks.length > 0 && (
         <Chip>
           <ListTree size={11} />
@@ -82,11 +87,13 @@ export function TaskRow({
   task,
   sortable,
   showCompleted,
+  showPlace,
   onOpen,
 }: {
   task: TaskResponse;
   sortable: boolean;
   showCompleted: boolean;
+  showPlace?: boolean;
   onOpen(id: string): void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -121,7 +128,7 @@ export function TaskRow({
           <span className={cn('min-w-0 truncate text-sm', task.completedAt && 'text-muted line-through')}>
             {task.title}
           </span>
-          <TaskMeta task={task} />
+          <TaskMeta task={task} showPlace={showPlace} />
         </button>
         <PriorityBars priority={task.priority} />
       </div>
@@ -148,7 +155,7 @@ export function TaskRow({
   );
 }
 
-export function BoardCardBody({ task }: { task: TaskResponse }) {
+export function BoardCardBody({ task, showPlace }: { task: TaskResponse; showPlace?: boolean }) {
   return (
     <>
       <div className="flex items-start gap-2">
@@ -158,10 +165,19 @@ export function BoardCardBody({ task }: { task: TaskResponse }) {
         </span>
         <PriorityBars priority={task.priority} />
       </div>
-      {(task.dueDate || task.project || task.subtasks.length > 0 || task.rrule || task.tags.length > 0) && (
+      {(task.dueDate ||
+        task.project ||
+        showPlace ||
+        task.subtasks.length > 0 ||
+        task.rrule ||
+        task.tags.length > 0) && (
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
           <DueChip task={task} />
-          {task.project && <ProjectChip project={task.project} />}
+          {showPlace ? (
+            <PlaceChip task={task} />
+          ) : (
+            task.project && <ProjectChip project={task.project} />
+          )}
           {task.subtasks.length > 0 && (
             <Chip>
               <ListTree size={11} />

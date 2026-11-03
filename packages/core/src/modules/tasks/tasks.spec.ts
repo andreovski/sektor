@@ -261,17 +261,29 @@ describe('tarefas', () => {
   });
 
   it('captura cria a tarefa interpretada, com o que a visão aberta manda', () => {
-    const task = svc.captureTask(ctx, { text: 'pagar a luz sexta #casa !alta' });
+    const project = svc.createProject(ctx, { name: 'Reforma da Cozinha' });
+    const task = svc.captureTask(ctx, { text: 'pagar a luz sexta #casa @reforma !alta' });
     expect(task).toMatchObject({
       title: 'pagar a luz',
       dueDate: '2026-10-23',
+      listId: project.listId,
+      projectId: project.id,
       tags: ['casa'],
       priority: 'HIGH',
     });
     expect(
       svc.captureTask(ctx, { text: 'sem data', defaultDueDate: '2026-10-18', defaultTag: 'x' })
-    ).toMatchObject({ dueDate: '2026-10-18', tags: ['x'] });
+    ).toMatchObject({ dueDate: '2026-10-18', tags: ['x'], projectId: null });
+    const mercado = svc.createTaskList(ctx, { name: 'Mercado' });
+    expect(svc.captureTask(ctx, { text: 'leite @mercado', projectId: project.id })).toMatchObject({
+      listId: mercado.id,
+      projectId: null,
+    });
+    expect(svc.captureTask(ctx, { text: 'do projeto', projectId: project.id }).listId).toBe(
+      project.listId
+    );
     expectStatus(() => svc.captureTask(ctx, { text: '#casa !alta' }), 400);
+    expectStatus(() => svc.captureTask(ctx, { text: 'x @inexistente' }), 400);
   });
 
   describe('projetos', () => {
@@ -332,6 +344,41 @@ describe('tarefas', () => {
       svc.deleteProject(ctx, project.id);
       expect(svc.getTask(ctx, task.id).project).toBeNull();
       expectStatus(() => svc.getProject(ctx, project.id), 404);
+    });
+
+    it('todo projeto tem uma lista, e a tarefa segue a lista', () => {
+      const project = svc.createProject(ctx, { name: 'Site', color: 'blue' });
+      const list = svc.listTaskLists(ctx).find((l) => l.id === project.listId)!;
+      expect(list).toMatchObject({ name: 'Site', color: 'blue', project: { id: project.id } });
+      svc.updateProject(ctx, project.id, { name: 'Site novo' });
+      expect(svc.listTaskLists(ctx).find((l) => l.id === list.id)?.name).toBe('Site novo');
+
+      const inList = svc.createTask(ctx, { title: 'Na lista', listId: list.id });
+      expect(inList.projectId).toBe(project.id);
+      const inbox = svc.listTaskLists(ctx).find((l) => l.isInbox)!;
+      expect(svc.updateTask(ctx, inList.id, { listId: inbox.id }).projectId).toBeNull();
+      expect(svc.updateTask(ctx, inList.id, { projectId: project.id }).listId).toBe(list.id);
+      expect(svc.updateTask(ctx, inList.id, { projectId: null }).listId).toBe(inbox.id);
+
+      expectStatus(() => svc.deleteTaskList(ctx, list.id), 400);
+      expectStatus(() => svc.createProject(ctx, { name: 'Outro', listId: list.id }), 400);
+      expectStatus(() => svc.createProject(ctx, { name: 'Outro', listId: inbox.id }), 400);
+    });
+
+    it('projeto pode usar uma lista que já existe, e trocar de lista', () => {
+      const yuni = svc.createTaskList(ctx, { name: 'Yuni' });
+      const old = svc.createTask(ctx, { title: 'Já estava', listId: yuni.id });
+      const project = svc.createProject(ctx, { name: 'Yuni Digital', listId: yuni.id });
+      expect(project.listId).toBe(yuni.id);
+      expect(svc.getTask(ctx, old.id).projectId).toBe(project.id);
+      expect(svc.listTaskLists(ctx).filter((l) => l.name === 'Yuni Digital')).toEqual([]);
+
+      const other = svc.createTaskList(ctx, { name: 'Outra' });
+      const moved = svc.createTask(ctx, { title: 'Na outra', listId: other.id });
+      svc.updateProject(ctx, project.id, { listId: other.id });
+      expect(svc.getTask(ctx, old.id).projectId).toBeNull();
+      expect(svc.getTask(ctx, moved.id).projectId).toBe(project.id);
+      expect(svc.getProject(ctx, project.id).progress.total).toBe(1);
     });
   });
 

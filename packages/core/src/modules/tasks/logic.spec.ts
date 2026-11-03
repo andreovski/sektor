@@ -90,6 +90,7 @@ describe('listas inteligentes', () => {
       sortOrder,
       isInbox,
       openCount: 0,
+      project: null,
     });
     expect(sortLists([list('b', 1), list('c', 0), list('i', 9, true)]).map((l) => l.id)).toEqual([
       'i',
@@ -276,7 +277,6 @@ describe('formulário', () => {
       hasTime: true,
       time: '14:30',
       listId: 'l',
-      projectId: 'p',
     });
     expect(bodyFromForm(form)).toEqual({
       title: 'A',
@@ -288,7 +288,6 @@ describe('formulário', () => {
       priority: 'HIGH',
       status: 'REVIEW',
       listId: 'l',
-      projectId: 'p',
     });
   });
 
@@ -305,6 +304,6 @@ describe('formulário', () => {
     const form = formFromTask(null, { listId: 'l', today: TODAY });
     expect(
       bodyFromForm({ ...form, title: ' X ', hasTime: true, repeat: 'DAILY' })
-    ).toMatchObject({ title: 'X', dueDate: null, dueTime: null, rrule: null, projectId: null });
+    ).toMatchObject({ title: 'X', dueDate: null, dueTime: null, rrule: null, listId: 'l' });
   });
 });

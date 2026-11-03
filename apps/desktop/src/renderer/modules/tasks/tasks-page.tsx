@@ -16,6 +16,7 @@ import {
   CalendarDays,
   CheckCircle2,
   CheckSquare,
+  FolderKanban,
   Inbox,
   type LucideIcon,
   Pencil,
@@ -124,9 +125,9 @@ export function TasksPage() {
   const opened = findTask([tasks.data], openId);
   const today = todayString();
 
+  const projectList = sorted.find((list) => projectId && list.project?.id === projectId);
   const defaults = {
-    listId: currentList?.id ?? inbox?.id ?? '',
-    projectId,
+    listId: currentList?.id ?? projectList?.id ?? inbox?.id ?? '',
     date: smart?.slug === 'hoje' || smart?.slug === 'programadas' ? today : undefined,
   };
 
@@ -177,7 +178,11 @@ export function TasksPage() {
                     list.isInbox ? (
                       <Inbox size={15} />
                     ) : (
-                      <span className={cn('size-2 rounded-full', toneBg(list.color))} />
+                      list.project ? (
+                        <FolderKanban size={14} aria-label="Projeto" />
+                      ) : (
+                        <span className={cn('size-2 rounded-full', toneBg(list.color))} />
+                      )
                     )
                   }
                   label={list.name}
@@ -278,12 +283,13 @@ export function TasksPage() {
           {tasks.isPending ? (
             <p className="py-10 text-center text-sm text-muted">Carregando tarefas…</p>
           ) : mode === 'kanban' ? (
-            <Kanban tasks={tasks.data ?? []} onOpen={setOpenId} />
+            <Kanban tasks={tasks.data ?? []} showPlace={smart?.slug === 'todas'} onOpen={setOpenId} />
           ) : tasks.data?.length ? (
             <ListBody
               tasks={tasks.data}
               listId={target.kind === 'list' && !term.trim() ? target.id : null}
               showCompleted={smart?.slug === 'concluidas'}
+              showPlace={smart?.slug === 'todas'}
               onOpen={setOpenId}
             />
           ) : (
@@ -292,7 +298,7 @@ export function TasksPage() {
               title={term.trim() ? 'Nada encontrado' : (smart?.emptyTitle ?? 'Lista vazia')}
               text={
                 canCapture(target) && !term.trim()
-                  ? 'Escreva no campo acima: data, #etiqueta e !prioridade são entendidas.'
+                  ? 'Escreva no campo acima: data, @lista ou @projeto, #etiqueta e !prioridade são entendidas.'
                   : undefined
               }
             />

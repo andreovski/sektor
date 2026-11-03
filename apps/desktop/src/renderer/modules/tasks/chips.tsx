@@ -1,9 +1,16 @@
-import type { TaskPriority, TaskResponse, TaskStatus, Tone } from '@sektor/core/src/modules/tasks/contract';
+import type {
+  TaskListResponse,
+  TaskPriority,
+  TaskResponse,
+  TaskStatus,
+  Tone,
+} from '@sektor/core/src/modules/tasks/contract';
 import { TASK_PRIORITY_LABELS, TONES } from '@sektor/core/src/modules/tasks/contract';
 import { dueInfo, priorityBars, clockAt } from '@sektor/core/src/modules/tasks/logic';
-import { CalendarDays } from 'lucide-react';
+import { CalendarDays, FolderKanban } from 'lucide-react';
 
 import { todayString } from '../../lib/format';
+import { useRpc } from '../../lib/rpc';
 import { cn } from '../../ui';
 
 export const TONE_BG: Record<string, string> = {
@@ -72,6 +79,34 @@ export function ProjectChip({ project }: { project: NonNullable<TaskResponse['pr
     <Chip>
       <span className={cn('size-1.5 shrink-0 rounded-full', toneBg(project.color))} />
       <span className="truncate">{project.name}</span>
+    </Chip>
+  );
+}
+
+/** "Projeto / Lista" quando os nomes diferem; o projeto sozinho quando a lista leva o nome dele. */
+export function placeLabel(list: Pick<TaskListResponse, 'name' | 'project'>) {
+  if (!list.project) return list.name;
+  return list.project.name.toLowerCase() === list.name.toLowerCase()
+    ? list.project.name
+    : `${list.project.name} / ${list.name}`;
+}
+
+/** Onde a tarefa mora: o projeto (com a lista dele) ou a lista. */
+export function PlaceChip({ task }: { task: Pick<TaskResponse, 'listId'> }) {
+  const lists = useRpc('taskLists.list');
+  const list = lists.data?.find((item) => item.id === task.listId);
+  if (!list) return null;
+  const label = placeLabel(list);
+  return (
+    <Chip className="max-w-56">
+      {list.project ? (
+        <FolderKanban size={11} className="shrink-0" />
+      ) : (
+        <span className={cn('size-1.5 shrink-0 rounded-full', toneBg(list.color))} />
+      )}
+      <span className="truncate" title={label}>
+        {label}
+      </span>
     </Chip>
   );
 }

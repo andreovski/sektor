@@ -20,6 +20,7 @@ import { todayString } from '../../lib/format';
 import { useRpc, useRpcMutation } from '../../lib/rpc';
 import { Button, cn, Dialog, Field, Input, Select, Textarea } from '../../ui';
 
+import { placeLabel } from './chips';
 import { CheckButton } from './task-row';
 
 const WEEKDAYS = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
@@ -73,7 +74,7 @@ function Form({
   onClose,
 }: {
   task: TaskResponse | null;
-  defaults: { listId: string; projectId?: string; date?: string };
+  defaults: { listId: string; date?: string };
   onClose(): void;
 }) {
   const [form, setForm] = useState<TaskForm>(() =>
@@ -81,7 +82,6 @@ function Form({
   );
   const [tag, setTag] = useState('');
   const lists = useRpc('taskLists.list');
-  const projects = useRpc('projects.list', { includeCompleted: true });
   const create = useRpcMutation('tasks.create');
   const update = useRpcMutation('tasks.update');
   const remove = useRpcMutation('tasks.delete');
@@ -92,12 +92,8 @@ function Form({
     event.preventDefault();
     const body = bodyFromForm(form);
     if (task) {
-      const { listId, projectId, ...rest } = body;
-      await update.mutateAsync({
-        id: task.id,
-        ...rest,
-        ...(isSub ? {} : { listId, projectId }),
-      });
+      const { listId, ...rest } = body;
+      await update.mutateAsync({ id: task.id, ...rest, ...(isSub ? {} : { listId }) });
     } else await create.mutateAsync(body);
     onClose();
   }
@@ -149,33 +145,30 @@ function Form({
           </Select>
         </Field>
         {!isSub && (
-          <>
-            <Field label="Lista">
-              <Select
-                value={form.listId}
-                onChange={(event) => set({ listId: event.target.value })}
-              >
-                {lists.data?.map((list) => (
-                  <option key={list.id} value={list.id}>
-                    {list.name}
-                  </option>
-                ))}
-              </Select>
+          <div className="col-span-2">
+            <Field label="Projeto / Lista">
+            <Select value={form.listId} onChange={(event) => set({ listId: event.target.value })}>
+              <optgroup label="Listas">
+                {lists.data
+                  ?.filter((list) => !list.project)
+                  .map((list) => (
+                    <option key={list.id} value={list.id}>
+                      {list.name}
+                    </option>
+                  ))}
+              </optgroup>
+              <optgroup label="Projetos">
+                {lists.data
+                  ?.filter((list) => list.project)
+                  .map((list) => (
+                    <option key={list.id} value={list.id}>
+                      {placeLabel(list)}
+                    </option>
+                  ))}
+              </optgroup>
+            </Select>
             </Field>
-            <Field label="Projeto">
-              <Select
-                value={form.projectId}
-                onChange={(event) => set({ projectId: event.target.value })}
-              >
-                <option value="">Sem projeto</option>
-                {projects.data?.map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.name}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-          </>
+          </div>
         )}
       </div>
 
@@ -332,7 +325,7 @@ export function TaskDialog({
 }: {
   open: boolean;
   task: TaskResponse | null;
-  defaults: { listId: string; projectId?: string; date?: string };
+  defaults: { listId: string; date?: string };
   onClose(): void;
 }) {
   return (

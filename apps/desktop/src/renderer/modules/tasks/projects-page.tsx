@@ -1,7 +1,4 @@
-import {
-  PROJECT_TYPE_LABELS,
-  type ProjectResponse,
-} from '@sektor/core/src/modules/tasks/contract';
+import type { ProjectResponse } from '@sektor/core/src/modules/tasks/contract';
 import { clockAt, dueInfo, relativeDay } from '@sektor/core/src/modules/tasks/logic';
 import { useNavigate } from '@tanstack/react-router';
 import { CalendarDays, Check, FolderKanban, Pencil, Plus, RotateCcw } from 'lucide-react';
@@ -124,7 +121,6 @@ function ProjectCard({
         <Actions project={project} onEdit={onEdit} />
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
-        <Chip>{PROJECT_TYPE_LABELS[project.type]}</Chip>
         {project.status === 'PAUSED' && <Chip>Pausado</Chip>}
         <DueLabel project={project} />
       </div>
@@ -165,7 +161,6 @@ function ProjectLine({
       <div className="flex min-w-0 items-center gap-2">
         <span className={cn('size-2.5 shrink-0 rounded-full', toneBg(project.color))} />
         <span className="truncate text-sm font-medium">{project.name}</span>
-        <Chip className="shrink-0">{PROJECT_TYPE_LABELS[project.type]}</Chip>
       </div>
       <NextTask project={project} />
       <div className="flex items-center gap-2">

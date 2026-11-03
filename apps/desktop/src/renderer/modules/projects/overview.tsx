@@ -1,7 +1,7 @@
 import { type EventForm, formFromOccurrence, newEventForm } from '@sektor/core/src/modules/agenda/form';
 import { type EventOccurrence, whenLines } from '@sektor/core/src/modules/agenda/view';
 import type { ProjectPageResponse } from '@sektor/core/src/modules/projects/contract';
-import { PROJECT_TYPE_LABELS, type TaskResponse } from '@sektor/core/src/modules/tasks/contract';
+import type { TaskResponse } from '@sektor/core/src/modules/tasks/contract';
 import { findTask } from '@sektor/core/src/modules/tasks/logic';
 import { CalendarDays, CheckSquare, Info, Plus } from 'lucide-react';
 import { useState } from 'react';
@@ -189,7 +189,6 @@ function Details({ page }: { page: ProjectPageResponse }) {
     <Card>
       <CardHeader icon={Info} title="Detalhes" />
       <dl>
-        <Detail label="Tipo" value={PROJECT_TYPE_LABELS[project.type]} />
         <Detail
           label="Início"
           value={project.startDate ? fullDate(project.startDate) : 'Sem data'}

@@ -20,6 +20,7 @@ export function ProjectTasks({ projectId, mode }: { projectId: string; mode: 'ka
     includeCompleted: mode === 'kanban' || showDone || undefined,
   });
   const inbox = lists.data?.find((list) => list.isInbox);
+  const own = lists.data?.find((list) => list.project?.id === projectId);
   const opened = findTask([tasks.data], openId);
 
   return (
@@ -58,7 +59,7 @@ export function ProjectTasks({ projectId, mode }: { projectId: string; mode: 'ka
       <TaskDialog
         open={creating || Boolean(opened)}
         task={creating ? null : opened}
-        defaults={{ listId: inbox?.id ?? '', projectId }}
+        defaults={{ listId: own?.id ?? inbox?.id ?? '' }}
         onClose={() => {
           setCreating(false);
           setOpenId(null);

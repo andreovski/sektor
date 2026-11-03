@@ -1,9 +1,4 @@
-import {
-  PROJECT_TYPE_LABELS,
-  PROJECT_TYPES,
-  type ProjectResponse,
-  type ProjectType,
-} from '@sektor/core/src/modules/tasks/contract';
+import type { ProjectResponse } from '@sektor/core/src/modules/tasks/contract';
 import { Trash2 } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
 
@@ -24,13 +19,18 @@ function Form({
   onDeleted?(): void;
 }) {
   const [name, setName] = useState(project?.name ?? '');
-  const [type, setType] = useState<ProjectType>(project?.type ?? 'PERSONAL');
   const [startDate, setStartDate] = useState(project?.startDate ?? '');
   const [dueDate, setDueDate] = useState(project?.dueDate ?? '');
   const [description, setDescription] = useState(project?.description ?? '');
   const [color, setColor] = useState(project?.color ?? null);
   const [calendarId, setCalendarId] = useState(project?.calendarId ?? '');
   const calendars = useRpc('calendars.list');
+  // Vazio é "Nova lista", com o nome e a cor do projeto.
+  const [listId, setListId] = useState(project?.listId ?? '');
+  const lists = useRpc('taskLists.list');
+  const freeLists = (lists.data ?? []).filter(
+    (list) => !list.isInbox && (!list.project || list.project.id === project?.id)
+  );
   const create = useRpcMutation('projects.create');
   const update = useRpcMutation('projects.update');
   const remove = useRpcMutation('projects.delete');
@@ -39,12 +39,12 @@ function Form({
     event.preventDefault();
     const body = {
       name,
-      type,
       startDate: startDate || null,
       dueDate: dueDate || null,
       description: description.trim() || null,
       color,
       calendarId: calendarId || null,
+      ...(listId ? { listId } : {}),
     };
     if (project) await update.mutateAsync({ id: project.id, ...body });
     else {
@@ -59,11 +59,12 @@ function Form({
       <Field label="Nome">
         <Input autoFocus required value={name} onChange={(event) => setName(event.target.value)} />
       </Field>
-      <Field label="Tipo">
-        <Select value={type} onChange={(event) => setType(event.target.value as ProjectType)}>
-          {PROJECT_TYPES.map((value) => (
-            <option key={value} value={value}>
-              {PROJECT_TYPE_LABELS[value]}
+      <Field label="Lista">
+        <Select value={listId} onChange={(event) => setListId(event.target.value)}>
+          {!project?.listId && <option value="">Nova lista</option>}
+          {freeLists.map((list) => (
+            <option key={list.id} value={list.id}>
+              {list.name}
             </option>
           ))}
         </Select>

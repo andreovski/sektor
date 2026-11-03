@@ -31,11 +31,13 @@ function Group({
   group,
   listId,
   showCompleted,
+  showPlace,
   onOpen,
 }: {
   group: StatusGroup;
   listId: string | null;
   showCompleted: boolean;
+  showPlace?: boolean;
   onOpen(id: string): void;
 }) {
   const [order, setOrder] = useState<string[] | null>(null);
@@ -74,6 +76,7 @@ function Group({
                 task={task}
                 sortable={Boolean(listId)}
                 showCompleted={showCompleted}
+                showPlace={showPlace}
                 onOpen={onOpen}
               />
             ))}
@@ -89,11 +92,14 @@ export function ListBody({
   tasks,
   listId,
   showCompleted,
+  showPlace,
   onOpen,
 }: {
   tasks: TaskResponse[];
   listId: string | null;
   showCompleted: boolean;
+  /** Marca em cada tarefa o projeto e a lista (na visão Todas). */
+  showPlace?: boolean;
   onOpen(id: string): void;
 }) {
   return (
@@ -104,6 +110,7 @@ export function ListBody({
           group={group}
           listId={listId}
           showCompleted={showCompleted}
+          showPlace={showPlace}
           onOpen={onOpen}
         />
       ))}

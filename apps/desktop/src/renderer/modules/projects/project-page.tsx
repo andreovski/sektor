@@ -1,7 +1,6 @@
 import {
   PROJECT_STATUS_LABELS,
   PROJECT_STATUSES,
-  PROJECT_TYPE_LABELS,
   type ProjectStatus,
 } from '@sektor/core/src/modules/tasks/contract';
 import { useNavigate, useParams } from '@tanstack/react-router';
@@ -12,7 +11,6 @@ import { longDate, shortDate, todayString } from '../../lib/format';
 import { useRpc, useRpcMutation } from '../../lib/rpc';
 import { Button, Card, cn, EmptyState, Select } from '../../ui';
 import { toneVar } from '../agenda/shared';
-import { Chip } from '../tasks/chips';
 import { ProjectDialog } from '../tasks/project-dialog';
 
 import { FilesTab } from './files-tab';
@@ -163,7 +161,6 @@ export function ProjectPage() {
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="min-w-0 truncate text-2xl font-semibold">{project.name}</h1>
-            <Chip>{PROJECT_TYPE_LABELS[project.type]}</Chip>
           </div>
           {project.description && (
             <p className="mt-1 max-w-3xl text-sm whitespace-pre-wrap text-muted">
