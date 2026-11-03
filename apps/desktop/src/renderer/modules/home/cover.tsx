@@ -91,7 +91,7 @@ function PixelField() {
     sight.observe(canvas);
     // Parado por movimento reduzido, ainda precisa trocar de cor com o tema.
     const theme = new MutationObserver(restart);
-    theme.observe(document.documentElement, { attributeFilter: ['data-theme'] });
+    theme.observe(document.documentElement, { attributeFilter: ['data-theme', 'data-palette'] });
     motion.addEventListener('change', restart);
     document.addEventListener('visibilitychange', restart);
     return () => {

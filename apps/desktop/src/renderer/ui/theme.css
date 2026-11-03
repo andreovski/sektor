@@ -2,28 +2,92 @@
 @import '@fontsource/geist-mono/400.css';
 @import 'tailwindcss';
 
-:root {
+:root,
+[data-palette='floresta'] {
+  --tint-h: 150;
+  --tint-c: 1;
   --accent-h: 128;
   --accent-c: 0.15;
-  --background: oklch(15.5% 0.018 150);
-  --surface: oklch(19% 0.022 150);
-  --surface-raised: oklch(23% 0.026 150);
-  --surface-sunken: oklch(13.5% 0.015 150);
-  --foreground: oklch(96% 0.02 130);
-  --muted-foreground: oklch(74% 0.035 140);
-  --subtle-foreground: oklch(56% 0.035 145);
-  --border: oklch(95% 0.05 130 / 0.08);
-  --border-strong: oklch(95% 0.05 130 / 0.15);
-  --primary: oklch(0.84 var(--accent-c) var(--accent-h));
-  --primary-hover: oklch(0.88 var(--accent-c) var(--accent-h));
-  --primary-foreground: oklch(0.22 0.05 var(--accent-h));
-  --ring: oklch(0.84 var(--accent-c) var(--accent-h) / 0.7);
+  --accent-dark-l: 0.84;
+  --accent-light-l: 0.47;
+  --second-h: 75;
+  --second-c: 0.14;
+}
+
+/* Cada paleta muda só os matizes; quanto de luz cada token tem é do modo, logo abaixo. */
+[data-palette='papel'] {
+  --tint-h: 82;
+  --tint-c: 2;
+  --accent-h: 48;
+  --accent-c: 0.16;
+  --accent-dark-l: 0.76;
+  --accent-light-l: 0.5;
+  --second-h: 245;
+  --second-c: 0.09;
+}
+[data-palette='oceano'] {
+  --tint-h: 240;
+  --tint-c: 1.6;
+  --accent-h: 215;
+  --accent-c: 0.12;
+  --accent-dark-l: 0.8;
+  --accent-light-l: 0.47;
+  --second-h: 30;
+  --second-c: 0.14;
+}
+[data-palette='ameixa'] {
+  --tint-h: 315;
+  --tint-c: 1.5;
+  --accent-h: 310;
+  --accent-c: 0.15;
+  --accent-dark-l: 0.78;
+  --accent-light-l: 0.46;
+  --second-h: 85;
+  --second-c: 0.13;
+}
+[data-palette='rose'] {
+  --tint-h: 10;
+  --tint-c: 1.2;
+  --accent-h: 8;
+  --accent-c: 0.15;
+  --accent-dark-l: 0.78;
+  --accent-light-l: 0.5;
+  --second-h: 165;
+  --second-c: 0.1;
+}
+[data-palette='grafite'] {
+  --tint-h: 255;
+  --tint-c: 0.3;
+  --accent-h: 195;
+  --accent-c: 0.11;
+  --accent-dark-l: 0.82;
+  --accent-light-l: 0.45;
+  --second-h: 290;
+  --second-c: 0.12;
+}
+
+:root,
+[data-palette] {
+  --background: oklch(15.5% calc(0.018 * var(--tint-c)) var(--tint-h));
+  --surface: oklch(19% calc(0.022 * var(--tint-c)) var(--tint-h));
+  --surface-raised: oklch(23% calc(0.026 * var(--tint-c)) var(--tint-h));
+  --surface-sunken: oklch(13.5% calc(0.015 * var(--tint-c)) var(--tint-h));
+  --foreground: oklch(96% calc(0.012 * var(--tint-c)) var(--tint-h));
+  --muted-foreground: oklch(76% calc(0.025 * var(--tint-c)) var(--tint-h));
+  --subtle-foreground: oklch(66% calc(0.025 * var(--tint-c)) var(--tint-h));
+  --border: oklch(95% calc(0.03 * var(--tint-c)) var(--tint-h) / 0.08);
+  --border-strong: oklch(95% calc(0.03 * var(--tint-c)) var(--tint-h) / 0.15);
+  --primary: oklch(var(--accent-dark-l) var(--accent-c) var(--accent-h));
+  --primary-hover: oklch(calc(var(--accent-dark-l) + 0.04) var(--accent-c) var(--accent-h));
+  --primary-foreground: oklch(0.2 0.05 var(--accent-h));
+  --secondary: oklch(80% var(--second-c) var(--second-h));
+  --ring: oklch(var(--accent-dark-l) var(--accent-c) var(--accent-h) / 0.7);
   --hover: oklch(100% 0 0 / 0.045);
   --active: oklch(100% 0 0 / 0.08);
-  --overlay: oklch(8% 0.02 150 / 0.62);
+  --overlay: oklch(8% calc(0.02 * var(--tint-c)) var(--tint-h) / 0.62);
   --success: oklch(74% 0.15 158);
   --warning: oklch(81% 0.14 80);
-  --danger: oklch(67% 0.19 24);
+  --danger: oklch(70% 0.18 24);
   --info: oklch(73% 0.12 238);
   --tone-violet: oklch(70% 0.15 290);
   --tone-blue: oklch(71% 0.13 250);
@@ -42,51 +106,64 @@
   --shadow-popover:
     0 0 0 1px oklch(100% 0 0 / 0.06), 0 12px 40px -8px oklch(0% 0 0 / 0.6),
     0 4px 12px -4px oklch(0% 0 0 / 0.4);
-  --glow-primary: 0 0 0 1px oklch(0.84 0.15 128 / 0.5), 0 6px 24px -6px oklch(0.84 0.15 128 / 0.4);
+  --glow-primary:
+    0 0 0 1px oklch(var(--accent-dark-l) var(--accent-c) var(--accent-h) / 0.5),
+    0 6px 24px -6px oklch(var(--accent-dark-l) var(--accent-c) var(--accent-h) / 0.4);
   --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
-  --app-backdrop: radial-gradient(60rem 36rem at 78% -14%, oklch(60% 0.13 135 / 0.13), transparent 60%);
+  --app-backdrop: radial-gradient(
+    60rem 36rem at 78% -14%,
+    oklch(60% var(--accent-c) var(--accent-h) / 0.13),
+    transparent 60%
+  );
   --cover-from: var(--primary);
-  --cover-to: var(--tone-amber);
+  --cover-to: var(--secondary);
   color-scheme: dark;
 }
 
-:root[data-theme='light'] {
-  --background: oklch(97% 0.012 125);
-  --surface: oklch(99.3% 0.005 125);
-  --surface-raised: oklch(100% 0 0);
-  --surface-sunken: oklch(94.5% 0.014 125);
-  --foreground: oklch(24% 0.03 150);
-  --muted-foreground: oklch(43% 0.03 148);
-  --subtle-foreground: oklch(52% 0.03 148);
-  --border: oklch(30% 0.04 150 / 0.11);
-  --border-strong: oklch(30% 0.04 150 / 0.2);
-  --primary: oklch(0.47 0.13 var(--accent-h));
-  --primary-hover: oklch(0.42 0.13 var(--accent-h));
-  --primary-foreground: oklch(0.98 0.02 var(--accent-h));
-  --ring: oklch(0.47 0.13 var(--accent-h) / 0.6);
-  --hover: oklch(25% 0.03 150 / 0.05);
-  --active: oklch(25% 0.03 150 / 0.09);
-  --overlay: oklch(25% 0.03 150 / 0.36);
-  --success: oklch(50% 0.13 158);
-  --warning: oklch(57% 0.13 72);
-  --danger: oklch(53% 0.2 25);
-  --info: oklch(51% 0.12 240);
-  --tone-violet: oklch(52% 0.16 290);
-  --tone-blue: oklch(52% 0.14 250);
-  --tone-green: oklch(52% 0.13 160);
-  --tone-amber: oklch(60% 0.13 72);
-  --tone-orange: oklch(58% 0.16 48);
-  --tone-rose: oklch(55% 0.18 10);
-  --tone-cyan: oklch(53% 0.1 205);
+:root[data-theme='light'],
+:root[data-theme='light'] [data-palette] {
+  --background: oklch(97% calc(0.012 * var(--tint-c)) var(--tint-h));
+  --surface: oklch(99% calc(0.006 * var(--tint-c)) var(--tint-h));
+  --surface-raised: oklch(99.5% calc(0.003 * var(--tint-c)) var(--tint-h));
+  --surface-sunken: oklch(94.5% calc(0.014 * var(--tint-c)) var(--tint-h));
+  --foreground: oklch(24% calc(0.025 * var(--tint-c)) var(--tint-h));
+  --muted-foreground: oklch(42% calc(0.025 * var(--tint-c)) var(--tint-h));
+  --subtle-foreground: oklch(49% calc(0.025 * var(--tint-c)) var(--tint-h));
+  --border: oklch(30% calc(0.03 * var(--tint-c)) var(--tint-h) / 0.11);
+  --border-strong: oklch(30% calc(0.03 * var(--tint-c)) var(--tint-h) / 0.2);
+  --primary: oklch(var(--accent-light-l) var(--accent-c) var(--accent-h));
+  --primary-hover: oklch(calc(var(--accent-light-l) - 0.05) var(--accent-c) var(--accent-h));
+  --primary-foreground: oklch(0.985 0.012 var(--accent-h));
+  --secondary: oklch(48% var(--second-c) var(--second-h));
+  --ring: oklch(var(--accent-light-l) var(--accent-c) var(--accent-h) / 0.6);
+  --hover: oklch(25% calc(0.03 * var(--tint-c)) var(--tint-h) / 0.05);
+  --active: oklch(25% calc(0.03 * var(--tint-c)) var(--tint-h) / 0.09);
+  --overlay: oklch(25% calc(0.03 * var(--tint-c)) var(--tint-h) / 0.36);
+  --success: oklch(47% 0.12 158);
+  --warning: oklch(50% 0.11 70);
+  --danger: oklch(51% 0.19 25);
+  --info: oklch(49% 0.12 240);
+  --tone-violet: oklch(50% 0.16 290);
+  --tone-blue: oklch(50% 0.14 250);
+  --tone-green: oklch(49% 0.12 160);
+  --tone-amber: oklch(52% 0.11 72);
+  --tone-orange: oklch(52% 0.15 45);
+  --tone-rose: oklch(52% 0.18 10);
+  --tone-cyan: oklch(49% 0.09 205);
   --chart-grid: oklch(25% 0.03 150 / 0.08);
-  --shadow-card: 0 1px 2px oklch(30% 0.04 150 / 0.07);
+  --shadow-card: 0 1px 2px oklch(30% calc(0.03 * var(--tint-c)) var(--tint-h) / 0.07);
   --shadow-popover:
-    0 0 0 1px oklch(30% 0.04 150 / 0.08), 0 12px 40px -8px oklch(30% 0.04 150 / 0.22),
-    0 4px 12px -4px oklch(30% 0.04 150 / 0.14);
-  --glow-primary: 0 4px 14px -6px oklch(0.47 0.13 128 / 0.55);
-  --app-backdrop: radial-gradient(60rem 36rem at 78% -14%, oklch(85% 0.11 125 / 0.3), transparent 60%);
-  --cover-from: oklch(76% 0.15 128);
-  --cover-to: oklch(84% 0.13 78);
+    0 0 0 1px oklch(30% calc(0.03 * var(--tint-c)) var(--tint-h) / 0.08),
+    0 12px 40px -8px oklch(30% calc(0.03 * var(--tint-c)) var(--tint-h) / 0.22),
+    0 4px 12px -4px oklch(30% calc(0.03 * var(--tint-c)) var(--tint-h) / 0.14);
+  --glow-primary: 0 4px 14px -6px oklch(var(--accent-light-l) var(--accent-c) var(--accent-h) / 0.55);
+  --app-backdrop: radial-gradient(
+    60rem 36rem at 78% -14%,
+    oklch(85% calc(var(--accent-c) * 0.7) var(--accent-h) / 0.3),
+    transparent 60%
+  );
+  --cover-from: oklch(76% var(--accent-c) var(--accent-h));
+  --cover-to: oklch(82% var(--second-c) var(--second-h));
   color-scheme: light;
 }
 
@@ -105,6 +182,7 @@
   --color-primary: var(--primary);
   --color-primary-hover: var(--primary-hover);
   --color-on-primary: var(--primary-foreground);
+  --color-secondary: var(--secondary);
   --color-hover: var(--hover);
   --color-active: var(--active);
   --color-success: var(--success);

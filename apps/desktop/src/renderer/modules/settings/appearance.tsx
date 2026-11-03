@@ -1,6 +1,6 @@
 import { type LucideIcon, Moon, Sun } from 'lucide-react';
 
-import { setTheme, type Theme, useTheme } from '../../lib/theme';
+import { PALETTES, setPalette, setTheme, type Theme, usePalette, useTheme } from '../../lib/theme';
 import { Card, cn } from '../../ui';
 
 const THEMES: { value: Theme; label: string; icon: LucideIcon }[] = [
@@ -10,8 +10,9 @@ const THEMES: { value: Theme; label: string; icon: LucideIcon }[] = [
 
 export function Appearance() {
   const theme = useTheme();
+  const palette = usePalette();
   return (
-    <Card>
+    <Card className="flex flex-col gap-4">
       <div role="radiogroup" aria-label="Tema" className="grid grid-cols-2 gap-3">
         {THEMES.map(({ value, label, icon: Icon }) => (
           <button
@@ -29,6 +30,29 @@ export function Appearance() {
             )}
           >
             <Icon size={16} />
+            {label}
+          </button>
+        ))}
+      </div>
+      <div role="radiogroup" aria-label="Paleta" className="grid grid-cols-3 gap-3">
+        {PALETTES.map(({ value, label }) => (
+          <button
+            key={value}
+            type="button"
+            role="radio"
+            aria-checked={palette === value}
+            data-palette={value}
+            data-testid={`palette-${value}`}
+            onClick={() => setPalette(value)}
+            className={cn(
+              'flex items-center gap-2.5 rounded-control border bg-background p-3 text-sm font-medium text-foreground transition-[border-color,box-shadow]',
+              palette === value ? 'border-primary ring-1 ring-primary' : 'border-line-strong hover:border-primary'
+            )}
+          >
+            <span aria-hidden className="flex -space-x-1.5">
+              <span className="size-5 rounded-full border-2 border-background bg-primary" />
+              <span className="size-5 rounded-full border-2 border-background bg-secondary" />
+            </span>
             {label}
           </button>
         ))}
