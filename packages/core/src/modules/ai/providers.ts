@@ -136,6 +136,10 @@ export function languageModel(ctx: AppCtx, config: ModelConfig): LanguageModel {
         baseURL: 'https://openrouter.ai/api/v1',
         apiKey: apiKey!,
         supportsStructuredOutputs: true,
+        // Um mesmo modelo roda em vários servidores, e nem todos aceitam o JSON com schema: pedido
+        // com formato só vai para os que aceitam.
+        transformRequestBody: (body) =>
+          body.response_format ? { ...body, provider: { require_parameters: true } } : body,
       })(model);
     case 'ollama':
       return createOpenAICompatible({

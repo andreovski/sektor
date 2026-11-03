@@ -102,12 +102,48 @@ export async function ask<T = string>(ctx: AppCtx, request: AiRequest<T>): Promi
     });
     return value;
   } catch (error) {
+    // Muitos modelos devolvem o JSON certo dentro de ```json ou com texto em volta.
+    const noObject = NoObjectGeneratedError.isInstance(error) ? error : null;
+    const rescued = request.schema && noObject ? rescueJson(noObject.text, request.schema) : undefined;
+    if (rescued !== undefined) {
+      const inputTokens = noObject?.usage?.inputTokens ?? 0;
+      const outputTokens = noObject?.usage?.outputTokens ?? 0;
+      log({
+        ok: true,
+        inputTokens,
+        outputTokens,
+        costMicros: costMicros(provider, config.model, inputTokens, outputTokens),
+        content: settings.debug ? JSON.stringify({ system: request.system, prompt, answer: rescued }) : null,
+      });
+      return rescued;
+    }
     const message = scrub(error instanceof Error ? error.message : String(error));
-    log({ error: message, content: settings.debug ? JSON.stringify({ prompt }) : null });
+    log({
+      error: message,
+      // Com a depuração ligada, a resposta fora do formato fica no registro para ver o que veio.
+      content: settings.debug ? JSON.stringify({ prompt, answer: noObject?.text ?? null }) : null,
+    });
     if (error instanceof AppError) throw error;
     console.error(`[ai] ${request.feature}`, message);
     throw new AppError(502, explain(error, provider));
   }
+}
+
+/** O primeiro objeto JSON do texto, validado pelo schema; `undefined` se não houver. */
+export function rescueJson<T>(text: string | undefined, schema: ZodType<T>): T | undefined {
+  if (!text) return undefined;
+  const fenced = /```(?:json)?\s*([\s\S]*?)```/i.exec(text)?.[1];
+  const candidates = [fenced, text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1)];
+  for (const candidate of candidates) {
+    if (!candidate?.trim()) continue;
+    try {
+      const parsed = schema.safeParse(JSON.parse(candidate));
+      if (parsed.success) return parsed.data;
+    } catch {
+      // tenta o próximo
+    }
+  }
+  return undefined;
 }
 
 /** Alguns provedores repetem parte da chave na mensagem de erro. */

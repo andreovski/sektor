@@ -240,6 +240,17 @@ describe('IA', () => {
       expect(costMicros('openai', 'modelo-novo', 5000, 5000)).toBeNull();
     });
 
+    it('JSON dentro de ```json ou com texto em volta ainda vale', async () => {
+      useClaude();
+      for (const wrapped of [
+        '```json\n{"soma":5,"capital":"Brasília"}\n```',
+        'Claro! Aqui está: {"soma":5,"capital":"Brasília"} Espero ter ajudado.',
+      ]) {
+        setModelForTests(fakeModel((call) => (call.system.includes('objeto') ? wrapped : 'Olá!')).model);
+        expect(await rpc['ai.test']()).toMatchObject({ json: true });
+      }
+    });
+
     it('modelo que não existe e chave recusada viram mensagens diferentes', async () => {
       useClaude();
       const failWith = (statusCode: number) =>
