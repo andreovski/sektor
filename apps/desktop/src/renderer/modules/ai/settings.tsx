@@ -1,9 +1,10 @@
 import { CircleCheck, CircleX, KeyRound } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { toast } from 'sonner';
 
 import { useRpc, useRpcMutation } from '../../lib/rpc';
 import { Button, Card, CardHeader, cn, Field, Input, SectionLabel, Select } from '../../ui';
+import { Pill } from '../finance/parts';
 
 import { type Area, AREA_LABELS, NoticeDialog, type Provider, PROVIDER_INFO } from './shared';
 
@@ -108,142 +109,101 @@ function KeyField({
   );
 }
 
-function ModelCard({ status }: { status: Status }) {
-  const update = useRpcMutation('ai.update');
-  const accept = useRpcMutation('ai.acceptNotice');
-  const setKey = useRpcMutation('ai.setKey');
-  const test = useRpcMutation('ai.test');
-  const ollama = useRpc('ai.ollamaModels');
-  const [provider, setProvider] = useState<Provider | ''>(status.provider ?? '');
-  const [model, setModel] = useState(status.model);
-  const [baseUrl, setBaseUrl] = useState(status.baseUrl ?? '');
-  const [notice, setNotice] = useState<Provider | null>(null);
-  useEffect(() => {
-    setProvider(status.provider ?? '');
-    setModel(status.model);
-    setBaseUrl(status.baseUrl ?? '');
-  }, [status.provider, status.model, status.baseUrl]);
+type ModelRow = Status['models'][number];
 
-  const suggestions = provider
-    ? provider === 'ollama' && ollama.data?.length
-      ? ollama.data
-      : status.suggestedModels[provider]
-    : [];
-  const areas = (Object.keys(status.areas) as Area[]).filter((a) => status.areas[a]);
-  const save = () =>
-    update.mutate(
-      { provider: provider || null, model: model.trim(), baseUrl: provider === 'ollama' ? baseUrl : null },
+export const modelLabel = (model: Pick<ModelRow, 'provider' | 'model'>) =>
+  `${PROVIDER_INFO[model.provider].short} · ${model.model}`;
+
+function useTestModel() {
+  const test = useRpcMutation('ai.test');
+  const run = (id: string) =>
+    test.mutate(
+      { id },
       {
-        onSuccess: (next) => {
-          toast.success('Modelo salvo.');
-          if (next.provider && !next.local && !next.noticeAccepted.includes(next.provider)) {
-            setNotice(next.provider);
-          }
-        },
+        onSuccess: (result) =>
+          result.json
+            ? toast.success(
+                `Funcionou em ${(result.ms / 1000).toFixed(1).replace('.', ',')} s: “${result.text}”`
+              )
+            : toast.warning(
+                `Respondeu (“${result.text}”), mas não devolveu JSON válido. Insights funcionam; a categoria do banco não.`
+              ),
       }
     );
-  const keyMissing = provider && provider !== 'ollama' && !status.keys[provider];
-  const noticeMissing =
-    status.provider && !status.local && !status.noticeAccepted.includes(status.provider);
+  return { run, pending: test.isPending ? test.variables?.id : null };
+}
+
+function ModelsCard({ status }: { status: Status }) {
+  const remove = useRpcMutation('ai.models.remove');
+  const setDefault = useRpcMutation('ai.models.setDefault');
+  const accept = useRpcMutation('ai.acceptNotice');
+  const test = useTestModel();
+  const [notice, setNotice] = useState<Provider | null>(null);
+  const areas = (Object.keys(status.areas) as Area[]).filter((a) => status.areas[a]);
 
   return (
     <Card className="flex flex-col gap-3">
-      <Field label="Provedor">
-        <Select
-          value={provider}
-          onChange={(event) => {
-            setProvider(event.target.value as Provider | '');
-            setModel('');
-          }}
-        >
-          <option value="">Sem IA</option>
-          {(Object.keys(PROVIDER_INFO) as Provider[]).map((p) => (
-            <option key={p} value={p}>
-              {PROVIDER_INFO[p].label}
-            </option>
-          ))}
-        </Select>
-      </Field>
-      {provider && <p className="-mt-1 text-xs text-subtle">{PROVIDER_INFO[provider].hint}</p>}
-      {provider && (
-        <Field label="Modelo">
-          <Input
-            list="ai-models"
-            value={model}
-            placeholder={suggestions[0] ?? 'nome do modelo'}
-            onChange={(event) => setModel(event.target.value)}
-          />
-          <datalist id="ai-models">
-            {suggestions.map((name) => (
-              <option key={name} value={name} />
-            ))}
-          </datalist>
-        </Field>
-      )}
-      {provider === 'ollama' && (
-        <Field label="Endereço do Ollama">
-          <Input
-            value={baseUrl}
-            placeholder={status.ollamaUrl}
-            onChange={(event) => setBaseUrl(event.target.value)}
-          />
-        </Field>
-      )}
-      {provider === 'ollama' && ollama.data && ollama.data.length === 0 && (
-        <p className="text-xs text-warning">
-          Não achei o Ollama neste endereço, ou ele não tem modelo baixado.
+      <CardHeader title="Modelos" action={status.models.length ? `${status.models.length} na lista` : undefined} />
+      {status.models.length === 0 && (
+        <p className="text-sm text-muted">
+          Nenhum modelo ainda. Adicione um local, um com a sua chave, ou os dois.
         </p>
       )}
-      <div className="flex gap-2">
-        <Button
-          variant="primary"
-          disabled={update.isPending || (Boolean(provider) && !model.trim())}
-          onClick={save}
-        >
-          Salvar
-        </Button>
-        {status.provider && (
-          <Button
-            disabled={test.isPending || !status.ready}
-            onClick={() =>
-              test.mutate(undefined, {
-                onSuccess: (result) =>
-                  result.json
-                    ? toast.success(`Funcionou em ${(result.ms / 1000).toFixed(1).replace('.', ',')} s: “${result.text}”`)
-                    : toast.warning(
-                        `Respondeu (“${result.text}”), mas não devolveu JSON válido. Insights funcionam; a categoria do banco não.`
-                      ),
-              })
-            }
-          >
-            {test.isPending ? 'Testando…' : 'Testar o modelo'}
-          </Button>
-        )}
-      </div>
-      {provider && provider !== 'ollama' && (
-        <KeyField
-          label={`Chave do ${PROVIDER_INFO[provider].label}`}
-          saved={status.keys[provider]}
-          url={PROVIDER_INFO[provider].keyUrl}
-          pending={setKey.isPending}
-          onSave={(key) =>
-            setKey.mutate(
-              { provider, key },
-              { onSuccess: () => toast.success(key ? 'Chave guardada.' : 'Chave removida.') }
-            )
-          }
-        />
-      )}
-      {(keyMissing || noticeMissing) && status.provider === provider && (
-        <div className="flex items-center gap-2 text-xs text-warning">
-          {keyMissing ? 'Falta a chave.' : 'Falta aceitar o aviso de privacidade.'}
-          {noticeMissing && !keyMissing && (
-            <Button size="sm" onClick={() => setNotice(status.provider)}>
-              Ver aviso
-            </Button>
-          )}
-        </div>
-      )}
+      <ul className="flex flex-col divide-y divide-line">
+        {status.models.map((model) => {
+          const isDefault = model.id === status.defaultModelId;
+          const needsNotice = model.problem?.includes('aviso');
+          return (
+            <li key={model.id} className="flex flex-col gap-1.5 py-2">
+              <div className="flex items-center gap-2">
+                <span className="min-w-0 flex-1 truncate text-sm">{modelLabel(model)}</span>
+                {model.local && <Pill tone="success">Local</Pill>}
+                {isDefault && <Pill tone="info">Padrão</Pill>}
+              </div>
+              {model.baseUrl && <span className="text-xs text-subtle">{model.baseUrl}</span>}
+              {model.problem && (
+                <div className="flex items-center gap-2 text-xs text-warning">
+                  {model.problem.replace(' em Ajustes › IA', '')}
+                  {needsNotice && (
+                    <Button size="sm" onClick={() => setNotice(model.provider)}>
+                      Ver aviso
+                    </Button>
+                  )}
+                </div>
+              )}
+              <div className="flex gap-1">
+                <Button
+                  size="sm"
+                  disabled={Boolean(model.problem) || test.pending === model.id}
+                  onClick={() => test.run(model.id)}
+                >
+                  {test.pending === model.id ? 'Testando…' : 'Testar'}
+                </Button>
+                {!isDefault && (
+                  <Button size="sm" variant="ghost" onClick={() => setDefault.mutate({ id: model.id })}>
+                    Tornar padrão
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="ml-auto"
+                  disabled={remove.isPending}
+                  onClick={() => remove.mutate({ id: model.id })}
+                >
+                  Remover
+                </Button>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      <AddModel
+        status={status}
+        onAdded={(model) => {
+          if (!model.local && !status.noticeAccepted.includes(model.provider)) setNotice(model.provider);
+        }}
+      />
       {notice && (
         <NoticeDialog
           provider={notice}
@@ -256,19 +216,183 @@ function ModelCard({ status }: { status: Status }) {
   );
 }
 
+function AddModel({ status, onAdded }: { status: Status; onAdded(model: ModelRow): void }) {
+  const add = useRpcMutation('ai.models.add');
+  const [provider, setProvider] = useState<Provider>('ollama');
+  const [model, setModel] = useState('');
+  const [baseUrl, setBaseUrl] = useState('');
+  const ollama = useRpc('ai.ollamaModels', { baseUrl: baseUrl || null });
+  const taken = new Set(status.models.filter((m) => m.provider === provider).map((m) => m.model));
+  const suggestions = (
+    provider === 'ollama' && ollama.data?.length ? ollama.data : status.suggestedModels[provider]
+  ).filter((name) => !taken.has(name));
+
+  return (
+    <div className="flex flex-col gap-2 rounded-control border border-line p-3">
+      <SectionLabel>Adicionar modelo</SectionLabel>
+      <Field label="Provedor">
+        <Select
+          value={provider}
+          onChange={(event) => {
+            setProvider(event.target.value as Provider);
+            setModel('');
+          }}
+        >
+          {(Object.keys(PROVIDER_INFO) as Provider[]).map((p) => (
+            <option key={p} value={p}>
+              {PROVIDER_INFO[p].label}
+            </option>
+          ))}
+        </Select>
+      </Field>
+      <p className="-mt-1 text-xs text-subtle">{PROVIDER_INFO[provider].hint}</p>
+      <Field label="Modelo">
+        <Input
+          list="ai-models"
+          value={model}
+          placeholder={suggestions[0] ?? 'nome do modelo'}
+          onChange={(event) => setModel(event.target.value)}
+        />
+        <datalist id="ai-models">
+          {suggestions.map((name) => (
+            <option key={name} value={name} />
+          ))}
+        </datalist>
+      </Field>
+      {suggestions.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {suggestions.map((name) => (
+            <button
+              key={name}
+              type="button"
+              onClick={() => setModel(name)}
+              className={cn(
+                'rounded-full border px-2 py-0.5 text-xs transition-colors',
+                model === name ? 'border-primary text-primary' : 'border-line-strong text-muted hover:bg-hover'
+              )}
+            >
+              {name}
+            </button>
+          ))}
+        </div>
+      )}
+      {provider === 'ollama' && (
+        <>
+          <Field label="Endereço do Ollama">
+            <Input
+              value={baseUrl}
+              placeholder={status.ollamaUrl}
+              onChange={(event) => setBaseUrl(event.target.value)}
+            />
+          </Field>
+          {ollama.data && ollama.data.length === 0 && (
+            <p className="text-xs text-warning">
+              Não achei o Ollama neste endereço, ou ele não tem modelo baixado.
+            </p>
+          )}
+        </>
+      )}
+      <div>
+        <Button
+          variant="primary"
+          disabled={add.isPending || !model.trim()}
+          onClick={() =>
+            add.mutate(
+              { provider, model: model.trim(), baseUrl: provider === 'ollama' ? baseUrl : null },
+              {
+                onSuccess: (next) => {
+                  toast.success('Modelo adicionado.');
+                  setModel('');
+                  const added = next.models.find((m) => m.id === next.added);
+                  if (added) onAdded(added);
+                },
+              }
+            )
+          }
+        >
+          Adicionar
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function KeysCard({ status }: { status: Status }) {
+  const setKey = useRpcMutation('ai.setKey');
+  const providers = [...new Set(status.models.map((m) => m.provider))].filter(
+    (p): p is Exclude<Provider, 'ollama'> => p !== 'ollama'
+  );
+  if (providers.length === 0) return null;
+  return (
+    <Card className="flex flex-col gap-3">
+      <CardHeader title="Chaves" action="no cofre do sistema" />
+      {providers.map((provider) => (
+        <KeyField
+          key={provider}
+          label={`Chave do ${PROVIDER_INFO[provider].label}`}
+          saved={status.keys[provider]}
+          url={PROVIDER_INFO[provider].keyUrl}
+          pending={setKey.isPending}
+          onSave={(key) =>
+            setKey.mutate(
+              { provider, key },
+              { onSuccess: () => toast.success(key ? 'Chave guardada.' : 'Chave removida.') }
+            )
+          }
+        />
+      ))}
+    </Card>
+  );
+}
+
+const USE_LABELS: Record<keyof Status['resolved'], string> = {
+  weekly: 'Resumo da semana',
+  financeChanges: 'O que mudou nas finanças',
+  bankCategory: 'Categoria na revisão do banco',
+};
+
+function UsesCard({ status }: { status: Status }) {
+  const update = useRpcMutation('ai.update');
+  const fallback = status.models.find((m) => m.id === status.defaultModelId);
+  if (status.models.length < 2) return null;
+  return (
+    <Card className="flex flex-col gap-3">
+      <CardHeader title="Qual modelo em cada lugar" />
+      {(Object.keys(USE_LABELS) as (keyof Status['resolved'])[]).map((use) => (
+        <Field key={use} label={USE_LABELS[use]}>
+          <Select
+            value={status.uses[use] ?? ''}
+            onChange={(event) => update.mutate({ uses: { [use]: event.target.value || null } })}
+          >
+            <option value="">Padrão{fallback ? ` (${modelLabel(fallback)})` : ''}</option>
+            {status.models.map((model) => (
+              <option key={model.id} value={model.id}>
+                {modelLabel(model)}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      ))}
+      <p className="text-xs text-subtle">
+        Nos insights, dá também para escolher outro modelo na hora de gerar.
+      </p>
+    </Card>
+  );
+}
+
 function AreasCard({ status }: { status: Status }) {
   const update = useRpcMutation('ai.update');
   return (
     <Card className="flex flex-col">
       <CardHeader title="O que a IA pode ler" />
-      {status.local ? (
+      {status.models.every((m) => m.local) ? (
         <p className="text-sm text-muted">
           Com o modelo local, nada sai deste computador e a IA lê todas as áreas.
         </p>
       ) : (
         <>
           <p className="mb-2 text-xs text-subtle">
-            Vale para modelos na nuvem. Saúde e Diário começam desligados.
+            Vale para os modelos na nuvem; o local lê tudo. Saúde e Diário começam desligados.
           </p>
           {(Object.keys(AREA_LABELS) as Area[]).map((area) => (
             <Toggle
@@ -421,9 +545,11 @@ export function AiSettings() {
   if (!status.data) return null;
   return (
     <div className="flex flex-col gap-4">
-      <ModelCard status={status.data} />
-      {status.data.provider && (
+      <ModelsCard status={status.data} />
+      {status.data.models.length > 0 && (
         <>
+          <KeysCard status={status.data} />
+          <UsesCard status={status.data} />
           <AreasCard status={status.data} />
           <BankCard status={status.data} />
           <LogCard status={status.data} />

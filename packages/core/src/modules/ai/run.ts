@@ -4,15 +4,28 @@ import type { ZodType } from 'zod';
 import type { AppCtx } from '../../app';
 import { AppError, stamp } from '../../services/context';
 
-import { costMicros, modelFor } from './providers';
+import { costMicros, languageModel } from './providers';
 import { redact } from './redact';
 import { aiCalls } from './schema';
-import { type AiSettings, allowedAreas, type Area, isLocal, readSettings } from './settings';
+import {
+  allowedAreas,
+  type Area,
+  isLocal,
+  type ModelConfig,
+  modelFor as pickModel,
+  problemOf,
+  readSettings,
+  type Use,
+} from './settings';
 
 const TIMEOUT_MS = { local: 120_000, cloud: 60_000 };
 
 export interface AiRequest<T> {
   feature: string;
+  /** O uso, para achar o modelo dele; sem uso, o padrão. */
+  use?: Use;
+  /** Um modelo escolhido na hora, por id. */
+  modelId?: string | null;
   system: string;
   prompt: string;
   /** Áreas cujos dados vão no pedido, para o registro. */
@@ -22,35 +35,33 @@ export interface AiRequest<T> {
   maxOutputTokens?: number;
 }
 
-/** Pronto para chamar: modelo escolhido e, na nuvem, o aviso aceito. */
-export function assertReady(settings: AiSettings) {
-  if (!settings.provider || !settings.model) {
-    throw new AppError(409, 'Escolha um modelo de IA em Ajustes › IA.');
-  }
-  if (!isLocal(settings) && !settings.noticeAccepted.includes(settings.provider)) {
-    throw new AppError(409, 'Confirme o aviso de privacidade da IA em Ajustes › IA.');
-  }
-}
-
-export function isReady(settings: AiSettings) {
-  try {
-    assertReady(settings);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** Uma chamada ao modelo escolhido, com limpeza do texto e registro local. */
-export async function ask<T = string>(ctx: AppCtx, request: AiRequest<T>): Promise<T> {
+/** O modelo que um uso vai chamar, já conferido (chave e aviso), ou o erro para a pessoa. */
+export function resolveModel(ctx: AppCtx, use?: Use | null, modelId?: string | null): ModelConfig {
   const settings = readSettings(ctx);
-  assertReady(settings);
+  if (modelId && !settings.models.some((m) => m.id === modelId)) {
+    throw new AppError(404, 'Esse modelo não está mais nos Ajustes.');
+  }
+  const config = pickModel(settings, use, modelId);
+  const problem = problemOf(ctx, settings, config);
+  if (problem) throw new AppError(409, problem);
+  return config!;
+}
+
+export function isReadyFor(ctx: AppCtx, use?: Use | null) {
+  const settings = readSettings(ctx);
+  return problemOf(ctx, settings, pickModel(settings, use)) === null;
+}
+
+/** Uma chamada ao modelo do uso, com limpeza do texto e registro local. */
+export async function ask<T = string>(ctx: AppCtx, request: AiRequest<T>): Promise<T> {
+  const config = resolveModel(ctx, request.use, request.modelId);
+  const settings = readSettings(ctx);
   // Lido a cada chamada: desligar uma área no meio de uma rodada para os envios seguintes.
-  const allowed = allowedAreas(settings);
+  const allowed = allowedAreas(settings, config);
   const blocked = request.areas.find((area) => !allowed.includes(area));
   if (blocked) throw new AppError(409, 'Essa área está desligada para a IA em Ajustes › IA.');
-  const model = modelFor(ctx, settings);
-  const provider = settings.provider!;
+  const model = languageModel(ctx, config);
+  const provider = config.provider;
   const prompt = redact(request.prompt);
   const started = Date.now();
   const log = (row: Partial<typeof aiCalls.$inferInsert>) =>
@@ -60,7 +71,7 @@ export async function ask<T = string>(ctx: AppCtx, request: AiRequest<T>): Promi
         ...stamp(),
         feature: request.feature,
         provider,
-        model: settings.model,
+        model: config.model,
         areas: request.areas.join(','),
         durationMs: Date.now() - started,
         ok: false,
@@ -74,7 +85,7 @@ export async function ask<T = string>(ctx: AppCtx, request: AiRequest<T>): Promi
       system: request.system,
       prompt,
       maxOutputTokens: request.maxOutputTokens ?? 1200,
-      abortSignal: AbortSignal.timeout(isLocal(settings) ? TIMEOUT_MS.local : TIMEOUT_MS.cloud),
+      abortSignal: AbortSignal.timeout(isLocal(config) ? TIMEOUT_MS.local : TIMEOUT_MS.cloud),
       ...(request.schema ? { output: Output.object({ schema: request.schema }) } : {}),
     });
     const inputTokens = result.usage.inputTokens ?? 0;
@@ -84,7 +95,7 @@ export async function ask<T = string>(ctx: AppCtx, request: AiRequest<T>): Promi
       ok: true,
       inputTokens,
       outputTokens,
-      costMicros: costMicros(provider, settings.model, inputTokens, outputTokens),
+      costMicros: costMicros(provider, config.model, inputTokens, outputTokens),
       content: settings.debug
         ? JSON.stringify({ system: request.system, prompt, answer: value })
         : null,

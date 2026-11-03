@@ -1,5 +1,5 @@
 import { MockLanguageModelV4 } from 'ai/test';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -93,16 +93,18 @@ describe('IA', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  const useClaude = () => {
-    rpc['ai.update']({ provider: 'anthropic', model: 'claude-haiku-5-5' });
+  const useClaude = (model = 'claude-haiku-5-5') => {
     rpc['ai.setKey']({ provider: 'anthropic', key: 'sk-teste' });
     rpc['ai.acceptNotice']({ provider: 'anthropic' });
+    return rpc['ai.models.add']({ provider: 'anthropic', model }).added;
   };
+  const useOllama = (baseUrl?: string) =>
+    rpc['ai.models.add']({ provider: 'ollama', model: 'qwen3:8b', baseUrl }).added;
 
   describe('configuração', () => {
     it('nasce sem modelo, com saúde e diário desligados e categoria do banco a perguntar', () => {
       const status = rpc['ai.status']();
-      expect(status.provider).toBeNull();
+      expect(status.models).toEqual([]);
       expect(status.ready).toBe(false);
       expect(status.areas.health).toBe(false);
       expect(status.areas.journal).toBe(false);
@@ -120,28 +122,72 @@ describe('IA', () => {
     });
 
     it('nuvem só fica pronta com chave e aviso aceito; o Ollama dispensa os dois', async () => {
-      const { model } = fakeModel(() => 'oi');
-      setModelForTests(model);
-      rpc['ai.update']({ provider: 'anthropic', model: 'claude-haiku-5-5' });
+      setModelForTests(fakeModel(() => 'oi').model);
+      const claude = rpc['ai.models.add']({ provider: 'anthropic', model: 'claude-haiku-5-5' }).added;
       expect(rpc['ai.status']().ready).toBe(false);
-      await expect(rpc['ai.test']()).rejects.toThrow(/aviso de privacidade/);
+      await expect(rpc['ai.test']({ id: claude })).rejects.toThrow(/chave/);
       rpc['ai.setKey']({ provider: 'anthropic', key: 'sk' });
+      await expect(rpc['ai.test']({ id: claude })).rejects.toThrow(/aviso de privacidade/);
       rpc['ai.acceptNotice']({ provider: 'anthropic' });
       expect(rpc['ai.status']().ready).toBe(true);
 
-      rpc['ai.update']({ provider: 'ollama', model: 'qwen3:8b' });
-      expect(rpc['ai.status']().ready).toBe(true);
-      expect(rpc['ai.status']().local).toBe(true);
+      const local = useOllama();
+      const status = rpc['ai.status']();
+      expect(status.models.find((m) => m.id === local)).toMatchObject({ local: true, problem: null });
+    });
+
+    it('vários modelos juntos: o primeiro é o padrão e cada uso pode ter o seu', async () => {
+      const local = useOllama();
+      const sonnet = useClaude('claude-sonnet-5-5');
+      const haiku = useClaude('claude-haiku-5-5');
+      expect(rpc['ai.status']().defaultModelId).toBe(local);
+      rpc['ai.update']({ uses: { weekly: sonnet, bankCategory: haiku } });
+      const status = rpc['ai.status']();
+      expect(status.resolved.weekly.modelId).toBe(sonnet);
+      expect(status.resolved.bankCategory.modelId).toBe(haiku);
+      expect(status.resolved.financeChanges).toMatchObject({ modelId: local, local: true });
+
+      // Tirar um modelo devolve o uso dele ao padrão.
+      rpc['ai.models.remove']({ id: sonnet });
+      expect(rpc['ai.status']().resolved.weekly.modelId).toBe(local);
+      rpc['ai.models.remove']({ id: local });
+      expect(rpc['ai.status']().defaultModelId).toBe(haiku);
+      expect(() => rpc['ai.models.add']({ provider: 'anthropic', model: 'claude-haiku-5-5' })).toThrow(/já está/);
+    });
+
+    it('as áreas seguem o modelo de cada chamada: local lê tudo, nuvem respeita as chaves', async () => {
+      const local = useOllama();
+      const claude = useClaude();
+      const { model, calls } = fakeModel(() => 'ok');
+      setModelForTests(model);
+      ctx.db.run(
+        sql`INSERT INTO reviews (id, created_at, updated_at, week_start, went_well, blocked, priorities)
+            VALUES ('r1', 0, 0, '2026-11-02', 'Dormi melhor', '', '[]')`
+      );
+      await rpc['ai.insight.generate']({ kind: 'weekly', modelId: local });
+      expect(calls[0]!.prompt).toContain('Dormi melhor');
+      await rpc['ai.insight.generate']({ kind: 'weekly', modelId: claude });
+      expect(calls[1]!.prompt).not.toContain('Dormi melhor');
+      expect(rpc['ai.insight']({ kind: 'weekly' }).model).toBe('claude-haiku-5-5');
+    });
+
+    it('o formato antigo, de um modelo só, vira a lista com ele como padrão', () => {
+      ctx.db.run(
+        sql`INSERT INTO app_meta (key, value, updated_at)
+            VALUES ('ai.settings', '{"provider":"ollama","model":"qwen3:8b","baseUrl":null}', 0)`
+      );
+      const status = rpc['ai.status']();
+      expect(status.models).toMatchObject([{ provider: 'ollama', model: 'qwen3:8b' }]);
+      expect(status.defaultModelId).toBe(status.models[0]!.id);
     });
 
     it('Ollama em outro computador conta como nuvem; o endereço ganha /v1', () => {
-      rpc['ai.update']({ provider: 'ollama', model: 'qwen3:8b', baseUrl: 'http://192.168.0.10:11434' });
-      const status = rpc['ai.status']();
-      expect(status.baseUrl).toBe('http://192.168.0.10:11434/v1');
-      expect(status.local).toBe(false);
-      expect(status.ready).toBe(false);
-      rpc['ai.update']({ baseUrl: 'http://localhost:11434/' });
-      expect(rpc['ai.status']().local).toBe(true);
+      const remote = useOllama('http://192.168.0.10:11434');
+      const model = rpc['ai.status']().models.find((m) => m.id === remote)!;
+      expect(model).toMatchObject({ baseUrl: 'http://192.168.0.10:11434/v1', local: false });
+      expect(model.problem).toMatch(/aviso/);
+      const local = rpc['ai.models.add']({ provider: 'ollama', model: 'qwen3:8b', baseUrl: 'http://localhost:11434/' }).added;
+      expect(rpc['ai.status']().models.find((m) => m.id === local)!.local).toBe(true);
     });
 
     it('sem o modo dev, o total do mês não sai do núcleo', async () => {
@@ -149,11 +195,6 @@ describe('IA', () => {
       setModelForTests(fakeModel(() => 'oi').model);
       await rpc['ai.test']().catch(() => {});
       expect(rpc['ai.calls']().month).toEqual([]);
-    });
-
-    it('trocar de provedor sem dizer o modelo limpa o modelo', () => {
-      rpc['ai.update']({ provider: 'anthropic', model: 'claude-haiku-5-5' });
-      expect(rpc['ai.update']({ provider: 'openai' }).model).toBe('');
     });
   });
 
@@ -374,7 +415,8 @@ describe('IA', () => {
     });
 
     it('sem o aviso do Jev aceito, ele não é chamado, nem com o modelo local', async () => {
-      rpc['ai.update']({ provider: 'ollama', model: 'qwen3:8b', bankCategory: 'on' });
+      useOllama();
+      rpc['ai.update']({ bankCategory: 'on' });
       rpc['ai.setKey']({ provider: 'jev', key: 'jev-chave' });
       movement('PADARIA DO ZE');
       setModelForTests(fakeModel(() => JSON.stringify({ itens: [{ n: 1, categoria: 'Mercado' }] })).model);

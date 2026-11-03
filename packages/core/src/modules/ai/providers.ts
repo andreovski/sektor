@@ -6,7 +6,7 @@ import type { LanguageModel } from 'ai';
 import type { AppCtx } from '../../app';
 import { AppError } from '../../services/context';
 
-import { type AiSettings, needsKey, type Provider, readKey } from './settings';
+import { type ModelConfig, needsKey, type Provider, readKey } from './settings';
 
 export const OLLAMA_URL = 'http://localhost:11434/v1';
 
@@ -49,10 +49,9 @@ export function setModelForTests(model: LanguageModel | null) {
   testModel = model;
 }
 
-export function modelFor(ctx: AppCtx, settings: AiSettings): LanguageModel {
-  const { provider, model } = settings;
-  if (!provider || !model) throw new AppError(409, 'Escolha um modelo de IA em Ajustes › IA.');
+export function languageModel(ctx: AppCtx, config: ModelConfig): LanguageModel {
   if (testModel) return testModel;
+  const { provider, model } = config;
   const apiKey = needsKey(provider) ? readKey(ctx, provider) : null;
   if (needsKey(provider) && !apiKey) {
     throw new AppError(409, 'Falta a chave do provedor de IA em Ajustes › IA.');
@@ -72,7 +71,7 @@ export function modelFor(ctx: AppCtx, settings: AiSettings): LanguageModel {
     case 'ollama':
       return createOpenAICompatible({
         name: 'ollama',
-        baseURL: settings.baseUrl || OLLAMA_URL,
+        baseURL: config.baseUrl || OLLAMA_URL,
         supportsStructuredOutputs: true,
       })(model);
   }

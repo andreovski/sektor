@@ -8,16 +8,18 @@ export type Area = 'finance' | 'tasks' | 'agenda' | 'projects' | 'habits' | 'foc
 
 export const PROVIDER_INFO: Record<
   Provider,
-  { label: string; hint: string; policy: string | null; keyUrl: string | null; warning?: string }
+  { label: string; short: string; hint: string; policy: string | null; keyUrl: string | null; warning?: string }
 > = {
   ollama: {
     label: 'Ollama (no seu computador)',
+    short: 'Ollama',
     hint: 'Grátis e nada sai da máquina. Instale o Ollama e baixe um modelo antes.',
     policy: null,
     keyUrl: null,
   },
   openrouter: {
     label: 'OpenRouter',
+    short: 'OpenRouter',
     hint: 'Uma chave para vários modelos, inclusive os gratuitos (terminam em :free).',
     policy: 'https://openrouter.ai/privacy',
     keyUrl: 'https://openrouter.ai/settings/keys',
@@ -26,12 +28,14 @@ export const PROVIDER_INFO: Record<
   },
   anthropic: {
     label: 'Claude (Anthropic)',
+    short: 'Claude',
     hint: 'Pago por uso, com a sua chave.',
     policy: 'https://privacy.anthropic.com',
     keyUrl: 'https://console.anthropic.com/settings/keys',
   },
   openai: {
     label: 'GPT (OpenAI)',
+    short: 'OpenAI',
     hint: 'Pago por uso, com a sua chave.',
     policy: 'https://platform.openai.com/docs/guides/your-data',
     keyUrl: 'https://platform.openai.com/api-keys',

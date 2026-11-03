@@ -10,9 +10,9 @@ import { periodOf } from '../review/period';
 import { reviews } from '../review/schema';
 import { stats } from '../review/service';
 
-import { ask } from './run';
+import { ask, resolveModel } from './run';
 import { aiInsights } from './schema';
-import { allowedAreas, type Area, readSettings } from './settings';
+import { allowedAreas, type Area, modelFor, readSettings } from './settings';
 
 export const INSIGHTS = ['weekly', 'financeChanges'] as const;
 export type InsightKind = (typeof INSIGHTS)[number];
@@ -151,8 +151,9 @@ Diga quais categorias mais subiram ou caíram e o efeito no total. Se for o mês
 ${STYLE}`,
 };
 
-function payloadOf(ctx: AppCtx, kind: InsightKind, period: string | undefined) {
-  const areas = allowedAreas(readSettings(ctx));
+function payloadOf(ctx: AppCtx, kind: InsightKind, period: string | undefined, modelId?: string | null) {
+  const settings = readSettings(ctx);
+  const areas = allowedAreas(settings, modelFor(settings, kind, modelId));
   return kind === 'weekly' ? weeklyPayload(ctx, period, areas) : financePayload(ctx, period, areas);
 }
 
@@ -180,6 +181,9 @@ export interface InsightResponse {
   period: string;
   text: string | null;
   createdAt: number | null;
+  /** Quem escreveu o texto guardado. */
+  provider: string | null;
+  model: string | null;
   /** Os dados mudaram desde que o texto foi gerado. */
   stale: boolean;
   /** Nenhuma área liberada tem dado neste período. */
@@ -194,6 +198,8 @@ export function getInsight(ctx: AppCtx, kind: InsightKind, period?: string): Ins
     period: payload.period,
     text: saved?.text ?? null,
     createdAt: saved?.updatedAt ?? null,
+    provider: saved?.provider ?? null,
+    model: saved?.model ?? null,
     stale: Boolean(saved && saved.fingerprint !== fingerprintOf(payload)),
     empty: payload.areas.length === 0,
   };
@@ -203,24 +209,27 @@ export function getInsight(ctx: AppCtx, kind: InsightKind, period?: string): Ins
 export async function generateInsight(
   ctx: AppCtx,
   kind: InsightKind,
-  period?: string
+  period?: string,
+  modelId?: string | null
 ): Promise<InsightResponse> {
-  const payload = payloadOf(ctx, kind, period);
+  const config = resolveModel(ctx, kind, modelId);
+  const payload = payloadOf(ctx, kind, period, config.id);
   if (payload.areas.length === 0) {
     throw new AppError(409, 'Nenhuma área liberada para a IA tem dados neste período.');
   }
   const text = await ask(ctx, {
     feature: `insight.${kind}`,
+    use: kind,
+    modelId: config.id,
     system: SYSTEM[kind],
     prompt: JSON.stringify(payload.data),
     areas: payload.areas,
     maxOutputTokens: 600,
   });
-  const settings = readSettings(ctx);
   const values = {
     text,
-    provider: settings.provider!,
-    model: settings.model,
+    provider: config.provider,
+    model: config.model,
     fingerprint: fingerprintOf(payload),
     updatedAt: Date.now(),
   };

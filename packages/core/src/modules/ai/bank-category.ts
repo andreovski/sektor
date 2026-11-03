@@ -7,8 +7,8 @@ import { bankAccounts, bankMovements, categories } from '../../db/schema';
 
 import { askChoice, jevUsable } from './jev';
 import { aiCalls } from './schema';
-import { ask, isReady } from './run';
-import { allowedAreas, readSettings } from './settings';
+import { ask, isReadyFor } from './run';
+import { allowedAreas, modelFor, readSettings } from './settings';
 
 // A IA na revisão do banco: os que esperam revisão sem sugestão do histórico passam pelo modelo
 // escolhido, uma vez cada (`aiCheckedAt`). Com a chave do Jev, ele confere cada um e só fica a
@@ -130,8 +130,8 @@ export function suggestCategories(ctx: AppCtx): Promise<number> {
 
 async function run(ctx: AppCtx): Promise<number> {
   const settings = readSettings(ctx);
-  if (settings.bankCategory !== 'on' || !isReady(settings)) return 0;
-  if (!allowedAreas(settings).includes('finance')) return 0;
+  if (settings.bankCategory !== 'on' || !isReadyFor(ctx, 'bankCategory')) return 0;
+  if (!allowedAreas(settings, modelFor(settings, 'bankCategory')).includes('finance')) return 0;
 
   const since = Date.now() - 24 * 60 * 60 * 1000;
   const callsToday = ctx.db
@@ -204,6 +204,7 @@ async function run(ctx: AppCtx): Promise<number> {
     try {
       const answer = await ask(ctx, {
         feature: 'bank.category',
+        use: 'bankCategory',
         system: SYSTEM(list),
         prompt: JSON.stringify(input),
         areas: ['finance'],

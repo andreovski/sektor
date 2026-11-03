@@ -2,18 +2,25 @@ import { desc, gte } from 'drizzle-orm';
 import { z } from 'zod';
 
 import type { AppCtx, Job } from '../../app';
-import { AppError } from '../../services/context';
+import { AppError, newId } from '../../services/context';
 import { parse } from '../finance';
 
 import { pendingForAi, suggestCategories } from './bank-category';
 import { generateInsight, getInsight, INSIGHTS, type InsightKind } from './insights';
 import { hasJev, jevUsable } from './jev';
 import { OLLAMA_URL, SUGGESTED_MODELS } from './providers';
-import { ask, isReady } from './run';
+import { ask } from './run';
 import { aiCalls } from './schema';
 import {
+  type AiSettings,
+  allowedAreas,
   AREAS,
   isLocal,
+  type ModelConfig,
+  modelFor,
+  problemOf,
+  USES,
+  type Use,
   needsKey,
   normalizeOllamaUrl,
   PROVIDERS,
@@ -24,17 +31,24 @@ import {
   writeSettings,
 } from './settings';
 
+const baseUrlSchema = z
+  .string()
+  .trim()
+  .max(300, 'Endereço longo demais.')
+  .refine((v) => v === '' || /^https?:\/\//.test(v), 'Use um endereço http:// ou https://.')
+  .nullable()
+  .optional();
+
+const modelSchema = z.object({
+  provider: z.enum(PROVIDERS, { message: 'Provedor inválido.' }),
+  model: z.string().trim().min(1, 'Diga o nome do modelo.').max(200, 'Nome de modelo longo demais.'),
+  baseUrl: baseUrlSchema,
+});
+type ModelInput = z.infer<typeof modelSchema>;
+
 const updateSchema = z.object({
-  provider: z.enum(PROVIDERS).nullable().optional(),
-  model: z.string().trim().max(200, 'Nome de modelo longo demais.').optional(),
-  baseUrl: z
-    .string()
-    .trim()
-    .max(300, 'Endereço longo demais.')
-    .refine((v) => v === '' || /^https?:\/\//.test(v), 'Use um endereço http:// ou https://.')
-    .nullable()
-    .optional(),
   areas: z.record(z.enum(AREAS), z.boolean()).optional(),
+  uses: z.record(z.enum(USES), z.string().nullable()).optional(),
   bankCategory: z.enum(['ask', 'on', 'off']).optional(),
   debug: z.boolean().optional(),
   devMode: z.boolean().optional(),
@@ -50,8 +64,9 @@ type KeyInput = z.infer<typeof keySchema>;
 const insightSchema = z.object({
   kind: z.enum(INSIGHTS, { message: 'Insight inválido.' }),
   period: z.string().optional(),
+  modelId: z.string().nullable().optional(),
 });
-type InsightInput = { kind: InsightKind; period?: string };
+type InsightInput = { kind: InsightKind; period?: string; modelId?: string | null };
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -60,12 +75,32 @@ export function status(ctx: AppCtx) {
   const keys = Object.fromEntries(
     PROVIDERS.filter(needsKey).map((p) => [p, Boolean(readKey(ctx, p))])
   ) as Record<Exclude<Provider, 'ollama'>, boolean>;
-  const keyOk =
-    !settings.provider || !needsKey(settings.provider) || keys[settings.provider as keyof typeof keys];
+  const models = settings.models.map((config) => ({
+    ...config,
+    local: isLocal(config),
+    problem: problemOf(ctx, settings, config),
+  }));
+  const forUse = (use: Use) => modelFor(settings, use);
   return {
     ...settings,
-    local: isLocal(settings),
-    ready: isReady(settings) && keyOk,
+    models,
+    /** O modelo padrão está pronto para uso. */
+    ready: problemOf(ctx, settings, modelFor(settings)) === null,
+    /** O modelo que cada uso vai chamar agora, já com o padrão resolvido. */
+    resolved: Object.fromEntries(
+      USES.map((use) => {
+        const config = forUse(use);
+        return [
+          use,
+          {
+            modelId: config?.id ?? null,
+            local: isLocal(config),
+            ready: problemOf(ctx, settings, config) === null,
+            areas: allowedAreas(settings, config),
+          },
+        ];
+      })
+    ) as Record<Use, { modelId: string | null; local: boolean; ready: boolean; areas: string[] }>,
     keys,
     jev: hasJev(ctx),
     /** O Jev só entra com o aviso aceito e Finanças liberada. */
@@ -126,10 +161,11 @@ function calls(ctx: AppCtx, limit = 50) {
 }
 
 /** Responde em português e devolve JSON válido: o mínimo que as próximas etapas pedem. */
-async function testModel(ctx: AppCtx) {
+async function testModel(ctx: AppCtx, modelId?: string) {
   const started = Date.now();
   const text = await ask(ctx, {
     feature: 'test.text',
+    modelId,
     system: 'Responda em português do Brasil, numa frase curta.',
     prompt: 'Diga olá e o seu nome de modelo.',
     areas: [],
@@ -139,6 +175,7 @@ async function testModel(ctx: AppCtx) {
   try {
     const value = await ask(ctx, {
       feature: 'test.json',
+      modelId,
       system: 'Responda só com o objeto pedido.',
       prompt: 'Devolva soma = 2 + 3 e capital = a capital do Brasil.',
       areas: [],
@@ -153,8 +190,9 @@ async function testModel(ctx: AppCtx) {
 }
 
 /** Os modelos já baixados no Ollama. */
-async function ollamaModels(ctx: AppCtx): Promise<string[]> {
-  const base = (readSettings(ctx).baseUrl || OLLAMA_URL).replace(/\/v1\/?$/, '');
+async function ollamaModels(baseUrl?: string | null): Promise<string[]> {
+  const base = (normalizeOllamaUrl(baseUrl || null) || OLLAMA_URL).replace(/\/v1\/?$/, '');
+  if (!/^https?:\/\//.test(base)) return [];
   try {
     const response = await fetch(`${base}/api/tags`, { signal: AbortSignal.timeout(3000) });
     if (!response.ok) return [];
@@ -170,17 +208,57 @@ export const handlers = (ctx: AppCtx) => ({
   'ai.update': (input: UpdateInput) => {
     const body = parse<UpdateInput>(updateSchema as never, input);
     const settings = readSettings(ctx);
-    const next = {
+    for (const id of Object.values(body.uses ?? {})) {
+      if (id && !settings.models.some((m) => m.id === id)) throw new AppError(404, 'Modelo não encontrado.');
+    }
+    writeSettings(ctx, {
       ...settings,
       ...body,
       areas: { ...settings.areas, ...body.areas },
-      baseUrl: body.baseUrl === undefined ? settings.baseUrl : normalizeOllamaUrl(body.baseUrl || null),
+      uses: { ...settings.uses, ...body.uses },
+    });
+    return status(ctx);
+  },
+  'ai.models.add': (input: ModelInput) => {
+    const body = parse<ModelInput>(modelSchema as never, input);
+    const settings = readSettings(ctx);
+    const config: ModelConfig = {
+      id: newId(),
+      provider: body.provider,
+      model: body.model,
+      baseUrl: body.provider === 'ollama' ? normalizeOllamaUrl(body.baseUrl || null) : null,
     };
-    // Trocar de provedor sem dizer o modelo deixa o modelo em branco: o do outro não serve.
-    if (body.provider !== undefined && body.provider !== settings.provider && body.model === undefined) {
-      next.model = '';
-    }
-    writeSettings(ctx, next);
+    const same = settings.models.find(
+      (m) => m.provider === config.provider && m.model === config.model && m.baseUrl === config.baseUrl
+    );
+    if (same) throw new AppError(409, 'Esse modelo já está na lista.');
+    if (settings.models.length >= 12) throw new AppError(409, 'São até 12 modelos.');
+    writeSettings(ctx, {
+      ...settings,
+      models: [...settings.models, config],
+      // O primeiro modelo vira o padrão.
+      defaultModelId: settings.defaultModelId ?? config.id,
+    });
+    return { ...status(ctx), added: config.id };
+  },
+  'ai.models.remove': ({ id }: { id: string }) => {
+    const settings = readSettings(ctx);
+    const models = settings.models.filter((m) => m.id !== id);
+    const uses = Object.fromEntries(
+      Object.entries(settings.uses).filter(([, value]) => value !== id)
+    ) as AiSettings['uses'];
+    writeSettings(ctx, {
+      ...settings,
+      models,
+      uses,
+      defaultModelId: settings.defaultModelId === id ? (models[0]?.id ?? null) : settings.defaultModelId,
+    });
+    return status(ctx);
+  },
+  'ai.models.setDefault': ({ id }: { id: string }) => {
+    const settings = readSettings(ctx);
+    if (!settings.models.some((m) => m.id === id)) throw new AppError(404, 'Modelo não encontrado.');
+    writeSettings(ctx, { ...settings, defaultModelId: id });
     return status(ctx);
   },
   'ai.acceptNotice': ({ provider }: { provider: Provider | 'jev' }) => {
@@ -196,16 +274,16 @@ export const handlers = (ctx: AppCtx) => ({
     writeKey(ctx, provider, key || null);
     return status(ctx);
   },
-  'ai.test': () => testModel(ctx),
-  'ai.ollamaModels': () => ollamaModels(ctx),
+  'ai.test': (input?: { id?: string }) => testModel(ctx, input?.id),
+  'ai.ollamaModels': (input?: { baseUrl?: string | null }) => ollamaModels(input?.baseUrl),
   'ai.calls': (input?: { limit?: number }) => calls(ctx, input?.limit),
   'ai.insight': (input: InsightInput) => {
     const { kind, period } = parse<InsightInput>(insightSchema as never, input);
     return getInsight(ctx, kind, period);
   },
   'ai.insight.generate': (input: InsightInput) => {
-    const { kind, period } = parse<InsightInput>(insightSchema as never, input);
-    return generateInsight(ctx, kind, period);
+    const { kind, period, modelId } = parse<InsightInput>(insightSchema as never, input);
+    return generateInsight(ctx, kind, period, modelId);
   },
   'ai.bankCategory.run': async () => ({ suggested: await suggestCategories(ctx) }),
 });

@@ -15,8 +15,10 @@ export function AiCategoryOffer() {
   const update = useRpcMutation('ai.update');
   const run = useRpcMutation('ai.bankCategory.run');
   const data = status.data;
-  if (!data?.provider || !data.ready || data.bankPending === 0) return null;
-  if (!data.local && !data.areas.finance) return null;
+  const use = data?.resolved.bankCategory;
+  const model = data?.models.find((m) => m.id === use?.modelId);
+  if (!data || !use || !model || !use.ready || data.bankPending === 0) return null;
+  if (!use.areas.includes('finance')) return null;
 
   const suggest = () =>
     run.mutate(undefined, {
@@ -34,11 +36,11 @@ export function AiCategoryOffer() {
           <p>
             Quer que a IA sugira a categoria do que o histórico não reconheceu? São {data.bankPending}{' '}
             agora.{' '}
-            {data.local
+            {use.local
               ? data.jevReady
                 ? 'O modelo é local, mas a descrição e o valor vão para o Jev conferir.'
                 : 'O modelo é local: nada sai daqui.'
-              : `A descrição e o valor vão para o ${PROVIDER_INFO[data.provider].label}${data.jevReady ? ' e para o Jev' : ''}.`}{' '}
+              : `A descrição e o valor vão para o ${PROVIDER_INFO[model.provider].label}${data.jevReady ? ' e para o Jev' : ''}.`}{' '}
             É sempre sugestão; dá para mudar depois em Ajustes › IA.
           </p>
           <div className="flex gap-2">
