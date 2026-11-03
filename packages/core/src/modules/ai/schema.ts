@@ -35,3 +35,18 @@ export const aiInsights = sqliteTable('ai_insights', {
   model: text('model').notNull(),
   fingerprint: text('fingerprint').notNull(),
 });
+
+export const aiConversations = sqliteTable('ai_conversations', {
+  ...base,
+  title: text('title').notNull(),
+});
+
+/** `tools` são os nomes das consultas que a resposta fez, para a tela mostrar. */
+export const aiMessages = sqliteTable('ai_messages', {
+  ...base,
+  conversationId: text('conversation_id').notNull(),
+  role: text('role', { enum: ['user', 'assistant'] }).notNull(),
+  text: text('text').notNull(),
+  tools: text('tools', { mode: 'json' }).$type<string[]>().notNull().default([]),
+  model: text('model'),
+});

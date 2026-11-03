@@ -17,6 +17,7 @@ const FEATURES: Record<string, string> = {
   'bank.category.jev': 'Conferência do Jev',
   'test.text': 'Teste do modelo',
   'test.json': 'Teste do modelo (JSON)',
+  assistant: 'Assistente',
 };
 
 const when = (at: number) =>
@@ -413,6 +414,7 @@ const USE_LABELS: Record<keyof Status['resolved'], string> = {
   weekly: 'Resumo da semana',
   financeChanges: 'O que mudou nas finanças',
   bankCategory: 'Categoria na revisão do banco',
+  assistant: 'Assistente',
 };
 
 function UsesCard({ status }: { status: Status }) {

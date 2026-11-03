@@ -160,7 +160,7 @@ export const scrub = (message: string) =>
   message.replace(/\b(sk|sk-ant|sk-or)-[\w*.-]+/g, '[chave]').slice(0, 300);
 
 /** O motivo, em palavras para a pessoa, pelo código que o provedor devolveu. */
-function explain(error: unknown, provider: string) {
+export function explain(error: unknown, provider: string) {
   // Depois das novas tentativas, o SDK embrulha o último erro.
   const last = RetryError.isInstance(error) ? error.lastError : error;
   if (NoOutputGeneratedError.isInstance(last)) {

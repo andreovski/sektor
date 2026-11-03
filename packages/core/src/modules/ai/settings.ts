@@ -12,7 +12,7 @@ export const AREAS = ['finance', 'tasks', 'agenda', 'projects', 'habits', 'focus
 export type Area = (typeof AREAS)[number];
 
 /** O que usa IA. Cada um pode ter o seu modelo; sem escolha, vai o padrão. */
-export const USES = ['weekly', 'financeChanges', 'bankCategory'] as const;
+export const USES = ['weekly', 'financeChanges', 'bankCategory', 'assistant'] as const;
 export type Use = (typeof USES)[number];
 
 /** Para modelo na nuvem, saúde e diário nascem desligados. */
