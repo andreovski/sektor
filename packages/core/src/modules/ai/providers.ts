@@ -13,7 +13,8 @@ export const OLLAMA_URL = 'http://localhost:11434/v1';
 /** Modelos sugeridos na tela. A pessoa pode digitar outro. */
 export const SUGGESTED_MODELS: Record<Provider, string[]> = {
   ollama: ['qwen3:8b', 'llama3.1:8b', 'gemma3:12b'],
-  openrouter: ['meta-llama/llama-3.3-70b-instruct:free', 'deepseek/deepseek-chat-v3-0324:free'],
+  // Os do OpenRouter mudam toda semana: vêm da lista pública deles (`providerModels`).
+  openrouter: [],
   anthropic: ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'],
   openai: ['gpt-5', 'gpt-5-mini'],
 };
@@ -40,6 +41,31 @@ export function costMicros(
   const price = PRICES[model];
   if (!price) return null;
   return Math.round(inputTokens * price[0] + outputTokens * price[1]);
+}
+
+/** Os modelos que o provedor tem agora. Sem rede, as sugestões fixas. */
+export async function providerModels(provider: Provider, ollamaUrl: string | null): Promise<string[]> {
+  try {
+    if (provider === 'ollama') {
+      const base = (ollamaUrl || OLLAMA_URL).replace(/\/v1\/?$/, '');
+      if (!/^https?:\/\//.test(base)) return [];
+      const response = await fetch(`${base}/api/tags`, { signal: AbortSignal.timeout(3000) });
+      if (!response.ok) return [];
+      const data = (await response.json()) as { models?: { name: string }[] };
+      return (data.models ?? []).map((m) => m.name);
+    }
+    if (provider === 'openrouter') {
+      // Lista pública, sem chave. Os gratuitos primeiro.
+      const response = await fetch('https://openrouter.ai/api/v1/models', { signal: AbortSignal.timeout(5000) });
+      if (!response.ok) return SUGGESTED_MODELS.openrouter;
+      const data = (await response.json()) as { data?: { id: string }[] };
+      const ids = (data.data ?? []).map((m) => m.id);
+      return [...ids.filter((id) => id.endsWith(':free')), ...ids.filter((id) => !id.endsWith(':free'))];
+    }
+  } catch {
+    return provider === 'ollama' ? [] : SUGGESTED_MODELS[provider];
+  }
+  return SUGGESTED_MODELS[provider];
 }
 
 let testModel: LanguageModel | null = null;

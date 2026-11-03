@@ -221,11 +221,12 @@ function AddModel({ status, onAdded }: { status: Status; onAdded(model: ModelRow
   const [provider, setProvider] = useState<Provider>('ollama');
   const [model, setModel] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
-  const ollama = useRpc('ai.ollamaModels', { baseUrl: baseUrl || null });
+  const available = useRpc('ai.providerModels', {
+    provider,
+    baseUrl: provider === 'ollama' ? baseUrl || null : null,
+  });
   const taken = new Set(status.models.filter((m) => m.provider === provider).map((m) => m.model));
-  const suggestions = (
-    provider === 'ollama' && ollama.data?.length ? ollama.data : status.suggestedModels[provider]
-  ).filter((name) => !taken.has(name));
+  const suggestions = (available.data ?? status.suggestedModels[provider]).filter((name) => !taken.has(name));
 
   return (
     <div className="flex flex-col gap-2 rounded-control border border-line p-3">
@@ -261,7 +262,7 @@ function AddModel({ status, onAdded }: { status: Status; onAdded(model: ModelRow
       </Field>
       {suggestions.length > 0 && (
         <div className="flex flex-wrap gap-1">
-          {suggestions.map((name) => (
+          {suggestions.slice(0, 8).map((name) => (
             <button
               key={name}
               type="button"
@@ -285,7 +286,7 @@ function AddModel({ status, onAdded }: { status: Status; onAdded(model: ModelRow
               onChange={(event) => setBaseUrl(event.target.value)}
             />
           </Field>
-          {ollama.data && ollama.data.length === 0 && (
+          {available.data && available.data.length === 0 && (
             <p className="text-xs text-warning">
               Não achei o Ollama neste endereço, ou ele não tem modelo baixado.
             </p>

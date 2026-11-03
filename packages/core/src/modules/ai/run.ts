@@ -1,4 +1,4 @@
-import { generateText, Output } from 'ai';
+import { APICallError, generateText, NoObjectGeneratedError, Output, RetryError } from 'ai';
 import type { ZodType } from 'zod';
 
 import type { AppCtx } from '../../app';
@@ -106,13 +106,32 @@ export async function ask<T = string>(ctx: AppCtx, request: AiRequest<T>): Promi
     log({ error: message, content: settings.debug ? JSON.stringify({ prompt }) : null });
     if (error instanceof AppError) throw error;
     console.error(`[ai] ${request.feature}`, message);
-    throw new AppError(502, unavailable(provider));
+    throw new AppError(502, explain(error, provider));
   }
 }
 
 /** Alguns provedores repetem parte da chave na mensagem de erro. */
 export const scrub = (message: string) =>
   message.replace(/\b(sk|sk-ant|sk-or)-[\w*.-]+/g, '[chave]').slice(0, 300);
+
+/** O motivo, em palavras para a pessoa, pelo código que o provedor devolveu. */
+function explain(error: unknown, provider: string) {
+  // Depois das novas tentativas, o SDK embrulha o último erro.
+  const last = RetryError.isInstance(error) ? error.lastError : error;
+  if (NoObjectGeneratedError.isInstance(last)) {
+    return 'O modelo respondeu, mas fora do formato pedido. Tente outro modelo.';
+  }
+  if (APICallError.isInstance(last)) {
+    const status = last.statusCode;
+    if (status === 401 || status === 403) return 'O provedor recusou a chave. Confira se ela está certa e ativa.';
+    if (status === 402) return 'A conta no provedor está sem crédito.';
+    if (status === 404) return 'O provedor não tem um modelo com esse nome. Confira o nome em Ajustes › IA.';
+    if (status === 429) {
+      return 'O provedor está limitando os pedidos, o que é comum nos modelos grátis. Tente daqui a pouco.';
+    }
+  }
+  return unavailable(provider);
+}
 
 function unavailable(provider: string) {
   if (provider === 'ollama') {

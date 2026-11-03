@@ -1,3 +1,4 @@
+import { APICallError } from 'ai';
 import { MockLanguageModelV4 } from 'ai/test';
 import { eq, sql } from 'drizzle-orm';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -237,6 +238,28 @@ describe('IA', () => {
       expect(costMicros('ollama', 'qwen3:8b', 5000, 5000)).toBe(0);
       expect(costMicros('openrouter', 'x/y:free', 5000, 5000)).toBe(0);
       expect(costMicros('openai', 'modelo-novo', 5000, 5000)).toBeNull();
+    });
+
+    it('modelo que não existe e chave recusada viram mensagens diferentes', async () => {
+      useClaude();
+      const failWith = (statusCode: number) =>
+        setModelForTests(
+          new MockLanguageModelV4({
+            doGenerate: async () => {
+              throw new APICallError({
+                message: 'erro',
+                url: 'https://x',
+                requestBodyValues: {},
+                statusCode,
+                isRetryable: false,
+              });
+            },
+          })
+        );
+      failWith(404);
+      await expect(rpc['ai.test']()).rejects.toThrow(/não tem um modelo com esse nome/);
+      failWith(401);
+      await expect(rpc['ai.test']()).rejects.toThrow(/recusou a chave/);
     });
 
     it('falha do provedor vira mensagem para a pessoa e fica no registro', async () => {

@@ -8,7 +8,7 @@ import { parse } from '../finance';
 import { pendingForAi, suggestCategories } from './bank-category';
 import { generateInsight, getInsight, INSIGHTS, type InsightKind } from './insights';
 import { hasJev, jevUsable } from './jev';
-import { OLLAMA_URL, SUGGESTED_MODELS } from './providers';
+import { OLLAMA_URL, providerModels, SUGGESTED_MODELS } from './providers';
 import { ask } from './run';
 import { aiCalls } from './schema';
 import {
@@ -189,20 +189,6 @@ async function testModel(ctx: AppCtx, modelId?: string) {
   return { text, json, ms: Date.now() - started };
 }
 
-/** Os modelos já baixados no Ollama. */
-async function ollamaModels(baseUrl?: string | null): Promise<string[]> {
-  const base = (normalizeOllamaUrl(baseUrl || null) || OLLAMA_URL).replace(/\/v1\/?$/, '');
-  if (!/^https?:\/\//.test(base)) return [];
-  try {
-    const response = await fetch(`${base}/api/tags`, { signal: AbortSignal.timeout(3000) });
-    if (!response.ok) return [];
-    const data = (await response.json()) as { models?: { name: string }[] };
-    return (data.models ?? []).map((m) => m.name);
-  } catch {
-    return [];
-  }
-}
-
 export const handlers = (ctx: AppCtx) => ({
   'ai.status': () => status(ctx),
   'ai.update': (input: UpdateInput) => {
@@ -275,7 +261,10 @@ export const handlers = (ctx: AppCtx) => ({
     return status(ctx);
   },
   'ai.test': (input?: { id?: string }) => testModel(ctx, input?.id),
-  'ai.ollamaModels': (input?: { baseUrl?: string | null }) => ollamaModels(input?.baseUrl),
+  'ai.providerModels': ({ provider, baseUrl }: { provider: Provider; baseUrl?: string | null }) => {
+    if (!PROVIDERS.includes(provider)) throw new AppError(400, 'Provedor inválido.');
+    return providerModels(provider, normalizeOllamaUrl(baseUrl || null));
+  },
   'ai.calls': (input?: { limit?: number }) => calls(ctx, input?.limit),
   'ai.insight': (input: InsightInput) => {
     const { kind, period } = parse<InsightInput>(insightSchema as never, input);
