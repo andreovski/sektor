@@ -175,11 +175,14 @@ html:active-view-transition-type(page-back) {
   &::view-transition-group(page) {
     animation: none;
   }
+  /* Sem o preenchimento, a tela antiga volta inteira no último quadro antes de sair. */
   &::view-transition-old(page) {
     animation-name: page-out;
+    animation-fill-mode: both;
   }
   &::view-transition-new(page) {
     animation-name: page-in;
+    animation-fill-mode: both;
   }
   &::view-transition-old(dock) {
     display: none;
