@@ -288,6 +288,20 @@ html:active-view-transition-type(page-back) {
   }
 }
 
+/* Sem barra de título, é esta faixa que arrasta a janela. Para antes da barra de rolagem. */
+.window-drag {
+  position: fixed;
+  top: 0;
+  right: 10px;
+  left: 0;
+  z-index: 45;
+  height: 28px;
+  -webkit-app-region: drag;
+}
+[data-sonner-toaster] {
+  -webkit-app-region: no-drag;
+}
+
 .page {
   view-transition-name: page;
 }

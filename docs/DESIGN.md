@@ -9,7 +9,7 @@ Uma paleta é um bloco `[data-palette='…']` só com matizes e intensidades (fu
 secundária); quanto de luz cada token tem é do modo. Paleta nova entra nesse arquivo, em `PALETTES`
 e em `e2e/theme-contrast.mjs`, que mede o contraste WCAG de cada combinação.
 
-- Dock flutuante embaixo, topo sem barra, conteúdo em até 1180 px.
+- Dock flutuante embaixo, janela sem barra de título (a faixa `.window-drag` arrasta), conteúdo em até 1180 px.
 - Início com capa de pixels, saudação e caixa de captura; seções com rótulo pequeno e maiúsculo.
 - Cartões com borda fina, raio de 16 px, cabeçalho com ícone e link discreto.
 - Botão principal verde com brilho; secundário em contorno.

@@ -31,6 +31,7 @@ export function createWindow(onLoad: (window: BrowserWindow) => void, hidden = f
     minWidth: 960,
     minHeight: 640,
     backgroundColor: BACKGROUNDS.dark,
+    titleBarStyle: 'hiddenInset',
     show: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),

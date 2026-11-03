@@ -70,6 +70,7 @@ function ThemedToaster() {
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
+      <div aria-hidden className="window-drag" />
       <Root />
       <ThemedToaster />
     </QueryClientProvider>
