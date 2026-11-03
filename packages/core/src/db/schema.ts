@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { check, index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { check, index, integer, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 // Dinheiro em centavos inteiros e datas de lançamento em texto AAAA-MM-DD, como no finance-engine.
 // Ids em texto (UUID v7), `updatedAt` e `deletedAt` em tudo: é o que a sincronização vai precisar.
@@ -183,7 +183,11 @@ export const bankMovements = sqliteTable(
     suggestedCategoryId: text('suggested_category_id').references(() => categories.id, {
       onDelete: 'set null',
     }),
-    suggestionSource: text('suggestion_source', { enum: ['HISTORY', 'RULE'] }),
+    suggestionSource: text('suggestion_source', { enum: ['HISTORY', 'RULE', 'AI'] }),
+    /** Probabilidade do Jev quando a sugestão veio da IA e ele conferiu. */
+    suggestionConfidence: real('suggestion_confidence'),
+    /** A IA já olhou este lançamento: não pergunta de novo. */
+    aiCheckedAt: integer('ai_checked_at'),
     transactionId: text('transaction_id').references(() => transactions.id, {
       onDelete: 'set null',
     }),

@@ -70,7 +70,9 @@ export interface BankMovementResponse {
   installmentTotal: number | null;
   status: BankMovementStatus;
   suggestedCategoryId: string | null;
-  suggestionSource: 'HISTORY' | 'RULE' | null;
+  suggestionSource: 'HISTORY' | 'RULE' | 'AI' | null;
+  /** Probabilidade do Jev quando a sugestão é da IA e ele conferiu. */
+  suggestionConfidence: number | null;
   transactionId: string | null;
 }
 

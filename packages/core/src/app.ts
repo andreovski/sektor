@@ -2,6 +2,7 @@ import type { KeyStore } from './bank/client';
 import { type DbHandle, openDatabase } from './db/client';
 import { appMeta } from './db/schema';
 import { handlers as agenda, jobs as agendaJobs } from './modules/agenda';
+import { handlers as ai, jobs as aiJobs } from './modules/ai';
 import {
   chooseFolder,
   type DbStore,
@@ -68,6 +69,7 @@ const buildHandlers = (ctx: AppCtx, store: DbStore, systemTimeZone: string) => (
   ...focus(ctx),
   ...review(ctx),
   ...google(ctx),
+  ...ai(ctx),
   ...backup(ctx, store, systemTimeZone),
 });
 
@@ -86,6 +88,7 @@ const JOBS: Job[] = [
   ...focusJobs,
   ...reviewJobs,
   ...googleJobs,
+  ...aiJobs,
 ];
 
 export interface AppOptions {

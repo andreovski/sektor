@@ -20,6 +20,7 @@ import {
   Textarea,
   cn,
 } from '../../ui';
+import { InsightCard } from '../ai/insight-card';
 import { duration } from '../focus/time';
 
 type View = Awaited<ReturnType<Rpc['review.get']>>;
@@ -257,6 +258,7 @@ function ReviewPage() {
             </Button>
           </div>
           <Numbers totals={view.totals} available={view.available} />
+          {kind === 'week' && <InsightCard kind="weekly" period={view.period.key} title="Resumo da semana pela IA" />}
           {kind === 'week' && (
             <div>
               <SectionLabel>Fechar a semana</SectionLabel>
