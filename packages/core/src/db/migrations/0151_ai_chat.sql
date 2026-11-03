@@ -17,6 +17,7 @@ CREATE TABLE ai_messages (
   role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
   text TEXT NOT NULL,
   tools TEXT NOT NULL DEFAULT '[]',
+  areas TEXT NOT NULL DEFAULT '',
   model TEXT
 );
 CREATE INDEX ai_messages_conversation ON ai_messages (conversation_id, created_at);

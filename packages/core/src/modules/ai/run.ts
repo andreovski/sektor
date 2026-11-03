@@ -163,6 +163,9 @@ export const scrub = (message: string) =>
 export function explain(error: unknown, provider: string) {
   // Depois das novas tentativas, o SDK embrulha o último erro.
   const last = RetryError.isInstance(error) ? error.lastError : error;
+  if (last instanceof Error && (last.name === 'TimeoutError' || last.name === 'AbortError')) {
+    return 'O modelo demorou demais para responder. Tente de novo ou use um modelo mais rápido.';
+  }
   if (NoOutputGeneratedError.isInstance(last)) {
     return 'O modelo não respondeu nada: pode ter gastado o limite pensando. Tente de novo ou use outro modelo.';
   }

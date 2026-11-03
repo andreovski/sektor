@@ -32,7 +32,7 @@ function Thread({
   const count = (conversation?.messages.length ?? 0) + (pending ? 1 : 0);
   useEffect(() => {
     end.current?.scrollIntoView({ block: 'end' });
-  }, [count]);
+  }, [count, conversation?.id]);
   return (
     <div className="flex flex-col gap-3">
       {conversation?.messages.map((message) =>
@@ -80,8 +80,11 @@ function AssistantPage() {
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [text, setText] = useState('');
-  const [pending, setPending] = useState<string | null>(null);
+  // A pergunta em andamento e a conversa dela (null: nova). Trocar de conversa não a perde.
+  const [pending, setPending] = useState<{ text: string; conversationId: string | null } | null>(null);
   const [chosen, setChosen] = useState('');
+  const viewing = useRef<string | null>(null);
+  viewing.current = currentId;
 
   useEffect(() => {
     if (!currentId) {
@@ -106,18 +109,22 @@ function AssistantPage() {
 
   const send = async (question: string) => {
     const value = question.trim();
-    if (!value || pending) return;
-    setPending(value);
+    if (!value || pending || model?.problem) return;
+    const from = currentId;
+    setPending({ text: value, conversationId: from });
     setText('');
     try {
-      const next = await call('ai.chat.send', { conversationId: currentId, text: value, modelId });
-      setConversation(next);
-      setCurrentId(next.id);
+      const next = await call('ai.chat.send', { conversationId: from, text: value, modelId });
+      // Só mostra a resposta se a pessoa continua na conversa de onde perguntou.
+      if (viewing.current === from) {
+        setConversation(next);
+        setCurrentId(next.id);
+      }
       void client.invalidateQueries({ queryKey: ['ai.chat.list'] });
       void client.invalidateQueries({ queryKey: ['ai.calls'] });
     } catch (error) {
       toast.error((error as Error).message);
-      setText(value);
+      if (viewing.current === from) setText(value);
     } finally {
       setPending(null);
     }
@@ -200,6 +207,7 @@ function AssistantPage() {
               <button
                 type="button"
                 aria-label={`Apagar ${item.title}`}
+                disabled={pending?.conversationId === item.id}
                 onClick={() =>
                   remove.mutate(
                     { id: item.id },
@@ -216,7 +224,7 @@ function AssistantPage() {
         </aside>
 
         <section className="flex min-h-[60vh] flex-col gap-4 pb-28">
-          {!conversation && !pending ? (
+          {!conversation && pending?.conversationId !== null ? (
             <Card>
               <p className="mb-3 text-sm text-muted">
                 Ele lê só as áreas liberadas para{' '}
@@ -228,8 +236,9 @@ function AssistantPage() {
                   <button
                     key={example}
                     type="button"
+                    disabled={Boolean(model?.problem) || Boolean(pending)}
                     onClick={() => void send(example)}
-                    className="rounded-control border border-line px-3 py-2 text-left text-sm hover:bg-hover"
+                    className="rounded-control border border-line px-3 py-2 text-left text-sm hover:bg-hover disabled:opacity-50"
                   >
                     {example}
                   </button>
@@ -237,7 +246,10 @@ function AssistantPage() {
               </div>
             </Card>
           ) : (
-            <Thread conversation={conversation} pending={pending} />
+            <Thread
+              conversation={conversation}
+              pending={pending && pending.conversationId === currentId ? pending.text : null}
+            />
           )}
 
           <div className="sticky bottom-24 flex items-end gap-2 rounded-panel border border-line bg-raised p-2 shadow-popover">

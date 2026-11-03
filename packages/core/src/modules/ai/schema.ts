@@ -48,5 +48,7 @@ export const aiMessages = sqliteTable('ai_messages', {
   role: text('role', { enum: ['user', 'assistant'] }).notNull(),
   text: text('text').notNull(),
   tools: text('tools', { mode: 'json' }).$type<string[]>().notNull().default([]),
+  /** Áreas cujos dados a resposta usou: um modelo na nuvem não recebe a que não pode ler. */
+  areas: text('areas').notNull().default(''),
   model: text('model'),
 });

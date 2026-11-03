@@ -1,5 +1,5 @@
 import { MockLanguageModelV4 } from 'ai/test';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -14,7 +14,10 @@ import * as fin from '../../services/finance';
 import { handlers } from '.';
 import { purgeOld } from './assistant';
 import { setModelForTests } from './providers';
-import { aiConversations } from './schema';
+import { aiConversations, aiMessages } from './schema';
+import { createEvent } from '../agenda/service';
+import { createGoal } from '../goals/service';
+import { upsertBudget } from '../../services/reports';
 
 // Quarta, 04/11/2026, 12h em São Paulo.
 const NOW = new Date('2026-11-04T15:00:00Z');
@@ -200,6 +203,86 @@ describe('assistente', () => {
     await rpc['ai.chat.send']({ text: 'Oi de novo' });
     expect(purgeOld(ctx, Date.now() + 31 * 24 * 60 * 60 * 1000)).toBe(1);
     expect(ctx.db.select().from(aiConversations).all()).toEqual([]);
+    expect(ctx.db.select().from(aiMessages).all()).toEqual([]);
+  });
+
+  /** Roda uma consulta pelo modelo de mentira e devolve o que ela devolveu ao modelo. */
+  const runTool = async (name: string, input: object, modelId?: string) => {
+    let seen = '';
+    setModelForTests(scripted({ name, input }, (result) => ((seen = result), 'ok')).model);
+    await rpc['ai.chat.send']({ text: 'pergunta', modelId });
+    return seen;
+  };
+
+  it('agenda de um dia só traz o evento do dia, na hora local', async () => {
+    useClaude();
+    createEvent(ctx, {
+      title: 'Dentista',
+      startAt: '2026-11-04T13:00:00.000Z',
+      endAt: '2026-11-04T14:00:00.000Z',
+    });
+    const result = await runTool('eventos', { de: '2026-11-04', ate: '2026-11-04' });
+    expect(result).toContain('Dentista');
+    expect(result).toContain('2026-11-04 às 10:00');
+  });
+
+  it('orçamento com fração não quebra a consulta', async () => {
+    useClaude();
+    spend('2026-11-02', 10_000);
+    const market = ctx.db.select().from(categories).where(eq(categories.name, 'Mercado')).get()!.id;
+    upsertBudget(ctx, { categoryId: market, month: '2026-11', limitCents: 30_000 });
+    const result = await runTool('orcamentos', { mes: '2026-11' });
+    expect(result).toContain('Mercado');
+    expect(result).not.toContain('CARTÃO');
+    expect(result).not.toContain('erro');
+  });
+
+  it('meta de saldo não sai com Finanças desligada', async () => {
+    useClaude();
+    createGoal(ctx, {
+      title: 'Reserva',
+      area: 'FINANCAS',
+      target: 1_000_000,
+      unit: 'R$',
+      color: 'green',
+      source: 'MANUAL',
+      manualValue: 250_000,
+    } as never);
+    expect(await runTool('metas', {})).toContain('alvoCentavos');
+    rpc['ai.update']({ areas: { finance: false } });
+    const hidden = await runTool('metas', {});
+    expect(hidden).not.toContain('Reserva');
+  });
+
+  it('resposta do modelo local com dado de saúde não vai no histórico para a nuvem', async () => {
+    const claude = useClaude();
+    const local = rpc['ai.models.add']({ provider: 'ollama', model: 'qwen3:8b' }).added;
+    ctx.db.run(
+      sql`INSERT INTO health_days (id, created_at, updated_at, date, mood, water_ml)
+          VALUES ('h1', 0, 0, '2026-11-03', 2, 0)`
+    );
+    setModelForTests(
+      scripted({ name: 'saude', input: { de: '2026-11-03', ate: '2026-11-03' } }, () => 'Seu humor foi 2 ontem.').model
+    );
+    const first = await rpc['ai.chat.send']({ text: 'Como estava meu humor?', modelId: local });
+    const cloud = scripted(null, () => 'ok');
+    setModelForTests(cloud.model);
+    await rpc['ai.chat.send']({ conversationId: first.id, text: 'E hoje?', modelId: claude });
+    expect(cloud.seen[0]!.prompt).not.toContain('humor foi 2');
+    expect(cloud.seen[0]!.prompt).toContain('Como estava meu humor?');
+  });
+
+  it('falha do provedor não deixa pergunta nem conversa órfã', async () => {
+    useClaude();
+    setModelForTests(
+      new MockLanguageModelV4({
+        doGenerate: async () => {
+          throw new Error('fora do ar');
+        },
+      })
+    );
+    await expect(rpc['ai.chat.send']({ text: 'Oi' })).rejects.toThrow();
+    expect(rpc['ai.chat.list']()).toEqual([]);
   });
 
   it('pergunta vazia é recusada', async () => {

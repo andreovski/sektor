@@ -1,12 +1,13 @@
 import { addDays } from '@sektor/finance-engine';
 import { tool, type ToolSet } from 'ai';
-import { and, between, eq, isNull, sql } from 'drizzle-orm';
+import { and, between, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import type { AppCtx } from '../../app';
-import { categories } from '../../db/schema';
+import { categories, transactions } from '../../db/schema';
+import { calendars } from '../agenda/schema';
 import { todayIn } from '../../services/context';
-import { listAccounts, listDueInvoices, listTransactions } from '../../services/finance';
+import { listAccounts, listDueInvoices } from '../../services/finance';
 import { budgetStatuses } from '../../services/reports';
 import { listOccurrences } from '../agenda/service';
 import { secondsByDay } from '../focus/service';
@@ -30,7 +31,7 @@ const range = {
 };
 /** Dinheiro sai em centavos; o modelo escreve [[centavos]] e a tela formata. */
 const cents = (value: number) => Math.round(value);
-const MAX_CHARS = 8000;
+const MAX_CHARS = 12000;
 const MAX_DAYS = 400;
 
 interface Ctx {
@@ -57,12 +58,38 @@ function categoryLabels(app: AppCtx) {
   return { rows, label };
 }
 
-/** Limpa CPF, cartão e afins de tudo o que volta ao modelo, e corta resposta grande demais. */
-function clean(value: unknown) {
-  const text = redact(JSON.stringify(value));
-  if (text.length <= MAX_CHARS) return JSON.parse(text);
-  return { aviso: 'Resultado grande demais; peça um período menor.', parcial: text.slice(0, MAX_CHARS) };
+/** Limpa CPF, cartão e afins dos textos que voltam ao modelo; número fica como está. */
+function scrubStrings(value: unknown): unknown {
+  if (typeof value === 'string') return redact(value);
+  if (typeof value === 'number') return Number.isInteger(value) ? value : Math.round(value * 1000) / 1000;
+  if (Array.isArray(value)) return value.map(scrubStrings);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, scrubStrings(v)]));
+  }
+  return value;
 }
+
+function clean(value: unknown) {
+  const cleaned = scrubStrings(value);
+  if (JSON.stringify(cleaned).length <= MAX_CHARS) return cleaned;
+  return { erro: 'Resultado grande demais. Peça um período menor ou um filtro.' };
+}
+
+/** Data e hora no fuso da pessoa, como ela lê. */
+function localTime(app: AppCtx, iso: string) {
+  const parts = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: app.timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(iso));
+  return parts.replace(' ', ' às ');
+}
+
+const localDay = (app: AppCtx, ms: number) =>
+  new Intl.DateTimeFormat('sv-SE', { timeZone: app.timeZone }).format(new Date(ms));
 
 function checkRange(de: string, ate: string) {
   if (ate < de) return 'A data final vem antes da inicial.';
@@ -157,33 +184,61 @@ export function buildTools(ctx: Ctx): ToolSet {
       make: () =>
         tool({
           description:
-            'Lançamentos de um período, com filtro opcional por texto da descrição e por nome de categoria. Até 60.',
+            'Lançamentos efetivados de um período, com filtro por texto, categoria e tipo. Devolve o total já somado de todos os que casam e até 40 deles para citar.',
           inputSchema: z.object({
             ...range,
             busca: z.string().max(80).optional().describe('Trecho da descrição, como "uber"'),
             categoria: z.string().max(80).optional().describe('Nome (ou parte) da categoria'),
+            tipo: z.enum(['gastos', 'entradas', 'transferencias']).default('gastos'),
+            incluirPrevistos: z.boolean().default(false),
           }),
-          execute: async ({ de, ate, busca, categoria }) => {
+          execute: async ({ de, ate, busca, categoria, tipo, incluirPrevistos }) => {
             const problem = checkRange(de, ate);
             if (problem) return { erro: problem };
             const { rows, label } = categoryLabels(app);
             const names = new Map(listAccounts(app, true).map((a) => [a.id, a.name]));
             const wanted = categoria?.trim().toLowerCase();
             const ids = wanted
-              ? new Set(rows.filter((c) => label(c.id).toLowerCase().includes(wanted)).map((c) => c.id))
+              ? rows.filter((c) => label(c.id).toLowerCase().includes(wanted)).map((c) => c.id)
               : null;
-            const list = listTransactions(app, { from: de, to: ate, ...(busca ? { search: busca } : {}) })
-              .filter((t) => !ids || (t.categoryId && ids.has(t.categoryId)))
-              .slice(0, 60);
-            return list.map((t) => ({
-              data: t.date,
-              descricao: t.description,
-              tipo: t.kind,
-              valorCentavos: t.amountCents,
-              categoria: label(t.categoryId),
-              conta: names.get(t.accountId) ?? null,
-              situacao: t.status === 'DONE' ? 'efetivado' : 'previsto',
-            }));
+            const kind = tipo === 'entradas' ? 'INCOME' : tipo === 'transferencias' ? 'TRANSFER' : 'EXPENSE';
+            const term = busca?.trim().toLowerCase();
+            // Direto no banco, sem o limite da lista da tela: o total precisa de todos.
+            const all = app.db
+              .select({
+                date: transactions.date,
+                description: transactions.description,
+                amountCents: transactions.amountCents,
+                categoryId: transactions.categoryId,
+                accountId: transactions.accountId,
+                status: transactions.status,
+              })
+              .from(transactions)
+              .where(
+                and(
+                  isNull(transactions.deletedAt),
+                  eq(transactions.kind, kind),
+                  between(transactions.date, de, ate),
+                  incluirPrevistos ? undefined : eq(transactions.status, 'DONE'),
+                  ids ? (ids.length ? inArray(transactions.categoryId, ids) : sql`0`) : undefined
+                )
+              )
+              .orderBy(desc(transactions.date))
+              .all()
+              .filter((t) => !term || t.description.toLowerCase().includes(term));
+            return {
+              quantidade: all.length,
+              totalCentavos: all.reduce((sum, t) => sum + t.amountCents, 0),
+              mostrando: Math.min(all.length, 40),
+              lancamentos: all.slice(0, 40).map((t) => ({
+                data: t.date,
+                descricao: t.description,
+                valorCentavos: t.amountCents,
+                categoria: label(t.categoryId),
+                conta: names.get(t.accountId) ?? null,
+                ...(t.status === 'PLANNED' ? { previsto: true } : {}),
+              })),
+            };
           },
         }),
     },
@@ -212,7 +267,10 @@ export function buildTools(ctx: Ctx): ToolSet {
           inputSchema: z.object({ mes: z.string().regex(/^\d{4}-\d{2}$/).describe('AAAA-MM') }),
           execute: async ({ mes }) => {
             const { label } = categoryLabels(app);
-            return budgetStatuses(app, mes).map((b) => ({ ...b, categoria: label(b.categoryId) }));
+            return budgetStatuses(app, mes).map((b) => {
+              const { categoryId, ...rest } = b as typeof b & { categoryId: string | null };
+              return { ...rest, categoria: label(categoryId) };
+            });
           },
         }),
     },
@@ -228,23 +286,30 @@ export function buildTools(ctx: Ctx): ToolSet {
             busca: z.string().max(80).optional(),
             concluidas: z.boolean().optional(),
           }),
-          execute: async ({ prazoDe, prazoAte, busca, concluidas }) =>
-            listTasks(app, {
+          execute: async ({ prazoDe, prazoAte, busca, concluidas }) => {
+            const list = listTasks(app, {
               dueFrom: prazoDe,
               dueTo: prazoAte,
               search: busca,
               includeCompleted: concluidas,
-              limit: 80,
-            }).map((t) => ({
-              titulo: t.title,
-              situacao: t.status,
-              prioridade: t.priority,
-              prazo: t.dueDate,
-              hora: t.dueTime,
-              projeto: t.project?.name ?? null,
-              etiquetas: t.tags,
-              concluidaEm: t.completedAt ? new Date(t.completedAt).toISOString().slice(0, 10) : null,
-            })),
+              limit: 1000,
+            });
+            const showProject = ctx.allowed().includes('projects');
+            return {
+              quantidade: list.length,
+              mostrando: Math.min(list.length, 50),
+              tarefas: list.slice(0, 50).map((t) => ({
+                titulo: t.title,
+                situacao: t.status,
+                prioridade: t.priority,
+                prazo: t.dueDate,
+                hora: t.dueTime,
+                ...(showProject && t.project ? { projeto: t.project.name } : {}),
+                etiquetas: t.tags,
+                concluidaEm: t.completedAt ? localDay(app, t.completedAt) : null,
+              })),
+            };
+          },
         }),
     },
     projetos: {
@@ -270,11 +335,30 @@ export function buildTools(ctx: Ctx): ToolSet {
         tool({
           description: 'Metas, com prazo e o ritmo em relação a ele.',
           inputSchema: z.object({}),
-          execute: async () =>
-            listGoals(app).map((g) => {
-              const { id: _id, ...rest } = g as typeof g & { id: string };
-              return rest;
-            }),
+          execute: async () => {
+            const allowed = ctx.allowed();
+            // A meta conta na área do que ela mede: saldo e dinheiro são finanças, saúde é saúde.
+            const areaOf = (g: { area: string; source: string; money: boolean }): Area =>
+              g.source === 'ACCOUNT_BALANCE' || g.money || g.area === 'FINANCAS'
+                ? 'finance'
+                : g.area === 'SAUDE'
+                  ? 'health'
+                  : g.source === 'HABIT_STREAK'
+                    ? 'habits'
+                    : 'tasks';
+            const money = (value: number | null | undefined) => (value == null ? null : Math.round(value));
+            return listGoals(app)
+              .filter((g) => allowed.includes(areaOf(g)))
+              .map((g) => ({
+                titulo: g.title,
+                prazo: g.deadline,
+                situacao: g.pace.status,
+                progresso: Math.round((g.pace.progress ?? 0) * 100) / 100,
+                ...(g.money
+                  ? { alvoCentavos: money(g.target), atualCentavos: money(g.current) }
+                  : { unidade: g.unit, alvo: g.target, atual: g.current }),
+              }));
+          },
         }),
     },
     eventos: {
@@ -286,16 +370,33 @@ export function buildTools(ctx: Ctx): ToolSet {
           execute: async ({ de, ate }) => {
             const problem = checkRange(de, ate);
             if (problem) return { erro: problem };
-            return listOccurrences(app, { from: de, to: ate })
-              .slice(0, 120)
-              .map((e) => ({
-                titulo: e.title,
-                inicio: e.startAt,
-                fim: e.endAt,
-                diaInteiro: e.allDay,
-                local: e.location,
-                repete: e.isRecurring,
-              }));
+            // Sem calendário ainda, não há evento; listar criaria o calendário local.
+            const hasCalendar = app.db.select({ id: calendars.id }).from(calendars).limit(1).get();
+            if (!hasCalendar) return { quantidade: 0, eventos: [] };
+            // O fim da Agenda é exclusivo; aqui "até" inclui o dia.
+            const list = listOccurrences(app, { from: de, to: addDays(ate, 1) }).sort((a, b) =>
+              a.startAt.localeCompare(b.startAt)
+            );
+            return {
+              quantidade: list.length,
+              mostrando: Math.min(list.length, 80),
+              eventos: list.slice(0, 80).map((e) =>
+                e.allDay
+                  ? {
+                      titulo: e.title,
+                      diaInteiro: true,
+                      de: e.startAt.slice(0, 10),
+                      ate: addDays(e.endAt.slice(0, 10), -1),
+                      local: e.location,
+                    }
+                  : {
+                      titulo: e.title,
+                      inicio: localTime(app, e.startAt),
+                      fim: localTime(app, e.endAt),
+                      local: e.location,
+                    }
+              ),
+            };
           },
         }),
     },
