@@ -136,6 +136,7 @@ const projectFields = {
   color: toneSchema,
   startDate: dateSchema.nullable().optional(),
   dueDate: dateSchema.nullable().optional(),
+  calendarId: z.string().min(1).nullable().optional(),
 };
 
 export const createProjectSchema = z.object(projectFields);
@@ -208,6 +209,8 @@ export interface ProjectResponse {
   dueDate: string | null;
   createdAt: number;
   completedAt: number | null;
+  /** Calendário da Agenda ligado ao projeto. Nulo também quando o calendário saiu. */
+  calendarId: string | null;
   progress: { total: number; done: number; percent: number };
   nextTask: { id: string; title: string; dueDate: string | null; dueTime: string | null } | null;
 }

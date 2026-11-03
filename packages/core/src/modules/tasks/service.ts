@@ -23,7 +23,7 @@ import {
 import type { z } from 'zod';
 
 import { AppError, type Ctx, notFound, stamp, todayIn } from '../../services/context';
-import { dropProjectContent } from '../projects/links';
+import { assertLinkableCalendar, dropProjectContent, liveCalendarIds } from '../projects/links';
 
 import { parseCapture } from './capture';
 import type {
@@ -775,6 +775,11 @@ function withProgress(ctx: Ctx, rows: ProjectRow[]): ProjectResponse[] {
     if (!nextByProject.has(task.projectId!)) nextByProject.set(task.projectId!, task);
   }
 
+  const calendarsAlive = liveCalendarIds(
+    ctx,
+    rows.map((row) => row.calendarId).filter((id): id is string => Boolean(id))
+  );
+
   return rows.map((row) => {
     const total = totals.get(row.id)?.total ?? 0;
     const done = totals.get(row.id)?.done ?? 0;
@@ -790,6 +795,7 @@ function withProgress(ctx: Ctx, rows: ProjectRow[]): ProjectResponse[] {
       dueDate: row.dueDate,
       createdAt: row.createdAt,
       completedAt: row.completedAt,
+      calendarId: row.calendarId && calendarsAlive.has(row.calendarId) ? row.calendarId : null,
       progress: { total, done, percent: total ? Math.round((done / total) * 100) : 0 },
       nextTask: next
         ? { id: next.id, title: next.title, dueDate: next.dueDate, dueTime: next.dueTime }
@@ -836,6 +842,7 @@ export function createProject(
   body: z.output<typeof createProjectSchema>
 ): ProjectResponse {
   assertProjectDates(body.startDate, body.dueDate);
+  assertLinkableCalendar(ctx, body.calendarId);
   const row = {
     ...stamp(),
     name: body.name,
@@ -844,6 +851,7 @@ export function createProject(
     color: body.color ?? null,
     startDate: body.startDate ?? null,
     dueDate: body.dueDate ?? null,
+    calendarId: body.calendarId ?? null,
   };
   ctx.db.insert(projects).values(row).run();
   return getProject(ctx, row.id);
@@ -860,6 +868,7 @@ export function updateProject(
     fields.startDate !== undefined ? fields.startDate : project.startDate,
     fields.dueDate !== undefined ? fields.dueDate : project.dueDate
   );
+  assertLinkableCalendar(ctx, fields.calendarId);
   const now = Date.now();
   const patch: Partial<ProjectRow> = { ...fields, updatedAt: now };
   // Reabrir só mexe em quem estava concluído: um projeto pausado continua pausado.

@@ -4,7 +4,8 @@ import { toast } from 'sonner';
 
 import { money, todayString } from '../../lib/format';
 import { useRpc, useRpcMutation } from '../../lib/rpc';
-import { Button, cn, Dialog, Field, Input, Segmented, Select, Textarea } from '../../ui';
+import { Button, cn, Dialog, Field, Input, Segmented, Select } from '../../ui';
+import { NoteField } from '../../ui/rich-text';
 import {
   CategorySelect,
   ConfirmDialog,
@@ -412,14 +413,7 @@ function TransactionDialog({
               <Repeat size={14} /> {describeRule(transaction.recurrenceRule)}
             </p>
           )}
-          <Field label="Notas">
-            <Textarea
-              rows={2}
-              value={notes}
-              maxLength={2000}
-              onChange={(event) => setNotes(event.target.value)}
-            />
-          </Field>
+          <NoteField label="Notas" rows={2} value={notes} onChange={setNotes} />
           {error && <p className={cn('text-sm text-danger')}>{error}</p>}
           <div className="flex items-center gap-2">
             {transaction && (

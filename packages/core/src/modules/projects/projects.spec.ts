@@ -12,7 +12,6 @@ import * as tasks from '../tasks/service';
 import { PROJECT_FILE_MAX_BYTES } from './contract';
 import { addProjectFile } from './index';
 import { byDueDate, formatBytes, noteTitle, upcomingOfProject } from './logic';
-import { parseInline, parseMarkdown } from './markdown';
 import * as svc from './service';
 
 // 18/10/2026, meio-dia em São Paulo.
@@ -268,6 +267,69 @@ describe('página do projeto', () => {
     expectStatus(() => svc.updateNote(ctx, note.id, { body: 'x' }), 404);
     expect(svc.orphanStoredNames(ctx)).toEqual([`${hash('a')}.pdf`]);
   });
+
+  it('com calendário ligado, a agenda do projeto mostra o calendário inteiro, mesmo desmarcado', () => {
+    const project = tasks.createProject(ctx, { name: 'Obra' });
+    const local = agenda.ensureLocalCalendar(ctx);
+    const obra = agenda.createCalendar(ctx, { name: 'Obra', color: 'amber' });
+    agenda.updateCalendar(ctx, obra.id, { selected: false });
+    const at = (title: string, calendarId: string, projectId?: string) =>
+      agenda.createEvent(ctx, {
+        title,
+        calendarId,
+        projectId,
+        allDay: false,
+        startAt: '2026-10-20T13:00:00.000Z',
+        endAt: '2026-10-20T14:00:00.000Z',
+      } as never);
+    at('Concretagem', obra.id);
+    at('Reunião do projeto', local.id, project.id);
+    at('Dentista', local.id);
+
+    expect(svc.projectPage(ctx, project.id, NOW).upcomingEvents.map((e) => e.title)).toEqual([
+      'Reunião do projeto',
+    ]);
+    expect(tasks.updateProject(ctx, project.id, { calendarId: obra.id }).calendarId).toBe(obra.id);
+    expect(
+      svc.projectPage(ctx, project.id, NOW).upcomingEvents.map((e) => e.title).sort()
+    ).toEqual(['Concretagem', 'Reunião do projeto']);
+
+    expectStatus(() => tasks.updateProject(ctx, project.id, { calendarId: 'nada' }), 404);
+    agenda.deleteCalendar(ctx, obra.id);
+    expect(tasks.getProject(ctx, project.id).calendarId).toBeNull();
+    expect(tasks.updateProject(ctx, project.id, { calendarId: null }).calendarId).toBeNull();
+  });
+
+  it('organiza notas em pastas; apagar a pasta devolve as notas para a raiz', () => {
+    const project = tasks.createProject(ctx, { name: 'Site' });
+    const other = tasks.createProject(ctx, { name: 'Outro' });
+    const ideias = svc.createFolder(ctx, { projectId: project.id, name: 'Ideias' });
+    const atas = svc.createFolder(ctx, { projectId: project.id, name: 'atas' });
+    const note = svc.createNote(ctx, { projectId: project.id, folderId: ideias.id, body: '# Logo' });
+    svc.createNote(ctx, { projectId: project.id, body: 'solta' });
+
+    expect(note.folderId).toBe(ideias.id);
+    expect(svc.listFolders(ctx, project.id).map((f) => [f.name, f.noteCount])).toEqual([
+      ['atas', 0],
+      ['Ideias', 1],
+    ]);
+    expect(svc.updateNote(ctx, note.id, { folderId: atas.id }).folderId).toBe(atas.id);
+    expect(svc.renameFolder(ctx, atas.id, { name: 'Atas' })).toMatchObject({ name: 'Atas', noteCount: 1 });
+
+    const foreign = svc.createFolder(ctx, { projectId: other.id, name: 'Dele' });
+    expectStatus(() => svc.updateNote(ctx, note.id, { folderId: foreign.id }), 404);
+    expectStatus(
+      () => svc.createNote(ctx, { projectId: project.id, folderId: foreign.id }),
+      404
+    );
+
+    svc.deleteFolder(ctx, atas.id);
+    expect(svc.listNotes(ctx, project.id).find((n) => n.id === note.id)?.folderId).toBeNull();
+    expect(svc.listFolders(ctx, project.id).map((f) => f.name)).toEqual(['Ideias']);
+
+    tasks.deleteProject(ctx, project.id);
+    expect(svc.listFolders(ctx, project.id)).toEqual([]);
+  });
 });
 
 describe('regras puras', () => {
@@ -302,7 +364,7 @@ describe('regras puras', () => {
         event('Hoje o dia todo', '2026-10-18', '2026-10-19', true),
         event('De fora', '2026-10-20T10:00:00.000Z', '2026-10-20T11:00:00.000Z', false, 'q'),
       ],
-      'p',
+      { id: 'p', calendarId: null },
       '2026-10-18',
       NOW
     );
@@ -319,33 +381,8 @@ describe('regras puras', () => {
     expect(formatBytes(25 * 1024 * 1024)).toBe('25 MB');
     expect(noteTitle('\n\n## **Plano** de ação\nresto')).toBe('Plano de ação');
     expect(noteTitle('- item')).toBe('item');
+    expect(noteTitle('- [ ] comprar *tinta*')).toBe('comprar tinta');
+    expect(noteTitle('```\nconst a = 1\n```')).toBe('const a = 1');
     expect(noteTitle('  \n')).toBe('Nota vazia');
-  });
-
-  it('entende o Markdown simples', () => {
-    expect(parseInline('a **b** *c* `d`')).toEqual([
-      { kind: 'text', text: 'a ' },
-      { kind: 'bold', text: 'b' },
-      { kind: 'text', text: ' ' },
-      { kind: 'italic', text: 'c' },
-      { kind: 'text', text: ' ' },
-      { kind: 'code', text: 'd' },
-    ]);
-    const blocks = parseMarkdown(
-      '# Título\n\nlinha um\nlinha dois\n- a\n- b\n1. c\n> citação\n```\n# não é título\n```'
-    );
-    expect(blocks.map((block) => block.kind)).toEqual([
-      'heading',
-      'paragraph',
-      'list',
-      'list',
-      'quote',
-      'code',
-    ]);
-    expect(blocks[3]).toMatchObject({ ordered: true });
-    expect(blocks[5]).toEqual({ kind: 'code', text: '# não é título' });
-    expect(parseMarkdown('<script>alert(1)</script>')).toEqual([
-      { kind: 'paragraph', inline: [{ kind: 'text', text: '<script>alert(1)</script>' }] },
-    ]);
   });
 });

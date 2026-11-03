@@ -37,6 +37,8 @@ export const projects = sqliteTable('projects', {
     .default('ACTIVE'),
   dueDate: text('due_date'),
   completedAt: integer('completed_at'),
+  /** Calendário da Agenda que a página do projeto mostra inteiro. */
+  calendarId: text('calendar_id'),
 });
 
 export const tasks = sqliteTable('tasks', {

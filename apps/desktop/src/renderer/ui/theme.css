@@ -372,3 +372,20 @@ html:active-view-transition-type(page-back) {
   background: var(--border-strong);
   border-radius: 8px;
 }
+
+/* Nota em pop-up: a janela não tem moldura, quem arrasta é o cabeçalho dela. */
+[data-window='note'] .window-drag {
+  display: none;
+}
+.note-window-drag {
+  -webkit-app-region: drag;
+  user-select: none;
+}
+.note-window-button {
+  -webkit-app-region: no-drag;
+}
+.note-window .rich-text-page {
+  min-height: 100%;
+  padding: 0 0 1rem;
+  font-size: 0.875rem;
+}

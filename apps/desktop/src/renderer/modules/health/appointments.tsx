@@ -14,8 +14,8 @@ import {
   Input,
   SectionLabel,
   Select,
-  Textarea,
 } from '../../ui';
+import { NoteField, RichTextView } from '../../ui/rich-text';
 
 import { DeleteButton, Loading } from './shared';
 
@@ -76,9 +76,7 @@ function AppointmentForm({ item, onClose }: { item: Appointment | null; onClose(
         <Field label="Local">
           <Input value={location} onChange={(e) => setLocation(e.target.value)} />
         </Field>
-        <Field label="Anotações">
-          <Textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} />
-        </Field>
+        <NoteField label="Anotações" rows={3} value={notes} onChange={setNotes} />
         <Field label="Retorno (opcional)">
           <Input type="date" value={returnDate} onChange={(e) => setReturn(e.target.value)} />
         </Field>
@@ -130,7 +128,7 @@ function Row({ item, onEdit }: { item: Appointment; onEdit(): void }) {
         {item.returnDate && (
           <p className="text-xs text-info">Retorno em {shortDate(item.returnDate)}</p>
         )}
-        {item.notes && <p className="mt-1 text-xs whitespace-pre-wrap text-subtle">{item.notes}</p>}
+        {item.notes && <RichTextView source={item.notes} className="mt-1 text-xs text-subtle" />}
       </div>
       <Button variant="ghost" size="sm" aria-label={`Editar ${item.title}`} onClick={onEdit}>
         <Pencil size={13} />

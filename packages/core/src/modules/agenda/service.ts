@@ -194,14 +194,28 @@ function rangeOf(ctx: Ctx, fromDay: string, toDay: string): Range {
   };
 }
 
-/** Todas as ocorrências dos calendários marcados que se sobrepõem a [from, to), em dias do fuso. */
-export function listOccurrences(ctx: Ctx, query: { from: string; to: string }): EventOccurrence[] {
+/**
+ * Todas as ocorrências dos calendários marcados que se sobrepõem a [from, to), em dias do fuso.
+ * `alsoCalendars` entra mesmo desmarcado na Agenda: é o calendário que um projeto mostra.
+ */
+export function listOccurrences(
+  ctx: Ctx,
+  query: { from: string; to: string },
+  alsoCalendars: string[] = []
+): EventOccurrence[] {
   ensureLocalCalendar(ctx);
   const range = rangeOf(ctx, query.from, query.to);
   const visible = ctx.db
     .select({ id: calendars.id })
     .from(calendars)
-    .where(and(eq(calendars.selected, true), liveCalendar))
+    .where(
+      and(
+        alsoCalendars.length
+          ? or(eq(calendars.selected, true), inArray(calendars.id, alsoCalendars))
+          : eq(calendars.selected, true),
+        liveCalendar
+      )
+    )
     .all()
     .map((row) => row.id);
   if (!visible.length) return [];

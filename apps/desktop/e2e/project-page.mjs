@@ -114,16 +114,21 @@ check('kanban conta tudo', /Kanban\s*5/.test(await page.getByRole('tablist').inn
 // Notas.
 await tab('Notas');
 await page.getByRole('button', { name: 'Criar nota' }).click();
-const note = '# Decisões\n\n- Fotos **próprias**\n- Sem *pop-up*\n\nHospedagem na `Railway`.';
-await page.getByLabel('Texto da nota').fill(note);
+await page.getByRole('textbox', { name: 'Texto da nota' }).click();
+await page.keyboard.type('# Decisões\n- Fotos **próprias**\n- Sem *pop-up*\n\nHospedagem na `Railway` ');
 await page.getByRole('status').getByText('Salvo').waitFor();
+await page.waitForTimeout(800);
 await page.getByRole('button', { name: 'Fixar' }).click();
 await tab('Arquivos');
 await tab('Notas');
 await page.getByRole('heading', { name: 'Decisões' }).waitFor();
 await shot('5-notas');
-await page.getByRole('button', { name: 'Editar', exact: true }).last().click();
-check('nota salvou sozinha', (await page.getByLabel('Texto da nota').inputValue()) === note);
+const noteBox = page.getByRole('textbox', { name: 'Texto da nota' });
+check(
+  'nota salvou sozinha',
+  (await noteBox.locator('strong').textContent()) === 'próprias' &&
+    (await noteBox.locator('code').textContent()) === 'Railway'
+);
 
 // Arquivos.
 await tab('Arquivos');

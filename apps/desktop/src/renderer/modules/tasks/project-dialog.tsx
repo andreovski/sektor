@@ -7,7 +7,7 @@ import {
 import { Trash2 } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
 
-import { useRpcMutation } from '../../lib/rpc';
+import { useRpc, useRpcMutation } from '../../lib/rpc';
 import { Button, Dialog, Field, Input, Select, Textarea } from '../../ui';
 
 import { ToneSwatches } from './chips';
@@ -29,6 +29,8 @@ function Form({
   const [dueDate, setDueDate] = useState(project?.dueDate ?? '');
   const [description, setDescription] = useState(project?.description ?? '');
   const [color, setColor] = useState(project?.color ?? null);
+  const [calendarId, setCalendarId] = useState(project?.calendarId ?? '');
+  const calendars = useRpc('calendars.list');
   const create = useRpcMutation('projects.create');
   const update = useRpcMutation('projects.update');
   const remove = useRpcMutation('projects.delete');
@@ -42,6 +44,7 @@ function Form({
       dueDate: dueDate || null,
       description: description.trim() || null,
       color,
+      calendarId: calendarId || null,
     };
     if (project) await update.mutateAsync({ id: project.id, ...body });
     else {
@@ -90,6 +93,24 @@ function Form({
       </Field>
       <Field label="Cor">
         <ToneSwatches value={color} onChange={setColor} />
+      </Field>
+      <Field label="Calendário da Agenda">
+        <Select
+          value={calendarId}
+          onChange={(event) => setCalendarId(event.target.value)}
+          aria-describedby="project-calendar-hint"
+        >
+          <option value="">Nenhum</option>
+          {(calendars.data ?? []).map((calendar) => (
+            <option key={calendar.id} value={calendar.id}>
+              {calendar.name}
+              {calendar.readOnly ? ' (só leitura)' : ''}
+            </option>
+          ))}
+        </Select>
+        <p id="project-calendar-hint" className="text-xs text-subtle">
+          A agenda do projeto mostra todos os eventos deste calendário, além dos ligados ao projeto.
+        </p>
       </Field>
       <div className="flex items-center gap-2">
         {project && (

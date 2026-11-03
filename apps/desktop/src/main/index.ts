@@ -29,7 +29,7 @@ import { setAppMenu } from './menu';
 import { clearOpenedCopies, projectFileChannels, sweepProjectFiles } from './project-files';
 import { applyPendingRestore, filesPath, scheduleRestore, stagedFilesPath, stagePath } from './restore';
 import { createTray, hasOpenWindow, notify } from './tray';
-import { applyWindowTheme, createWindow, isAppUrl } from './window';
+import { appWindows, applyWindowTheme, createWindow, isAppUrl, openNoteWindow } from './window';
 
 // O smoke é a prova do pacote: roda sempre em pasta e banco temporários, sem o cofre.
 const SMOKE = process.env.SEKTOR_SMOKE === '1';
@@ -87,7 +87,7 @@ function givePort(window: BrowserWindow) {
 
 function openWindow() {
   if (!hasOpenWindow()) return void createWindow(givePort);
-  const [window] = BrowserWindow.getAllWindows();
+  const [window] = appWindows();
   if (window!.isMinimized()) window!.restore();
   window!.show();
   window!.focus();
@@ -222,6 +222,11 @@ function registerIpc() {
     return googleLogin(core, typeof hint === 'string' ? hint : undefined);
   });
   handle('google:cancel-login', () => cancelGoogleLogin());
+  handle('notes:pop-out', (_event, noteId: string) => {
+    if (typeof noteId !== 'string' || !/^[\w-]{1,64}$/.test(noteId)) throw new Error('Nota inválida.');
+    openNoteWindow(noteId, givePort);
+  });
+  handle('notes:close-window', (event) => BrowserWindow.fromWebContents(event.sender)?.close());
 }
 
 /** Prova sem cofre: banco e chave temporários, e a janela de verdade, que o asar precisa abrir. */

@@ -1,10 +1,10 @@
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
 
 import { type Ctx, notFound } from '../../services/context';
-import { events } from '../agenda/schema';
+import { calendars, events } from '../agenda/schema';
 import { projects } from '../tasks/schema';
 
-import { projectFiles, projectNotes } from './schema';
+import { projectFiles, projectNoteFolders, projectNotes } from './schema';
 
 /** Evento só se liga a projeto que existe. */
 export function assertLinkableProject(ctx: Ctx, id: string | null | undefined) {
@@ -17,14 +17,36 @@ export function assertLinkableProject(ctx: Ctx, id: string | null | undefined) {
   if (!found) throw notFound('Projeto não encontrado.');
 }
 
-/** Roda na transação que apaga o projeto: eventos ficam sem projeto; notas e arquivos saem com ele. */
+/** Projeto só se liga a calendário que existe. Pode ser um só de leitura: a página só mostra. */
+export function assertLinkableCalendar(ctx: Ctx, id: string | null | undefined) {
+  if (!id) return;
+  if (!liveCalendarIds(ctx, [id]).size) throw notFound('Calendário não encontrado.');
+}
+
+/**
+ * Dos calendários pedidos, os que ainda existem. Calendário apagado (ou de conta do Google
+ * desconectada) não limpa o projeto: quem lê trata a ligação como vazia.
+ */
+export function liveCalendarIds(ctx: Ctx, ids: string[]) {
+  if (!ids.length) return new Set<string>();
+  return new Set(
+    ctx.db
+      .select({ id: calendars.id })
+      .from(calendars)
+      .where(and(inArray(calendars.id, ids), isNull(calendars.deletedAt)))
+      .all()
+      .map((row) => row.id)
+  );
+}
+
+/** Roda na transação que apaga o projeto: eventos ficam sem projeto; notas, pastas e arquivos saem com ele. */
 export function dropProjectContent(ctx: Ctx, id: string, now: number) {
   ctx.db
     .update(events)
     .set({ projectId: null, updatedAt: now })
     .where(eq(events.projectId, id))
     .run();
-  for (const table of [projectNotes, projectFiles]) {
+  for (const table of [projectNotes, projectNoteFolders, projectFiles]) {
     ctx.db
       .update(table)
       .set({ deletedAt: now, updatedAt: now })

@@ -10,17 +10,23 @@ export function byDueDate(tasks: TaskResponse[]) {
   );
 }
 
-/** Eventos do projeto que ainda não acabaram, do mais próximo ao mais distante. */
+/**
+ * Eventos do projeto que ainda não acabaram, do mais próximo ao mais distante: os ligados a ele e,
+ * quando o projeto tem calendário, todos os desse calendário.
+ */
 export function upcomingOfProject(
   occurrences: EventOccurrence[],
-  projectId: string,
+  project: { id: string; calendarId: string | null },
   today: string,
   now: Date
 ) {
   const pending = (event: EventOccurrence) =>
     event.allDay ? event.endAt.slice(0, 10) > today : new Date(event.endAt) > now;
+  const mine = (event: EventOccurrence) =>
+    event.projectId === project.id ||
+    (project.calendarId !== null && event.calendarId === project.calendarId);
   return occurrences
-    .filter((event) => event.projectId === projectId && pending(event))
+    .filter((event) => mine(event) && pending(event))
     .sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
 }
 
@@ -39,7 +45,18 @@ export function formatBytes(bytes: number) {
 
 /** A primeira linha com texto, sem as marcas do Markdown: é o nome da nota na lista. */
 export function noteTitle(body: string) {
-  const line = body.split('\n').find((text) => text.trim());
-  if (!line) return 'Nota vazia';
-  return line.replace(/^\s*(#{1,6}\s+|[-*]\s+|\d+\.\s+|>\s*)/, '').replace(/[*`]/g, '').trim();
+  const line = body
+    .split('\n')
+    .map(plainLine)
+    .find((text) => text);
+  return line || 'Nota vazia';
+}
+
+function plainLine(line: string) {
+  return line
+    .replace(/^\s*(#{1,6}\s+|>\s*)*/, '')
+    .replace(/^\s*([-*+]\s+|\d+\.\s+)(\[[ xX]\]\s+)?/, '')
+    .replace(/^(```.*|---+|\*\*\*+)$/, '')
+    .replace(/[*`~]|&nbsp;|\\(?=[^\s])/g, '')
+    .trim();
 }

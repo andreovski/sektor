@@ -25,14 +25,68 @@ export function applyWindowTheme(window: BrowserWindow, theme: 'dark' | 'light' 
   window.setBackgroundColor(BACKGROUNDS[nativeTheme.shouldUseDarkColors ? 'dark' : 'light']);
 }
 
+const noteWindows = new Map<string, BrowserWindow>();
+
+/** A janela do app, sem contar as notas em pop-up. */
+export const appWindows = () =>
+  BrowserWindow.getAllWindows().filter((window) => ![...noteWindows.values()].includes(window));
+
 export function createWindow(onLoad: (window: BrowserWindow) => void, hidden = false) {
+  return buildWindow(
+    {
+      width: 1440,
+      height: 900,
+      minWidth: 960,
+      minHeight: 640,
+      titleBarStyle: 'hiddenInset',
+    },
+    onLoad,
+    hidden
+  );
+}
+
+/**
+ * Uma nota numa janelinha sem moldura, por cima de tudo, inclusive de app em tela cheia.
+ * Abrir de novo a mesma nota traz a janela que já existe.
+ */
+export function openNoteWindow(noteId: string, onLoad: (window: BrowserWindow) => void) {
+  const open = noteWindows.get(noteId);
+  if (open && !open.isDestroyed()) {
+    open.show();
+    open.focus();
+    return open;
+  }
+  const window = buildWindow(
+    {
+      width: 380,
+      height: 460,
+      minWidth: 260,
+      minHeight: 180,
+      frame: false,
+      fullscreenable: false,
+      minimizable: false,
+      alwaysOnTop: true,
+    },
+    onLoad,
+    false,
+    `/nota-fixa/${encodeURIComponent(noteId)}`
+  );
+  window.setAlwaysOnTop(true, 'floating');
+  window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  noteWindows.set(noteId, window);
+  window.on('closed', () => noteWindows.delete(noteId));
+  return window;
+}
+
+function buildWindow(
+  options: Electron.BrowserWindowConstructorOptions,
+  onLoad: (window: BrowserWindow) => void,
+  hidden: boolean,
+  route?: string
+) {
   const window = new BrowserWindow({
-    width: 1440,
-    height: 900,
-    minWidth: 960,
-    minHeight: 640,
-    backgroundColor: BACKGROUNDS.dark,
-    titleBarStyle: 'hiddenInset',
+    ...options,
+    backgroundColor: BACKGROUNDS[nativeTheme.shouldUseDarkColors ? 'dark' : 'light'],
     show: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -55,7 +109,7 @@ export function createWindow(onLoad: (window: BrowserWindow) => void, hidden = f
   window.webContents.on('did-finish-load', () => {
     if (isAppUrl(window.webContents.getURL())) onLoad(window);
   });
-  if (devUrl) void window.loadURL(devUrl);
-  else void window.loadFile(join(__dirname, '../renderer/index.html'));
+  if (devUrl) void window.loadURL(route ? `${devUrl}#${route}` : devUrl);
+  else void window.loadFile(join(__dirname, '../renderer/index.html'), route ? { hash: route } : {});
   return window;
 }

@@ -16,7 +16,8 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 
 import { call, useRpc, useRpcMutation } from '../../lib/rpc';
-import { Button, cn, Dialog, Field, Input, Select, Textarea } from '../../ui';
+import { Button, cn, Dialog, Field, Input, Select } from '../../ui';
+import { NoteField } from '../../ui/rich-text';
 
 import { TIME_ZONE } from './shared';
 
@@ -280,13 +281,7 @@ export function EventFormDialog({
           </div>
         </div>
 
-        <Field label="Notas">
-          <Textarea
-            rows={3}
-            value={form.notes}
-            onChange={(event) => set({ notes: event.target.value })}
-          />
-        </Field>
+        <NoteField label="Notas" rows={3} value={form.notes} onChange={(notes) => set({ notes })} />
 
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>

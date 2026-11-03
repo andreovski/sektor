@@ -40,6 +40,10 @@ export interface SektorApi {
   /** Abre o navegador e espera a volta. `hint` sugere a conta. */
   googleLogin(hint?: string): Promise<GoogleLoginResult>;
   googleCancelLogin(): Promise<void>;
+  /** Abre a nota numa janelinha por cima de tudo, ou traz a que já está aberta. */
+  popOutNote(noteId: string): Promise<void>;
+  /** Fecha a janela de onde veio o pedido (o pop-up da nota, que não tem moldura). */
+  closeWindow(): Promise<void>;
 }
 
 declare global {

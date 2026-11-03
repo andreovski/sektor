@@ -4,7 +4,8 @@ import { toast } from 'sonner';
 
 import { longDate, money } from '../../lib/format';
 import { useRpc, useRpcMutation } from '../../lib/rpc';
-import { Button, Card, cn, Dialog, EmptyState, Field, Input, SectionLabel, Segmented, Textarea } from '../../ui';
+import { Button, Card, cn, Dialog, EmptyState, Field, Input, SectionLabel, Segmented } from '../../ui';
+import { NoteField } from '../../ui/rich-text';
 import {
   CategoryIcon,
   CategorySelect,
@@ -222,14 +223,7 @@ function ReviewDialog({ movement, onClose }: { movement: Movement; onClose(): vo
           />
         </Field>
         {source && <p className="text-xs text-subtle">{SOURCE[source].note}</p>}
-        <Field label="Notas">
-          <Textarea
-            rows={2}
-            value={notes}
-            maxLength={2000}
-            onChange={(event) => setNotes(event.target.value)}
-          />
-        </Field>
+        <NoteField label="Notas" rows={2} value={notes} onChange={setNotes} />
         <div className="flex gap-2">
           <Button
             variant="danger"

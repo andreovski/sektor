@@ -100,6 +100,8 @@ export function Shell() {
   useLayoutEffect(() => {
     scroller.current?.scrollTo(0, 0);
   }, [path]);
+  // A nota em pop-up é uma janela à parte: sem dock e sem a moldura da página.
+  if (path.startsWith('/nota-fixa/')) return <Outlet />;
   return (
     <div ref={scroller} className="h-full overflow-y-auto">
       <main className="page mx-auto max-w-[1180px] px-8 pt-8 pb-28">

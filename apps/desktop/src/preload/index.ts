@@ -25,6 +25,8 @@ const api: SektorApi = {
   removeProjectFile: (id) => ipcRenderer.invoke('project-files:remove', id),
   googleLogin: (hint) => ipcRenderer.invoke('google:login', hint),
   googleCancelLogin: () => ipcRenderer.invoke('google:cancel-login'),
+  popOutNote: (noteId) => ipcRenderer.invoke('notes:pop-out', noteId),
+  closeWindow: () => ipcRenderer.invoke('notes:close-window'),
 };
 contextBridge.exposeInMainWorld('sektor', api);
 

@@ -16,8 +16,8 @@ import {
   SectionLabel,
   Select,
   Stat,
-  Textarea,
 } from '../../ui';
+import { NoteField } from '../../ui/rich-text';
 
 import { DayStepper, DeleteButton, dayLabel, DoseList, Loading, Meter } from './shared';
 
@@ -191,9 +191,7 @@ function MedForm({ med, onClose }: { med: Med | null; onClose(): void }) {
             <Input type="date" value={endDate} onChange={(e) => setEnd(e.target.value)} />
           </Field>
         </div>
-        <Field label="Anotações">
-          <Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
-        </Field>
+        <NoteField label="Anotações" rows={2} value={notes} onChange={setNotes} />
         <div className="mt-1 flex items-center justify-between">
           {med ? (
             <DeleteButton onConfirm={() => remove.mutate({ id: med.id }, { onSuccess: onClose })} />

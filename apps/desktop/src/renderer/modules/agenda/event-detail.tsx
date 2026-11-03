@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 
 import { useRpcMutation } from '../../lib/rpc';
 import { Button, Dialog } from '../../ui';
+import { RichTextView } from '../../ui/rich-text';
 
 import { TIME_ZONE, toneVar } from './shared';
 
@@ -71,7 +72,7 @@ export function EventDetail({
           </Line>
         )}
         {event.notes && (
-          <p className="rounded-control bg-sunken p-2.5 whitespace-pre-wrap">{event.notes}</p>
+          <RichTextView source={event.notes} className="rounded-control bg-sunken p-2.5" />
         )}
 
         {readOnly ? (

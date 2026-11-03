@@ -8,14 +8,17 @@ import { getProject, listTasks } from '../tasks/service';
 
 import type {
   addFileSchema,
+  createFolderSchema,
   createNoteSchema,
   ProjectFileResponse,
+  ProjectNoteFolderResponse,
   ProjectNoteResponse,
   ProjectPageResponse,
+  updateFolderSchema,
   updateNoteSchema,
 } from './contract';
 import { byDueDate, upcomingOfProject } from './logic';
-import { projectFiles, projectNotes } from './schema';
+import { projectFiles, projectNoteFolders, projectNotes } from './schema';
 
 const UPCOMING_TASKS = 6;
 const UPCOMING_EVENTS = 5;
@@ -23,6 +26,7 @@ const EVENT_WINDOW_DAYS = 120;
 
 type NoteRow = typeof projectNotes.$inferSelect;
 type FileRow = typeof projectFiles.$inferSelect;
+type FolderRow = typeof projectNoteFolders.$inferSelect;
 
 function tally(ctx: Ctx, table: typeof projectNotes | typeof projectFiles, projectId: string) {
   return (
@@ -38,10 +42,11 @@ export function projectPage(ctx: Ctx, id: string, now = new Date()): ProjectPage
   const project = getProject(ctx, id);
   const open = listTasks(ctx, { projectId: id });
   const today = todayIn(ctx, now);
-  const occurrences = listOccurrences(ctx, {
-    from: today,
-    to: addDays(today, EVENT_WINDOW_DAYS),
-  });
+  const occurrences = listOccurrences(
+    ctx,
+    { from: today, to: addDays(today, EVENT_WINDOW_DAYS) },
+    project.calendarId ? [project.calendarId] : []
+  );
   return {
     project,
     counts: {
@@ -51,7 +56,7 @@ export function projectPage(ctx: Ctx, id: string, now = new Date()): ProjectPage
       files: tally(ctx, projectFiles, id),
     },
     upcomingTasks: byDueDate(open).slice(0, UPCOMING_TASKS),
-    upcomingEvents: upcomingOfProject(occurrences, id, today, now).slice(0, UPCOMING_EVENTS),
+    upcomingEvents: upcomingOfProject(occurrences, project, today, now).slice(0, UPCOMING_EVENTS),
   };
 }
 
@@ -60,6 +65,7 @@ export function projectPage(ctx: Ctx, id: string, now = new Date()): ProjectPage
 const toNote = (row: NoteRow): ProjectNoteResponse => ({
   id: row.id,
   projectId: row.projectId,
+  folderId: row.folderId,
   body: row.body,
   pinned: row.pinned,
   createdAt: row.createdAt,
@@ -87,15 +93,24 @@ export function listNotes(ctx: Ctx, projectId: string) {
     .map(toNote);
 }
 
+export const getNote = (ctx: Ctx, id: string) => toNote(findNote(ctx, id));
+
 export function createNote(ctx: Ctx, body: z.output<typeof createNoteSchema>) {
   getProject(ctx, body.projectId);
-  const row = { ...stamp(), projectId: body.projectId, body: body.body ?? '' };
+  if (body.folderId) assertFolderOf(ctx, body.folderId, body.projectId);
+  const row = {
+    ...stamp(),
+    projectId: body.projectId,
+    folderId: body.folderId ?? null,
+    body: body.body ?? '',
+  };
   ctx.db.insert(projectNotes).values(row).run();
   return toNote(findNote(ctx, row.id));
 }
 
 export function updateNote(ctx: Ctx, id: string, body: z.output<typeof updateNoteSchema>) {
-  findNote(ctx, id);
+  const note = findNote(ctx, id);
+  if (body.folderId) assertFolderOf(ctx, body.folderId, note.projectId);
   ctx.db
     .update(projectNotes)
     .set({ ...body, updatedAt: Date.now() })
@@ -112,6 +127,88 @@ export function deleteNote(ctx: Ctx, id: string) {
     .set({ deletedAt: now, updatedAt: now })
     .where(eq(projectNotes.id, id))
     .run();
+}
+
+// ------------------------------------------------------------------ pastas de notas
+
+function findFolder(ctx: Ctx, id: string) {
+  const folder = ctx.db
+    .select()
+    .from(projectNoteFolders)
+    .where(and(eq(projectNoteFolders.id, id), isNull(projectNoteFolders.deletedAt)))
+    .get();
+  if (!folder) throw notFound('Pasta não encontrada.');
+  return folder;
+}
+
+/** Nota não vai para pasta de outro projeto. */
+function assertFolderOf(ctx: Ctx, folderId: string, projectId: string) {
+  if (findFolder(ctx, folderId).projectId !== projectId) throw notFound('Pasta não encontrada.');
+}
+
+function toFolder(row: FolderRow, noteCount: number): ProjectNoteFolderResponse {
+  return {
+    id: row.id,
+    projectId: row.projectId,
+    name: row.name,
+    noteCount,
+    createdAt: row.createdAt,
+  };
+}
+
+/** Em ordem alfabética, como pastas num explorador de arquivos. */
+export function listFolders(ctx: Ctx, projectId: string) {
+  const counts = new Map(
+    ctx.db
+      .select({ folderId: projectNotes.folderId, n: count() })
+      .from(projectNotes)
+      .where(and(eq(projectNotes.projectId, projectId), isNull(projectNotes.deletedAt)))
+      .groupBy(projectNotes.folderId)
+      .all()
+      .map((row) => [row.folderId, row.n])
+  );
+  return ctx.db
+    .select()
+    .from(projectNoteFolders)
+    .where(and(eq(projectNoteFolders.projectId, projectId), isNull(projectNoteFolders.deletedAt)))
+    .all()
+    .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR', { sensitivity: 'base' }))
+    .map((row) => toFolder(row, counts.get(row.id) ?? 0));
+}
+
+export function createFolder(ctx: Ctx, body: z.output<typeof createFolderSchema>) {
+  getProject(ctx, body.projectId);
+  const row = { ...stamp(), projectId: body.projectId, name: body.name };
+  ctx.db.insert(projectNoteFolders).values(row).run();
+  return toFolder(row as FolderRow, 0);
+}
+
+export function renameFolder(ctx: Ctx, id: string, body: z.output<typeof updateFolderSchema>) {
+  findFolder(ctx, id);
+  ctx.db
+    .update(projectNoteFolders)
+    .set({ name: body.name, updatedAt: Date.now() })
+    .where(eq(projectNoteFolders.id, id))
+    .run();
+  return listFolders(ctx, findFolder(ctx, id).projectId).find((folder) => folder.id === id)!;
+}
+
+/** Apagar a pasta não apaga as notas: elas voltam para a raiz do projeto. */
+export function deleteFolder(ctx: Ctx, id: string) {
+  findFolder(ctx, id);
+  const now = Date.now();
+  ctx.db.transaction(() => {
+    ctx.db
+      .update(projectNotes)
+      .set({ folderId: null, updatedAt: now })
+      .where(eq(projectNotes.folderId, id))
+      .run();
+    ctx.db
+      .update(projectNoteFolders)
+      .set({ deletedAt: now, updatedAt: now })
+      .where(eq(projectNoteFolders.id, id))
+      .run();
+  });
 }
 
 // ------------------------------------------------------------------ arquivos

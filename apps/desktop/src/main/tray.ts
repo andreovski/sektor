@@ -1,4 +1,6 @@
-import { app, BrowserWindow, Menu, nativeImage, Notification, Tray } from 'electron';
+import { app, Menu, nativeImage, Notification, Tray } from 'electron';
+
+import { appWindows } from './window';
 
 let tray: Tray | null = null;
 
@@ -30,4 +32,4 @@ export function notify(title: string, body: string, timeoutMs = 3000): Promise<b
   });
 }
 
-export const hasOpenWindow = () => BrowserWindow.getAllWindows().length > 0;
+export const hasOpenWindow = () => appWindows().length > 0;

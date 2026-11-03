@@ -54,9 +54,11 @@ function NextTasks({ tasks }: { tasks: TaskResponse[] }) {
 
 function ProjectAgenda({
   projectId,
+  calendarId,
   events,
 }: {
   projectId: string;
+  calendarId: string | null;
   events: EventOccurrence[];
 }) {
   const [selected, setSelected] = useState<EventOccurrence | null>(null);
@@ -65,6 +67,7 @@ function ProjectAgenda({
   );
   const calendars = useRpc('calendars.list');
   const list = calendars.data ?? [];
+  const linked = list.find((calendar) => calendar.id === calendarId);
   const colorOf = (event: EventOccurrence) =>
     event.color ?? list.find((calendar) => calendar.id === event.calendarId)?.color ?? 'blue';
   const create = () =>
@@ -75,7 +78,12 @@ function ProjectAgenda({
           date: todayString(),
           now: new Date(),
           timeZone: TIME_ZONE,
-          calendarId: list.find((calendar) => !calendar.readOnly)?.id ?? '',
+          // Evento novo vai para o calendário do projeto, se dá para escrever nele.
+          calendarId:
+            (linked && !linked.readOnly ? linked.id : undefined) ??
+            list.find((calendar) => calendar.isDefault && !calendar.readOnly)?.id ??
+            list.find((calendar) => !calendar.readOnly)?.id ??
+            '',
         }),
         projectId,
       },
@@ -87,10 +95,21 @@ function ProjectAgenda({
         icon={CalendarDays}
         title="Agenda do projeto"
         action={
+          <span className="flex items-center gap-2">
+            {linked && (
+              <span className="flex items-center gap-1.5 text-subtle" title="Calendário ligado ao projeto">
+                <span
+                  className="size-2 rounded-full"
+                  style={{ backgroundColor: toneVar(linked.color) }}
+                />
+                {linked.name}
+              </span>
+            )}
           <Button variant="ghost" size="sm" aria-label="Novo evento no projeto" onClick={create}>
             <Plus size={13} />
             Evento
           </Button>
+          </span>
         }
       />
       {events.length ? (
@@ -122,7 +141,9 @@ function ProjectAgenda({
         </ul>
       ) : (
         <p className="py-4 text-center text-sm text-muted">
-          Nenhum evento ligado a este projeto nos próximos meses.
+          {linked
+            ? `Nenhum evento em ${linked.name} nem ligado a este projeto nos próximos meses.`
+            : 'Nenhum evento ligado a este projeto nos próximos meses.'}
         </p>
       )}
 
@@ -190,7 +211,11 @@ export function Overview({ page }: { page: ProjectPageResponse }) {
     <div className="grid grid-cols-[minmax(0,1fr)_340px] items-start gap-3">
       <div className="flex min-w-0 flex-col gap-3">
         <NextTasks tasks={page.upcomingTasks} />
-        <ProjectAgenda projectId={page.project.id} events={page.upcomingEvents} />
+        <ProjectAgenda
+          projectId={page.project.id}
+          calendarId={page.project.calendarId}
+          events={page.upcomingEvents}
+        />
       </div>
       <Details page={page} />
     </div>
