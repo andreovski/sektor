@@ -1186,6 +1186,8 @@ function toBankMovement(movement: BankMovement, accountId: string | null): BankM
     status: movement.status,
     suggestedCategoryId: movement.suggestedCategoryId,
     suggestionSource: movement.suggestedCategoryId ? movement.suggestionSource : null,
+    suggestionConfidence:
+      movement.suggestionSource === 'AI' ? (movement.suggestionConfidence ?? null) : null,
     transactionId: movement.transactionId,
   };
 }
@@ -1202,6 +1204,8 @@ function refreshSuggestions(ctx: Ctx) {
   const suggest = suggester(ctx);
   for (const { movement, type } of pending) {
     const next = suggestionFor(suggest, movement, type);
+    // A sugestão da IA só sai para a do histórico.
+    if (movement.suggestionSource === 'AI' && next.suggestionSource !== 'HISTORY') continue;
     if (
       next.suggestedCategoryId === movement.suggestedCategoryId &&
       next.suggestionSource === movement.suggestionSource
@@ -1210,7 +1214,7 @@ function refreshSuggestions(ctx: Ctx) {
     }
     ctx.db
       .update(bankMovements)
-      .set({ ...next, updatedAt: Date.now() })
+      .set({ ...next, suggestionConfidence: null, updatedAt: Date.now() })
       .where(eq(bankMovements.id, movement.id))
       .run();
   }

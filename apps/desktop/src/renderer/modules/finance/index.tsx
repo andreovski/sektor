@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 
 import { useRpc } from '../../lib/rpc';
 import { Button, PageHeader, Segmented } from '../../ui';
+import { InsightCard } from '../ai/insight-card';
 import { AccountsTab } from './accounts';
 import { BudgetsTab } from './budgets';
 import { ForecastTab } from './forecast';
@@ -69,7 +70,12 @@ function FinancePage() {
           }))}
         />
       </div>
-      {tab === 'hoje' && <AvailableToday />}
+      {tab === 'hoje' && (
+        <div className="flex flex-col gap-4">
+          <AvailableToday />
+          <InsightCard kind="financeChanges" title="O que mudou neste mês, pela IA" />
+        </div>
+      )}
       {tab === 'extrato' && <StatementTab />}
       {tab === 'previsao' && <ForecastTab />}
       {tab === 'orcamentos' && <BudgetsTab />}

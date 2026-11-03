@@ -7,6 +7,7 @@ import {
   type LucideIcon,
   Palette,
   Settings,
+  Sparkles,
   UserRound,
 } from 'lucide-react';
 import { type ComponentType, useEffect, useMemo, useState } from 'react';
@@ -25,6 +26,7 @@ import {
   Select,
 } from '../../ui';
 
+import { AiSettings } from '../ai/settings';
 import { Appearance } from './appearance';
 import { GoogleSettings } from './google';
 import { useRestore } from './restore';
@@ -267,6 +269,13 @@ const GROUPS: {
         icon: CalendarSync,
         description: 'Seus calendários e tarefas do Google aqui dentro.',
         panel: GoogleSettings,
+      },
+      {
+        value: 'ia',
+        label: 'IA',
+        icon: Sparkles,
+        description: 'Um modelo à sua escolha, local ou com a sua chave, e o que ele pode ler.',
+        panel: AiSettings,
       },
     ],
   },

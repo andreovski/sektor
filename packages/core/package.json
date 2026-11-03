@@ -10,18 +10,23 @@
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "4.0.82",
+    "@ai-sdk/openai": "4.0.96",
+    "@ai-sdk/openai-compatible": "3.0.71",
+    "@sektor/contract": "workspace:*",
+    "@sektor/finance-engine": "workspace:*",
+    "ai": "7.0.143",
     "better-sqlite3-multiple-ciphers": "13.0.3",
     "drizzle-orm": "0.45.4",
-    "@sektor/finance-engine": "workspace:*",
-    "@sektor/contract": "workspace:*"
+    "zod": "3.25.76"
   },
   "devDependencies": {
     "@types/better-sqlite3": "7.6.13",
     "@types/node": "22.19.1",
+    "drizzle-kit": "0.31.11",
+    "electron": "45.2.1",
     "typescript": "7.0.2",
     "vite": "8.3.5",
-    "vitest": "5.1.0",
-    "drizzle-kit": "0.31.11",
-    "electron": "45.2.1"
+    "vitest": "5.1.0"
   }
 }

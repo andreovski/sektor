@@ -1,4 +1,4 @@
-import { CircleCheck, History, ListChecks } from 'lucide-react';
+import { CircleCheck, History, ListChecks, Sparkles } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
@@ -15,17 +15,19 @@ import {
   useCategories,
 } from './parts';
 import type { Movement } from './utils';
+import { AiCategoryOffer } from '../ai/bank-offer';
 
 const SOURCE: Record<NonNullable<Movement['suggestionSource']>, { label: string; note: string }> = {
   HISTORY: { label: 'Pelo histórico', note: 'A categoria é a do último lançamento parecido.' },
   RULE: { label: 'Regra', note: 'A categoria veio de uma regra sua.' },
+  AI: { label: 'IA', note: 'Sugestão da IA. Confira antes de lançar.' },
 };
 
 function SourcePill({ source }: { source: Movement['suggestionSource'] }) {
   if (!source) return null;
-  const Icon = source === 'HISTORY' ? History : ListChecks;
+  const Icon = source === 'HISTORY' ? History : source === 'AI' ? Sparkles : ListChecks;
   return (
-    <Pill tone={source === 'RULE' ? 'info' : undefined}>
+    <Pill tone={source === 'RULE' ? 'info' : source === 'AI' ? 'warning' : undefined}>
       <Icon size={11} className="mr-1" /> {SOURCE[source].label}
     </Pill>
   );
@@ -63,6 +65,7 @@ export function ReviewTab({ onOpenBanks }: { onOpenBanks(): void }) {
 
   return (
     <div className="flex flex-col gap-4">
+      <AiCategoryOffer />
       <Card className="flex items-center gap-3">
         <p className="flex-1 text-sm text-muted">
           Vieram do banco e não batem com nada que você lançou.
@@ -221,7 +224,14 @@ function ReviewDialog({ movement, onClose }: { movement: Movement; onClose(): vo
             categories={categories}
           />
         </Field>
-        {source && <p className="text-xs text-subtle">{SOURCE[source].note}</p>}
+        {source && (
+          <p className="text-xs text-subtle">
+            {SOURCE[source].note}
+            {source === 'AI' && movement.suggestionConfidence !== null
+              ? ` O Jev deu ${Math.round(movement.suggestionConfidence * 100)}% de chance.`
+              : ''}
+          </p>
+        )}
         <Field label="Notas">
           <Textarea
             rows={2}
