@@ -1,7 +1,7 @@
 // Percorre a página do projeto num banco temporário, com o diálogo e o abrir do sistema trocados.
 // Uso: node e2e/project-page.mjs <pasta-das-fotos>
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { _electron as electron } from 'playwright';
@@ -28,16 +28,23 @@ await page.setViewportSize({ width: 1440, height: 900 }).catch(() => undefined);
 await page.waitForLoadState('domcontentloaded');
 await page.waitForTimeout(800);
 
+// Lê a cópia na hora, como o programa do sistema faria, e guarda o conteúdo para conferir.
 await app.evaluate(({ dialog, shell }) => {
   globalThis.nextPick = [];
   globalThis.opened = [];
+  globalThis.shown = [];
+  const { readFileSync, statSync } = process.getBuiltinModule('node:fs');
   dialog.showOpenDialog = async () => ({ canceled: false, filePaths: globalThis.nextPick });
   Object.defineProperty(shell, 'openPath', {
     configurable: true,
     value: async (path) => {
-      globalThis.opened.push(path);
+      globalThis.opened.push({ path, text: readFileSync(path, 'utf8'), mode: statSync(path).mode & 0o777 });
       return '';
     },
+  });
+  Object.defineProperty(shell, 'showItemInFolder', {
+    configurable: true,
+    value: (path) => globalThis.shown.push(path),
   });
 });
 const pick = (paths) => app.evaluate((_e, list) => (globalThis.nextPick = list), paths);
@@ -138,7 +145,8 @@ await page.evaluate((text) => {
   }
 }, content);
 await page.getByRole('button', { name: 'proposta.PDF', exact: true }).waitFor();
-check('arrastar copia com o nome do hash', stored().includes(`${hash}.pdf`), stored().join());
+check('arrastar cifra com o nome do hash, sem extensão', stored().includes(`${hash}.sek`), stored().join());
+check('texto conhecido não está no disco', !readFileSync(join(dir, 'arquivos-de-projeto', `${hash}.sek`)).includes(content));
 
 const logo = join(samples, 'logo.txt');
 writeFileSync(logo, 'logo');
@@ -158,7 +166,32 @@ await shot('6-arquivos');
 await page.getByRole('button', { name: 'proposta.PDF', exact: true }).click();
 await page.waitForTimeout(200);
 const opened = await app.evaluate(() => globalThis.opened);
-check('abre pelo sistema', opened[0] === join(dir, 'arquivos-de-projeto', `${hash}.pdf`));
+check('abre uma cópia decifrada pelo sistema', opened[0]?.text === content, opened[0]?.path);
+check('com o nome original, fora da pasta cifrada', opened[0].path.endsWith('/proposta.PDF') && !opened[0].path.includes('arquivos-de-projeto'));
+check('cópia somente leitura', opened[0].mode === 0o400, opened[0].mode.toString(8));
+
+const script = join(samples, 'instala.sh');
+writeFileSync(script, 'echo oi');
+await pick([script]);
+await page.getByRole('button', { name: 'Anexar arquivo' }).click();
+await page.getByRole('button', { name: 'instala.sh', exact: true }).click();
+await page.waitForTimeout(200);
+const afterScript = await app.evaluate(() => ({ opened: globalThis.opened.length, shown: globalThis.shown }));
+check('executável não abre: só aparece na pasta', afterScript.opened === 1 && afterScript.shown[0]?.endsWith('/instala.sh'));
+await page.getByRole('button', { name: 'Remover instala.sh' }).click();
+await page.getByRole('button', { name: 'Remover', exact: true }).click();
+await page.getByRole('button', { name: 'instala.sh', exact: true }).waitFor({ state: 'detached' });
+
+// Adulterado: nada decifra e a tela diz o motivo.
+const sealedPath = join(dir, 'arquivos-de-projeto', `${hash}.sek`);
+const good = readFileSync(sealedPath);
+const bad = Buffer.from(good);
+bad[bad.length - 1] ^= 1;
+writeFileSync(sealedPath, bad);
+await page.getByRole('button', { name: 'proposta.PDF', exact: true }).click();
+await page.getByText('Este arquivo foi alterado ou danificado').waitFor();
+writeFileSync(sealedPath, good);
+check('adulterado é recusado', (await app.evaluate(() => globalThis.opened.length)) === 1);
 
 await page.getByRole('button', { name: 'Remover logo.txt' }).click();
 await page.getByRole('button', { name: 'Remover', exact: true }).click();

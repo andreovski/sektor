@@ -2,7 +2,7 @@ import { type App, appMeta, AppError, createApp, openDatabase, stageRestore } fr
 import {
   addProjectFile,
   orphanProjectFiles,
-  projectFileStoredName,
+  projectFileToOpen,
   removeProjectFile,
 } from '@sektor/core';
 import { eq } from 'drizzle-orm';
@@ -71,7 +71,7 @@ function smokeBackup(otherKeyHex: string) {
     const file = join(dir, readdirSync(dir).find((name) => name.endsWith('.db'))!);
     const header = Buffer.alloc(15);
     readSync(openSync(file, 'r'), header, 0, 15, 0);
-    const { status } = stageRestore({
+    const restored = stageRestore({
       file,
       stagePath: join(dir, 'stage'),
       currentKeyHex: otherKeyHex,
@@ -80,7 +80,7 @@ function smokeBackup(otherKeyHex: string) {
     });
     return {
       backupCiphered: header.toString('latin1') !== 'SQLite format 3',
-      backupRestored: status,
+      backupRestored: restored.status,
     };
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -161,7 +161,7 @@ parent.on('message', (event) => {
       const { id, type: _type, ...body } = command;
       reply(id, () => addProjectFile(app!.ctx, body));
     } else if (command.type === 'project-file-find') {
-      reply(command.id, () => projectFileStoredName(app!.ctx, command.fileId));
+      reply(command.id, () => projectFileToOpen(app!.ctx, command.fileId));
     } else if (command.type === 'project-file-remove') {
       reply(command.id, () => removeProjectFile(app!.ctx, command.fileId));
     } else if (command.type === 'project-file-orphans') {

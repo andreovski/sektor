@@ -15,6 +15,7 @@ function RestoreDialog({ file, onClose }: { file: string; onClose(): void }) {
   const [needsPassword, setNeedsPassword] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [missing, setMissing] = useState<number | null>(null);
 
   const confirm = async () => {
     setBusy(true);
@@ -25,7 +26,30 @@ function RestoreDialog({ file, onClose }: { file: string; onClose(): void }) {
       setNeedsPassword(true);
       setMessage('Este backup foi feito com outra chave. Digite a senha de recuperação.');
     } else if (result.status === 'error') setMessage(result.message);
+    else if (result.missingFiles) setMissing(result.missingFiles);
   };
+
+  // A troca já está marcada para o próximo início: daqui só se sai reiniciando.
+  if (missing !== null) {
+    return (
+      <Dialog open onOpenChange={() => undefined} title="Backup restaurado">
+        <div className="flex flex-col gap-3 text-sm">
+          <p>
+            {missing === 1
+              ? '1 arquivo de projeto não foi encontrado no backup.'
+              : `${missing} arquivos de projeto não foram encontrados no backup.`}{' '}
+            Os dados foram restaurados normalmente; só esses arquivos não vão abrir. Eles deveriam
+            estar na pasta <code>arquivos-de-projeto</code>, ao lado do backup.
+          </p>
+          <div className="flex justify-end">
+            <Button variant="primary" onClick={() => void window.sektor.relaunch()}>
+              Reiniciar
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+    );
+  }
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()} title="Restaurar backup">

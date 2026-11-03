@@ -31,7 +31,7 @@ export const handlers = (ctx: AppCtx) => ({
 export const addProjectFile = (ctx: Ctx, input: AddFileBody) =>
   svc.addFile(ctx, parse(addFileSchema as never, input));
 export const {
-  fileStoredName: projectFileStoredName,
+  fileToOpen: projectFileToOpen,
   orphanStoredNames: orphanProjectFiles,
   removeFile: removeProjectFile,
 } = svc;

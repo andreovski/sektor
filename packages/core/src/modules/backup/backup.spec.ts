@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -6,7 +6,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { type App, createApp } from '../../app';
 import { LATEST_SCHEMA_VERSION, migrate, openDatabase } from '../../db/client';
 
+import { addFile, removeFile } from '../projects/service';
+import { fileKeyOf, hashOf, sealedNameOf, tryOpenFile, writeSealed } from '../projects/file-vault';
+
 import { stageRestore } from './engine';
+import { backupFilesFolder } from './files';
 import { generatePassword, openKey, RECOVERY_FILE, sealKey } from './recovery';
 import { dailyName, namesToRotate } from './rotation';
 
@@ -125,7 +129,7 @@ describe('backup', () => {
     const before = readFileSync(firstFile());
     expect(
       stageRestore({ file: firstFile(), stagePath, currentKeyHex: KEY, targetKeyHex: KEY })
-    ).toEqual({ status: 'ok', keyChanged: false });
+    ).toEqual({ status: 'ok', keyChanged: false, missingFiles: 0 });
     expect(readFileSync(firstFile())).toEqual(before);
     const opened = openDatabase(stagePath, KEY);
     opened.raw.close();
@@ -146,7 +150,7 @@ describe('backup', () => {
       ).toMatchObject({ status: 'error', message: 'Senha de recuperação incorreta.' });
       expect(
         stageRestore({ ...base, currentKeyHex, password: recoveryPassword! })
-      ).toEqual({ status: 'ok', keyChanged: true });
+      ).toEqual({ status: 'ok', keyChanged: true, missingFiles: 0 });
     }
     expect(() => openDatabase(stagePath, KEY)).toThrow();
     const restored = openDatabase(stagePath, OTHER);
@@ -208,6 +212,256 @@ describe('backup', () => {
     });
     await value('settings.set', { timeZone: '' });
     expect(app.ctx.timeZone).toBe('America/Sao_Paulo');
+  });
+});
+
+describe('arquivos de projeto no backup', () => {
+  let dir: string;
+  let folder: string;
+  let app: App;
+  let projectId: string;
+  const local = () => join(dir, 'arquivos-de-projeto');
+  const copies = () => backupFilesFolder(folder, KEY);
+  const fileKey = fileKeyOf(KEY);
+
+  const call = async (method: string, input?: unknown) => {
+    const result = await app.call(method, input);
+    if (!result.ok) throw new Error(result.message);
+    return result.value as never;
+  };
+
+  function attach(text: string) {
+    const bytes = Buffer.from(text);
+    const contentHash = hashOf(bytes);
+    writeSealed(join(local(), sealedNameOf(contentHash)), fileKey, contentHash, bytes);
+    return addFile(app.ctx, {
+      projectId,
+      name: `${text}.txt`,
+      sizeBytes: bytes.length,
+      contentHash,
+      storedName: sealedNameOf(contentHash),
+    }).id;
+  }
+  const copyOf = (text: string) => join(copies(), sealedNameOf(hashOf(Buffer.from(text))));
+
+  beforeEach(async () => {
+    dir = mkdtempSync(join(tmpdir(), 'sektor-backup-arquivos-'));
+    folder = join(dir, 'pasta');
+    mkdirSync(folder);
+    app = createApp({
+      dbPath: join(dir, 'sektor.db'),
+      keyHex: KEY,
+      timeZone: 'America/Sao_Paulo',
+      secrets: { get: () => null, set: () => undefined },
+      notify: () => undefined,
+    });
+    const project: { id: string } = await call('projects.create', { name: 'Oficina' });
+    projectId = project.id;
+  });
+  afterEach(() => {
+    app.handle.raw.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  const lastBackup = () =>
+    join(folder, readdirSync(folder).filter((name) => name.endsWith('.db')).sort().at(-1)!);
+
+  it('copia cifrado, e só o que falta', async () => {
+    attach('contrato sigiloso');
+    app.chooseBackupFolder(folder);
+    const first = copyOf('contrato sigiloso');
+    expect(readFileSync(first).includes('contrato sigiloso')).toBe(false);
+    expect(readFileSync(first)).toEqual(readFileSync(join(local(), first.split('/').at(-1)!)));
+
+    const old = new Date('2020-01-01T00:00:00Z');
+    utimesSync(first, old, old);
+    attach('segundo');
+    await call('backup.run');
+    expect(statSync(first).mtime).toEqual(old);
+    expect(existsSync(copyOf('segundo'))).toBe(true);
+    const status: { projectFiles: number; error: string | null } = await call('backup.status');
+    expect(status).toMatchObject({ projectFiles: 2, error: null });
+  });
+
+  it('o job de cada hora completa o que entrou depois do backup do dia', async () => {
+    app.chooseBackupFolder(folder);
+    await app.tick();
+    attach('à tarde');
+    app.handle.raw.prepare(`DELETE FROM app_meta WHERE key = 'job:backup.daily'`).run();
+    await app.tick();
+    expect(existsSync(copyOf('à tarde'))).toBe(true);
+  });
+
+  it('arquivo adulterado aqui não vai para o backup, e o banco sai assim mesmo', async () => {
+    attach('bom');
+    const hash = hashOf(Buffer.from('bom'));
+    const path = join(local(), sealedNameOf(hash));
+    const bytes = readFileSync(path);
+    bytes[bytes.length - 1]! ^= 1;
+    writeFileSync(path, bytes);
+    app.chooseBackupFolder(folder);
+    expect(existsSync(copyOf('bom'))).toBe(false);
+    expect(readdirSync(folder).some((name) => name.endsWith('.db'))).toBe(true);
+    const status: { error: string } = await call('backup.status');
+    expect(status.error).toContain('1 arquivo(s) de projeto');
+  });
+
+  it('arquivo que sumiu daqui aparece no status, sem virar erro', async () => {
+    attach('sumiu');
+    rmSync(join(local(), sealedNameOf(hashOf(Buffer.from('sumiu')))));
+    app.chooseBackupFolder(folder);
+    const status: { error: string | null; projectFilesAbsent: number } = await call('backup.status');
+    expect(status).toMatchObject({ error: null, projectFilesAbsent: 1 });
+  });
+
+  describe('rotação', () => {
+    /** Dois backups no mesmo segundo são o mesmo arquivo: sobra só o mais novo. */
+    const keepOnlyLatest = () => {
+      const latest = lastBackup();
+      for (const name of readdirSync(folder)) {
+        if (name.endsWith('.db') && join(folder, name) !== latest) rmSync(join(folder, name));
+      }
+    };
+    const rotate = async (junk?: string) => {
+      const source = lastBackup();
+      for (let i = 1; i <= 9; i++) copyFileSync(source, join(folder, `sektor-2030-01-0${i}.db`));
+      if (junk) writeFileSync(join(folder, junk), 'de outra chave');
+      app.handle.raw.prepare(`DELETE FROM app_meta WHERE key = 'job:backup.daily'`).run();
+      await app.tick();
+    };
+
+    it('arquivo apagado fica enquanto um backup guardado o referencia', async () => {
+      const id = attach('retido');
+      app.chooseBackupFolder(folder);
+      removeFile(app.ctx, id);
+      await rotate();
+      expect(existsSync(copyOf('retido'))).toBe(true);
+    });
+
+    it('sem backup nenhum que o use, sai; o que está em uso fica', async () => {
+      const gone = attach('fora');
+      attach('fica');
+      app.chooseBackupFolder(folder);
+      expect(existsSync(copyOf('fora'))).toBe(true);
+      removeFile(app.ctx, gone);
+      await call('backup.run');
+      keepOnlyLatest();
+      await rotate();
+      expect(existsSync(copyOf('fora'))).toBe(false);
+      expect(existsSync(copyOf('fica'))).toBe(true);
+    });
+
+    it('um backup que não abre segura a faxina', async () => {
+      const id = attach('fora');
+      app.chooseBackupFolder(folder);
+      removeFile(app.ctx, id);
+      await call('backup.run');
+      keepOnlyLatest();
+      await rotate('sektor-2029-01-01-manual-101010.db');
+      expect(existsSync(copyOf('fora'))).toBe(true);
+    });
+  });
+
+  describe('restauração', () => {
+    const stage = (overrides = {}) => {
+      const files = { local: join(dir, 'nova-local'), staged: join(dir, 'preparados') };
+      return {
+        files,
+        result: stageRestore({
+          file: lastBackup(),
+          stagePath: join(dir, 'stage.db'),
+          currentKeyHex: KEY,
+          targetKeyHex: KEY,
+          files,
+          ...overrides,
+        }),
+      };
+    };
+
+    it('em outra máquina, recifra com a chave nova', () => {
+      attach('do contrato');
+      const { recoveryPassword } = app.chooseBackupFolder(folder);
+      const { result, files } = stage({
+        currentKeyHex: OTHER,
+        targetKeyHex: OTHER,
+        password: recoveryPassword,
+      });
+      expect(result).toEqual({ status: 'ok', keyChanged: true, missingFiles: 0 });
+      const hash = hashOf(Buffer.from('do contrato'));
+      const staged = join(files.staged, sealedNameOf(hash));
+      expect(readFileSync(staged).includes('do contrato')).toBe(false);
+      expect(tryOpenFile(staged, fileKeyOf(OTHER), hash)?.toString()).toBe('do contrato');
+      expect(tryOpenFile(staged, fileKey, hash)).toBeNull();
+    });
+
+    it('na mesma máquina: o que já está aqui nem é tocado, e o que saiu volta do backup', () => {
+      attach('aqui');
+      attach('apagado daqui');
+      app.chooseBackupFolder(folder);
+      rmSync(join(local(), sealedNameOf(hashOf(Buffer.from('apagado daqui')))));
+      const { result } = stage({ files: { local: local(), staged: join(dir, 'preparados') } });
+      expect(result).toEqual({ status: 'ok', keyChanged: false, missingFiles: 0 });
+      expect(readdirSync(join(dir, 'preparados'))).toEqual([
+        sealedNameOf(hashOf(Buffer.from('apagado daqui'))),
+      ]);
+    });
+
+    it('cofre perdido: o que só existe aqui é recifrado, com a chave que a senha trouxe', () => {
+      attach('só aqui');
+      const { recoveryPassword } = app.chooseBackupFolder(folder);
+      rmSync(copyOf('só aqui'));
+      const staged = join(dir, 'preparados');
+      const { result } = stage({
+        currentKeyHex: null,
+        targetKeyHex: OTHER,
+        password: recoveryPassword,
+        files: { local: local(), staged },
+      });
+      expect(result).toMatchObject({ status: 'ok', missingFiles: 0 });
+      const hash = hashOf(Buffer.from('só aqui'));
+      expect(tryOpenFile(join(staged, sealedNameOf(hash)), fileKeyOf(OTHER), hash)).toBeTruthy();
+    });
+
+    it('arquivo faltando ou adulterado não impede o banco: conta', () => {
+      attach('um');
+      attach('dois');
+      attach('três');
+      app.chooseBackupFolder(folder);
+      rmSync(copyOf('um'));
+      const bytes = readFileSync(copyOf('dois'));
+      bytes[bytes.length - 1]! ^= 1;
+      writeFileSync(copyOf('dois'), bytes);
+      const { result } = stage();
+      expect(result).toEqual({ status: 'ok', keyChanged: false, missingFiles: 2 });
+      const restored = openDatabase(join(dir, 'stage.db'), KEY);
+      restored.raw.close();
+    });
+
+    it('backup antigo, sem a subpasta: tudo conta como faltando, sem erro', () => {
+      attach('antigo');
+      app.chooseBackupFolder(folder);
+      rmSync(join(folder, 'arquivos-de-projeto'), { recursive: true });
+      expect(stage().result).toMatchObject({ status: 'ok', missingFiles: 1 });
+    });
+
+    it('cópia em claro de antes da migração não conta como faltando', () => {
+      attach('em claro');
+      app.chooseBackupFolder(folder);
+      const hash = hashOf(Buffer.from('em claro'));
+      rmSync(join(local(), sealedNameOf(hash)));
+      rmSync(copyOf('em claro'));
+      writeFileSync(join(local(), `${hash}.txt`), 'em claro');
+      const { result } = stage({ files: { local: local(), staged: join(dir, 'preparados') } });
+      expect(result).toMatchObject({ status: 'ok', missingFiles: 0 });
+    });
+
+    it('recusa de restauração não deixa preparados para trás', () => {
+      attach('x');
+      app.chooseBackupFolder(folder);
+      const { result } = stage({ currentKeyHex: OTHER, targetKeyHex: OTHER });
+      expect(result.status).toBe('needs-password');
+      expect(existsSync(join(dir, 'preparados'))).toBe(false);
+    });
   });
 });
 

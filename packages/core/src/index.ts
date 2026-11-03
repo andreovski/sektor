@@ -5,7 +5,7 @@ export { stageRestore, type StageResult } from './modules/backup';
 export {
   addProjectFile,
   orphanProjectFiles,
-  projectFileStoredName,
+  projectFileToOpen,
   removeProjectFile,
 } from './modules/projects';
 export { AppError } from './services/context';

@@ -1,6 +1,7 @@
 // Prova dos defeitos corrigidos, no app de verdade. Uso, depois do build:
 //   node e2e/hardening.mjs
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -389,6 +390,172 @@ await test('Google: página de fora não abre o login', async () => {
   );
   assert.match(refused, /Origem não autorizada/);
   await app.close();
+});
+
+// Arquivos de projeto: o caminho inteiro, com o app de verdade e o abrir do sistema trocado.
+const TEXT = 'contrato sigiloso da oficina';
+const textHash = createHash('sha256').update(TEXT).digest('hex');
+const filesIn = (dir) => join(dir, 'arquivos-de-projeto');
+const stubShell = (app) =>
+  app.evaluate(({ shell }) => {
+    globalThis.opened = [];
+    const { readFileSync } = process.getBuiltinModule('node:fs');
+    Object.defineProperty(shell, 'openPath', {
+      configurable: true,
+      value: async (path) => {
+        globalThis.opened.push({ path, text: readFileSync(path, 'utf8') });
+        return '';
+      },
+    });
+  });
+async function attachToNewProject(app, page) {
+  const sample = join(root, 'contrato.txt');
+  writeFileSync(sample, TEXT);
+  await go(page, '/projetos');
+  await page.getByRole('button', { name: 'Novo projeto' }).click();
+  await page.getByLabel('Nome').fill('Oficina');
+  await page.getByRole('button', { name: 'Criar projeto' }).click();
+  await page.waitForFunction(() => /#\/projetos\/[0-9a-f-]{36}$/.test(location.hash));
+  await page.getByRole('tab', { name: 'Arquivos' }).click();
+  await stubOpen(app, sample);
+  await page.getByRole('button', { name: 'Anexar arquivo' }).click();
+  await page.getByRole('button', { name: 'contrato.txt', exact: true }).waitFor({ timeout: 5000 });
+}
+async function openAttached(page) {
+  await go(page, '/projetos');
+  await page.getByRole('heading', { name: 'Oficina' }).click({ timeout: 8000 });
+  await page.getByRole('tab', { name: 'Arquivos' }).click();
+  await page.getByRole('button', { name: 'contrato.txt', exact: true }).click({ timeout: 5000 });
+}
+const openedList = async (app, page) => {
+  await page.waitForTimeout(300);
+  return app.evaluate(() => globalThis.opened);
+};
+
+const vault = {};
+await test('arquivo: cifrado no disco, e a cópia aberta some depois do prazo', async () => {
+  const dir = newDir();
+  vault.dir = dir;
+  mkdirSync(join(dir, 'arquivos-abertos', 'de-uma-queda'), { recursive: true });
+  writeFileSync(join(dir, 'arquivos-abertos', 'de-uma-queda', 'sobra.txt'), TEXT);
+  const { app, page } = await launch(dir, { SEKTOR_TEST_OPEN_MS: '400' });
+  await page.getByText('Hoje').first().waitFor({ timeout: 5000 });
+  assert.equal(existsSync(join(dir, 'arquivos-abertos', 'de-uma-queda')), false);
+  await stubShell(app);
+  await attachToNewProject(app, page);
+  assert.deepEqual(readdirSync(filesIn(dir)), [`${textHash}.sek`]);
+  assert.equal(readFileSync(join(filesIn(dir), `${textHash}.sek`)).includes(TEXT), false);
+  await openAttached(page);
+  const [first] = await openedList(app, page);
+  assert.equal(first.text, TEXT);
+  assert.ok(first.path.startsWith(join(dir, 'arquivos-abertos')));
+  await page.waitForTimeout(700);
+  assert.equal(existsSync(first.path), false);
+  await app.close();
+});
+
+await test('arquivo: a cópia aberta some ao sair, sem esperar o prazo', async () => {
+  const { app, page } = await launch(vault.dir);
+  await stubShell(app);
+  await openAttached(page);
+  const [first] = await openedList(app, page);
+  assert.equal(existsSync(first.path), true);
+  await app.close();
+  assert.equal(existsSync(first.path), false);
+});
+
+await test('arquivo: o que estava em claro é cifrado ao abrir, e continua abrindo', async () => {
+  const sealed = join(filesIn(vault.dir), `${textHash}.sek`);
+  vault.sealed = readFileSync(sealed);
+  rmSync(sealed);
+  writeFileSync(join(filesIn(vault.dir), `${textHash}.txt`), TEXT);
+  const { app, page } = await launch(vault.dir);
+  await page.getByText('Hoje').first().waitFor({ timeout: 5000 });
+  assert.deepEqual(readdirSync(filesIn(vault.dir)), [`${textHash}.sek`]);
+  assert.equal(readFileSync(sealed).includes(TEXT), false);
+  await stubShell(app);
+  await openAttached(page);
+  assert.equal((await openedList(app, page))[0].text, TEXT);
+
+  const folder = newDir();
+  vault.folder = folder;
+  await go(page, '/ajustes');
+  await stubOpen(app, folder);
+  await page.getByRole('button', { name: 'Escolher pasta' }).click();
+  const code = page.getByTestId('recovery-password');
+  await code.waitFor({ timeout: 5000 });
+  vault.password = await code.innerText();
+  await page.getByRole('button', { name: 'Já guardei' }).click();
+  await page.getByTestId('backup-project-files').getByText('1 arquivo(s)').waitFor({ timeout: 5000 });
+  await app.close();
+  vault.backup = join(folder, readdirSync(folder).find((name) => name.endsWith('.db')));
+  const [keyFolder] = readdirSync(filesIn(folder));
+  vault.copy = join(filesIn(folder), keyFolder, `${textHash}.sek`);
+  assert.deepEqual(readFileSync(vault.copy), readFileSync(sealed));
+});
+
+async function restoreElsewhere(dir) {
+  const { app, page } = await launch(dir);
+  await go(page, '/ajustes');
+  await page.getByRole('button', { name: 'Restaurar de um arquivo' }).waitFor({ timeout: 5000 });
+  await stubOpen(app, vault.backup);
+  await page.getByRole('button', { name: 'Restaurar de um arquivo' }).click();
+  await page.getByRole('button', { name: 'Restaurar e reiniciar' }).click();
+  await page.getByLabel('Senha de recuperação').fill(vault.password);
+  const gone = closed(app);
+  await page.getByRole('button', { name: 'Restaurar e reiniciar' }).click();
+  return { page, gone };
+}
+
+await test('arquivo: restaura em outra máquina, recifrado com a chave de lá', async () => {
+  const dir = newDir();
+  const { gone } = await restoreElsewhere(dir);
+  await gone;
+  const again = await launch(dir);
+  await again.page.getByText('Hoje').first().waitFor({ timeout: 8000 });
+  assert.deepEqual(readdirSync(filesIn(dir)), [`${textHash}.sek`]);
+  assert.notDeepEqual(readFileSync(join(filesIn(dir), `${textHash}.sek`)), vault.sealed);
+  assert.equal(existsSync(join(dir, 'arquivos-restaurando')), false);
+  await stubShell(again.app);
+  await openAttached(again.page);
+  assert.equal((await openedList(again.app, again.page))[0].text, TEXT);
+  await again.app.close();
+});
+
+await test('arquivo: faltou no backup, restaura igual e a tela conta', async () => {
+  rmSync(vault.copy);
+  const dir = newDir();
+  const { page, gone } = await restoreElsewhere(dir);
+  await page.getByText('1 arquivo de projeto não foi encontrado no backup.').waitFor({ timeout: 8000 });
+  await page.screenshot({ path: '/tmp/sektor-arquivo-faltou.png' });
+  await page.getByRole('button', { name: 'Reiniciar' }).click();
+  await gone;
+  const again = await launch(dir);
+  await again.page.getByText('Hoje').first().waitFor({ timeout: 8000 });
+  await openAttached(again.page);
+  await again.page.getByText('Este arquivo não está mais neste computador.').waitFor({ timeout: 5000 });
+  await again.app.close();
+});
+
+await test('arquivo: cofre perdeu a chave, o que estava aqui é recifrado e o antigo fica guardado', async () => {
+  const dir = vault.dir;
+  const { app, page } = await launch(dir, { SEKTOR_TEST_VAULT: 'locked' });
+  await page.getByText('O cofre do sistema não respondeu').waitFor({ timeout: 5000 });
+  await stubOpen(app, vault.backup);
+  await page.getByRole('button', { name: 'Restaurar um backup' }).click();
+  await page.getByRole('button', { name: 'Restaurar e reiniciar' }).click();
+  await page.getByLabel('Senha de recuperação').fill(vault.password);
+  const gone = closed(app);
+  await page.getByRole('button', { name: 'Restaurar e reiniciar' }).click();
+  await gone;
+  const again = await launch(dir);
+  await again.page.getByText('Hoje').first().waitFor({ timeout: 8000 });
+  await stubShell(again.app);
+  await openAttached(again.page);
+  assert.equal((await openedList(again.app, again.page))[0].text, TEXT);
+  const kept = readdirSync(join(dir, 'antes-da-restauracao')).find((f) => f.startsWith('arquivos-'));
+  assert.deepEqual(readdirSync(join(dir, 'antes-da-restauracao', kept)), [`${textHash}.sek`]);
+  await again.app.close();
 });
 
 rmSync(root, { recursive: true, force: true });

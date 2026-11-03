@@ -1,14 +1,16 @@
 import { eq } from 'drizzle-orm';
 import { accessSync, constants, existsSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { z } from 'zod';
 
 import type { AppCtx, Job } from '../../app';
 import { appMeta } from '../../db/schema';
 import { AppError, todayIn } from '../../services/context';
 import { parse } from '../finance';
+import { PROJECT_FILES_FOLDER } from '../projects/file-vault';
 
-import { type DbStore, writeBackup } from './engine';
+import { backupFileHashes, type DbStore, liveFileHashes, writeBackup } from './engine';
+import { backupFilesFolder, countBackupFiles, sweepBackupFiles, syncProjectFiles } from './files';
 import {
   generatePassword,
   RECOVERY_FILE,
@@ -26,6 +28,7 @@ const KEY = {
   lastFile: 'backup.lastFile',
   error: 'backup.error',
   errorDay: 'backup.errorDay',
+  filesAbsent: 'backup.filesAbsent',
   name: 'settings.name',
   timeZone: 'settings.timeZone',
 };
@@ -77,13 +80,39 @@ function issueRecovery(ctx: AppCtx, store: DbStore, folder: string) {
   return password;
 }
 
+/** Depois do banco, que não espera por eles. Devolve o problema, ou null. */
+function syncFiles(ctx: AppCtx, store: DbStore, folder: string) {
+  const local = join(dirname(store.path), PROJECT_FILES_FOLDER);
+  const target = backupFilesFolder(folder, store.keyHex);
+  const { absent, failed, lastError } = syncProjectFiles(liveFileHashes(store), local, target, store.keyHex);
+  writeMeta(ctx, KEY.filesAbsent, absent ? String(absent) : null);
+  return failed ? `${failed} arquivo(s) de projeto ficaram de fora: ${lastError}` : null;
+}
+
 function run(ctx: AppCtx, store: DbStore, folder: string, name: string) {
   const result = writeBackup(store, folder, name);
   if (!existsSync(join(folder, RECOVERY_FILE))) writeRecoveryFile(ctx, folder);
   writeMeta(ctx, KEY.lastAt, String(Date.now()));
   writeMeta(ctx, KEY.lastFile, name);
-  writeMeta(ctx, KEY.error, null);
-  return result;
+  const problem = syncFiles(ctx, store, folder);
+  writeMeta(ctx, KEY.error, problem);
+  return { ...result, problem };
+}
+
+/** Sem conseguir ler um dos backups guardados, não dá para saber o que ele usa: nada sai. */
+function sweepFiles(store: DbStore, folder: string) {
+  try {
+    const target = backupFilesFolder(folder, store.keyHex);
+    const backups = readdirSync(folder).filter(backupDate);
+    if (!backups.length || !existsSync(target)) return;
+    const keep = new Set(liveFileHashes(store));
+    for (const name of backups) {
+      for (const hash of backupFileHashes(join(folder, name), store.keyHex)) keep.add(hash);
+    }
+    sweepBackupFiles(target, keep);
+  } catch (error) {
+    console.error('[backup] faxina dos arquivos adiada:', (error as Error).message);
+  }
 }
 
 function assertFolder(folder: string) {
@@ -101,8 +130,14 @@ function runDaily(ctx: AppCtx, store: DbStore) {
   const today = todayIn(ctx);
   try {
     assertFolder(folder);
-    if (!existsSync(join(folder, dailyName(today)))) run(ctx, store, folder, dailyName(today));
-    for (const name of namesToRotate(readdirSync(folder))) rmSync(join(folder, name));
+    const problem = existsSync(join(folder, dailyName(today)))
+      ? syncFiles(ctx, store, folder)
+      : run(ctx, store, folder, dailyName(today)).problem;
+    const expired = namesToRotate(readdirSync(folder));
+    for (const name of expired) rmSync(join(folder, name));
+    if (expired.length) sweepFiles(store, folder);
+    if (problem) throw new Error(problem);
+    writeMeta(ctx, KEY.error, null);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     writeMeta(ctx, KEY.error, message);
@@ -164,6 +199,8 @@ export const handlers = (ctx: AppCtx, store: DbStore, systemTimeZone: string) =>
       lastFile: readMeta(ctx, KEY.lastFile),
       error: readMeta(ctx, KEY.error),
       files: folder ? listFiles(folder) : [],
+      projectFiles: folder ? countBackupFiles(backupFilesFolder(folder, store.keyHex)) : 0,
+      projectFilesAbsent: Number(readMeta(ctx, KEY.filesAbsent)) || 0,
     };
   },
   'backup.run': () => {

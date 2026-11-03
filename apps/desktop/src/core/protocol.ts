@@ -20,6 +20,7 @@ export type CoreStageRestore = {
   currentKeyHex: string | null;
   targetKeyHex: string;
   password?: string;
+  files: { local: string; staged: string };
 };
 /** O fim do login do Google: o código vem do servidor local do main, nunca da tela. */
 export type CoreGoogleConnect = {

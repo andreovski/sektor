@@ -8,6 +8,12 @@ import {
   MessageChannelMain,
   shell,
 } from 'electron';
+import {
+  fileKeyOf,
+  migrateProjectFiles,
+  openFile,
+  sealFile,
+} from '@sektor/core/src/modules/projects/file-vault';
 import { randomBytes } from 'node:crypto';
 import { mkdtempSync, openSync, readSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -20,8 +26,8 @@ import { ask, forkCore } from './core-process';
 import { cancelGoogleLogin, googleLogin } from './google-login';
 import { databaseKey, dbPath, loadSecrets, saveSecrets, seal, useTestVault } from './key';
 import { setAppMenu } from './menu';
-import { projectFileChannels, sweepProjectFiles } from './project-files';
-import { applyPendingRestore, scheduleRestore, stagePath } from './restore';
+import { clearOpenedCopies, projectFileChannels, sweepProjectFiles } from './project-files';
+import { applyPendingRestore, filesPath, scheduleRestore, stagedFilesPath, stagePath } from './restore';
 import { createTray, hasOpenWindow, notify } from './tray';
 import { createWindow, isAppUrl } from './window';
 
@@ -42,6 +48,7 @@ let core: Electron.UtilityProcess | null = null;
 let failure: CoreFailure | null = null;
 let quitting = false;
 let restoreFile: string | null = null;
+let fileKey: Buffer | null = null;
 
 const dataDir = () => app.getPath('userData');
 
@@ -111,18 +118,20 @@ async function runRestore(password?: string): Promise<RestoreResult> {
   // Núcleo à parte: o do app pode nem ter subido, e a cópia não mexe no banco em uso.
   const helper = forkCore('sektor-restauracao');
   try {
-    const result = await ask<RestoreResult & { keyChanged?: boolean }>(helper, {
+    const result = await ask<RestoreResult>(helper, {
       type: 'stage-restore',
       file: restoreFile,
       stagePath: stagePath(),
       currentKeyHex,
       targetKeyHex,
       password,
+      files: { local: filesPath(), staged: stagedFilesPath() },
     });
     if (result.status !== 'ok') return result;
     scheduleRestore(sealedKey);
-    setImmediate(restart);
-    return { status: 'ok' };
+    // Com arquivo faltando, a tela avisa antes; quem reinicia é o botão dela.
+    if (!result.missingFiles) setImmediate(restart);
+    return { status: 'ok', missingFiles: result.missingFiles };
   } catch (error) {
     return { status: 'error', message: (error as Error).message };
   } finally {
@@ -133,6 +142,29 @@ async function runRestore(password?: string): Promise<RestoreResult> {
 function liveCore() {
   if (!core || failure) throw new Error('O núcleo não está no ar.');
   return core;
+}
+
+function liveFileKey() {
+  if (!fileKey) throw new Error('A chave dos arquivos não está disponível.');
+  return fileKey;
+}
+
+/** Nos testes das telas dá para encurtar a vida da cópia aberta. */
+const openedCopyMs = Number(TEST_DIR && process.env.SEKTOR_TEST_OPEN_MS) || undefined;
+
+/** Cifra e abre no pacote: a mesma conta que o main faz com os arquivos de verdade. */
+function vaultProof() {
+  const key = fileKeyOf(randomBytes(32).toString('hex'));
+  const sealed = sealFile(key, 'prova', Buffer.from('conteúdo'));
+  const tampered = Buffer.from(sealed);
+  tampered[tampered.length - 1]! ^= 1;
+  let refused = false;
+  try {
+    openFile(key, 'prova', tampered);
+  } catch {
+    refused = true;
+  }
+  return refused && openFile(key, 'prova', sealed).toString() === 'conteúdo';
 }
 
 function registerIpc() {
@@ -173,7 +205,7 @@ function registerIpc() {
     return restoreFile;
   });
   handle('backup:restore', (_event, password?: string) => runRestore(password));
-  const projectFiles = projectFileChannels(dataDir, liveCore);
+  const projectFiles = projectFileChannels(dataDir, liveCore, liveFileKey, openedCopyMs);
   handle('project-files:pick', (event, projectId: string) =>
     projectFiles.pick(parent(event), projectId)
   );
@@ -223,6 +255,7 @@ function runSmoke() {
       plainHeader: header.toString('latin1').startsWith('SQLite format 3'),
       bytes: statSync(path, { throwIfNoEntry: false })?.size ?? 0,
       testDirIgnored: !TEST_DIR,
+      fileVault: vaultProof(),
       devToolsOpens: (window.webContents.openDevTools(), window.webContents.isDevToolsOpened()),
       menu: Menu.getApplicationMenu()?.items.flatMap((item) => [
         item.label,
@@ -255,9 +288,13 @@ function boot() {
   } catch (error) {
     fail('database', (error as Error).message);
   }
+  clearOpenedCopies(dataDir());
   if (!failure) {
     try {
       const key = databaseKey();
+      fileKey = fileKeyOf(key);
+      const migration = migrateProjectFiles(filesPath(), fileKey);
+      if (migration.failed) console.error('[arquivos de projeto]', migration);
       core = startCore(dbPath(), key, loadSecrets(), (event) => {
         if (event.type === 'failed') fail('database', event.message);
         if (event.type === 'ready') void sweepProjectFiles(dataDir, liveCore);
@@ -279,6 +316,7 @@ function boot() {
 
 app.on('before-quit', () => {
   quitting = true;
+  if (!SMOKE) clearOpenedCopies(dataDir());
 });
 
 // Sem a trava, duas instâncias abririam o mesmo banco. O smoke roda em pasta própria.

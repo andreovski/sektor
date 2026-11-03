@@ -10,7 +10,7 @@ export type FolderChoice =
   | { canceled: false; folder: string; recoveryPassword: string | null };
 
 export type RestoreResult =
-  | { status: 'ok' }
+  | { status: 'ok'; missingFiles: number }
   | { status: 'needs-password' }
   | { status: 'error'; message: string };
 

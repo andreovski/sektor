@@ -164,8 +164,10 @@ export function addFile(ctx: Ctx, body: z.output<typeof addFileSchema>) {
   return toFile(row as FileRow);
 }
 
-export function fileStoredName(ctx: Ctx, id: string) {
-  return liveFile(ctx, id).storedName;
+/** O nome original só existe aqui: é dele que sai a extensão para o sistema saber abrir. */
+export function fileToOpen(ctx: Ctx, id: string) {
+  const { storedName, name } = liveFile(ctx, id);
+  return { storedName, name };
 }
 
 export function removeFile(ctx: Ctx, id: string) {

@@ -49,6 +49,18 @@ describe('página do projeto', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
+  it('a migração tira a extensão do nome na pasta, inclusive das linhas apagadas', async () => {
+    const project = tasks.createProject(ctx, { name: 'Antigo' } as never);
+    const live = file(project.id, 'a');
+    const gone = file(project.id, 'b');
+    svc.removeFile(ctx, gone.id);
+    handle.raw.exec(
+      readFileSync(join(import.meta.dirname, '../../db/migrations/0121_project_files_sealed.sql'), 'utf8')
+    );
+    expect(svc.fileToOpen(ctx, live.id)).toEqual({ storedName: `${hash('a')}.sek`, name: 'briefing.pdf' });
+    expect(svc.orphanStoredNames(ctx)).toEqual([`${hash('b')}.sek`]);
+  });
+
   it('o status acompanha a conclusão, nos dois sentidos', () => {
     const { id } = tasks.createProject(ctx, { name: 'Site', startDate: '2026-10-01' });
     expect(tasks.getProject(ctx, id)).toMatchObject({
@@ -210,11 +222,11 @@ describe('página do projeto', () => {
     expectStatus(() => file(id, 'a', 'outro-nome.pdf'), 409);
     const theirs = file(other.id, 'a');
     expect(svc.listFiles(ctx, id).map((row) => row.name)).toEqual(['briefing.pdf']);
-    expect(svc.fileStoredName(ctx, mine.id)).toBe(`${hash('a')}.pdf`);
+    expect(svc.fileToOpen(ctx, mine.id).storedName).toBe(`${hash('a')}.pdf`);
 
     svc.removeFile(ctx, mine.id);
     expect(svc.listFiles(ctx, id)).toEqual([]);
-    expectStatus(() => svc.fileStoredName(ctx, mine.id), 404);
+    expectStatus(() => svc.fileToOpen(ctx, mine.id), 404);
     expect(svc.orphanStoredNames(ctx)).toEqual([]);
 
     file(id, 'a');

@@ -21,6 +21,6 @@ export const projectFiles = sqliteTable('project_files', {
   name: text('name').notNull(),
   sizeBytes: integer('size_bytes').notNull(),
   contentHash: text('content_hash').notNull(),
-  /** Nome do arquivo na pasta local: o hash, mais a extensão que faz o sistema saber abrir. */
+  /** Nome do arquivo cifrado na pasta local: o hash, sem revelar a extensão. */
   storedName: text('stored_name').notNull(),
 });

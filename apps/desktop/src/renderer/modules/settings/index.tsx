@@ -141,7 +141,8 @@ function Backup() {
       </div>
       <p className="text-muted">
         Um backup por dia, cifrado, enquanto o app estiver aberto ou na bandeja. Ficam os 7 últimos dias
-        e 4 semanas. O que você faz à mão não entra nessa conta.
+        e 4 semanas. O que você faz à mão não entra nessa conta. Os arquivos de projeto vão junto, e
+        a mesma senha de recuperação vale para eles.
       </p>
       {data?.lastAt && (
         <p>
@@ -153,6 +154,17 @@ function Backup() {
         <p className="text-muted">
           {data.files.length} arquivo(s) na pasta,{' '}
           {size(data.files.reduce((sum, file) => sum + file.bytes, 0))}.
+        </p>
+      )}
+      {!!data?.projectFiles && (
+        <p className="text-muted" data-testid="backup-project-files">
+          {data.projectFiles} arquivo(s) de projeto no backup.
+        </p>
+      )}
+      {!!data?.projectFilesAbsent && (
+        <p className="text-danger">
+          {data.projectFilesAbsent} arquivo(s) de projeto não estão neste computador e ficaram de
+          fora do backup.
         </p>
       )}
       <div className="flex flex-wrap gap-2">

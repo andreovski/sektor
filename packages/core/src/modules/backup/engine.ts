@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 
 import { LATEST_SCHEMA_VERSION } from '../../db/client';
 
+import { stageProjectFiles } from './files';
 import { openKey, RECOVERY_FILE, type RecoveryEnvelope } from './recovery';
 
 /** O banco em uso. Só o backup enxerga a chave. */
@@ -13,8 +14,8 @@ export interface DbStore {
   keyHex: string;
 }
 
-function openWith(path: string, keyHex: string) {
-  const db = new Database(path, { fileMustExist: true });
+function openWith(path: string, keyHex: string, readonly = false) {
+  const db = new Database(path, { fileMustExist: true, readonly });
   db.pragma(`hexkey='${keyHex}'`);
   return db;
 }
@@ -44,6 +45,26 @@ function hasPlainHeader(path: string) {
   return header.toString('latin1') === 'SQLite format 3';
 }
 
+const FILE_HASHES = `SELECT DISTINCT content_hash AS hash FROM project_files WHERE deleted_at IS NULL`;
+const hashesIn = (db: Database.Database) => {
+  const table = db.prepare(`SELECT 1 FROM sqlite_master WHERE name = 'project_files'`).get();
+  if (!table) return [];
+  return (db.prepare(FILE_HASHES).all() as { hash: string }[]).map((row) => row.hash);
+};
+
+/** Arquivos de projeto em uso no banco aberto. */
+export const liveFileHashes = (store: DbStore) => hashesIn(store.raw);
+
+/** Arquivos que um backup usa. Lança se a chave for outra: quem chama não pode supor nada. */
+export function backupFileHashes(path: string, keyHex: string) {
+  const db = openWith(path, keyHex, true);
+  try {
+    return hashesIn(db);
+  } finally {
+    db.close();
+  }
+}
+
 /** Grava com a mesma chave do banco. Só um arquivo conferido ganha o nome final. */
 export function writeBackup(store: DbStore, folder: string, name: string) {
   const file = join(folder, name);
@@ -61,7 +82,7 @@ export function writeBackup(store: DbStore, folder: string, name: string) {
 }
 
 export type StageResult =
-  | { status: 'ok'; keyChanged: boolean }
+  | { status: 'ok'; keyChanged: boolean; missingFiles: number }
   | { status: 'needs-password' }
   | { status: 'error'; message: string };
 
@@ -74,6 +95,8 @@ export interface StageOptions {
   /** Chave com que a cópia deve ficar. */
   targetKeyHex: string;
   password?: string;
+  /** Arquivos de projeto: a pasta desta máquina e onde preparar os que vierem do backup. */
+  files?: { local: string; staged: string };
 }
 
 function keyFromRecovery(file: string, password: string): StageResult | string {
@@ -136,9 +159,21 @@ export function stageRestore(options: StageOptions): StageResult {
     if (!opens(stagePath, targetKeyHex)) {
       return { status: 'error', message: 'A cópia preparada não abriu. Nada foi trocado.' };
     }
+    const missingFiles = options.files
+      ? stageProjectFiles({
+          ...options.files,
+          hashes: backupFileHashes(stagePath, targetKeyHex),
+          backupFolder: dirname(file),
+          sourceKeyHex: sourceKey,
+          targetKeyHex,
+        })
+      : 0;
     done = true;
-    return { status: 'ok', keyChanged: sourceKey !== targetKeyHex };
+    return { status: 'ok', keyChanged: sourceKey !== targetKeyHex, missingFiles };
   } finally {
-    if (!done) rmSync(stagePath, { force: true });
+    if (!done) {
+      rmSync(stagePath, { force: true });
+      if (options.files) rmSync(options.files.staged, { recursive: true, force: true });
+    }
   }
 }
