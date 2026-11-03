@@ -1,4 +1,5 @@
 import { app, BrowserWindow, nativeTheme, shell } from 'electron';
+import { appendFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -14,6 +15,50 @@ export function isAppUrl(url: string) {
     return parsed.href.split(/[?#]/)[0] === fileUrl;
   } catch {
     return false;
+  }
+}
+
+/** Os endereços da Pluggy e do Meu Pluggy, que podem abrir a janela de login. */
+export function isPluggyUrl(url: string | undefined) {
+  if (!url) return false;
+  try {
+    const { protocol, hostname } = new URL(url);
+    return protocol === 'https:' && (hostname === 'pluggy.ai' || hostname.endsWith('.pluggy.ai'));
+  } catch {
+    return false;
+  }
+}
+
+/** A janela de login só anda dentro da Pluggy; o resto vai para o navegador, e nada abre outra. */
+function guardPluggyWindow(child: BrowserWindow) {
+  child.setMenuBarVisibility(false);
+  const keep = (event: Electron.Event, url: string) => {
+    if (isPluggyUrl(url) || url === 'about:blank') return;
+    logWindowOpen(url, 'bloqueado na janela do Pluggy');
+    event.preventDefault();
+    if (url.startsWith('https://')) void shell.openExternal(url);
+  };
+  child.webContents.on('will-navigate', keep);
+  child.webContents.on('will-redirect', keep);
+  child.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('https://')) void shell.openExternal(url);
+    return { action: 'deny' };
+  });
+}
+
+/** Para entender o que o widget tenta abrir: só a origem, nunca o caminho (pode ter token). */
+function logWindowOpen(url: string, where: string) {
+  let origin = url;
+  try {
+    origin = new URL(url).origin;
+  } catch {
+    // fica como veio
+  }
+  try {
+    mkdirSync(app.getPath('logs'), { recursive: true });
+    appendFileSync(join(app.getPath('logs'), 'janelas.log'), `${new Date().toISOString()} ${where}: ${origin}\n`);
+  } catch {
+    // sem log, segue
   }
 }
 
@@ -97,11 +142,27 @@ function buildWindow(
     },
   });
   if (!hidden) window.once('ready-to-show', () => window.show());
-  // Link externo abre no navegador; dentro da janela só o próprio app navega.
-  window.webContents.setWindowOpenHandler(({ url }) => {
+  // Link externo abre no navegador; dentro da janela só o próprio app navega. A exceção é o
+  // login do Meu Pluggy: o widget abre uma janela e espera a resposta dela pelo `window.opener`,
+  // que o navegador de fora não tem.
+  window.webContents.setWindowOpenHandler(({ url, referrer }) => {
+    const fromPluggy = isPluggyUrl(referrer.url) || isPluggyUrl(url) || url === 'about:blank';
+    logWindowOpen(url, fromPluggy ? 'janela do Pluggy' : 'navegador');
+    if (fromPluggy && (url === 'about:blank' || isPluggyUrl(url))) {
+      return {
+        action: 'allow',
+        overrideBrowserWindowOptions: {
+          width: 480,
+          height: 720,
+          backgroundColor: BACKGROUNDS[nativeTheme.shouldUseDarkColors ? 'dark' : 'light'],
+          webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, devTools: false },
+        },
+      };
+    }
     if (url.startsWith('https://')) void shell.openExternal(url);
     return { action: 'deny' };
   });
+  window.webContents.on('did-create-window', (child) => guardPluggyWindow(child));
   window.webContents.on('will-navigate', (event, url) => {
     if (!isAppUrl(url)) event.preventDefault();
   });
