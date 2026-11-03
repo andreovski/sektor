@@ -14,7 +14,7 @@ import * as fin from '../../services/finance';
 import * as bank from '../../bank';
 
 import { handlers } from '.';
-import { decide } from './bank-category';
+import { DAILY_CALLS, decide } from './bank-category';
 import { setJevForTests } from './jev';
 import { costMicros, setModelForTests } from './providers';
 import { redact } from './redact';
@@ -134,6 +134,23 @@ describe('IA', () => {
       expect(rpc['ai.status']().local).toBe(true);
     });
 
+    it('Ollama em outro computador conta como nuvem; o endereço ganha /v1', () => {
+      rpc['ai.update']({ provider: 'ollama', model: 'qwen3:8b', baseUrl: 'http://192.168.0.10:11434' });
+      const status = rpc['ai.status']();
+      expect(status.baseUrl).toBe('http://192.168.0.10:11434/v1');
+      expect(status.local).toBe(false);
+      expect(status.ready).toBe(false);
+      rpc['ai.update']({ baseUrl: 'http://localhost:11434/' });
+      expect(rpc['ai.status']().local).toBe(true);
+    });
+
+    it('sem o modo dev, o total do mês não sai do núcleo', async () => {
+      useClaude();
+      setModelForTests(fakeModel(() => 'oi').model);
+      await rpc['ai.test']().catch(() => {});
+      expect(rpc['ai.calls']().month).toEqual([]);
+    });
+
     it('trocar de provedor sem dizer o modelo limpa o modelo', () => {
       rpc['ai.update']({ provider: 'anthropic', model: 'claude-haiku-5-5' });
       expect(rpc['ai.update']({ provider: 'openai' }).model).toBe('');
@@ -248,6 +265,15 @@ describe('IA', () => {
       expect(sent.diaDeHojeNoMesCorrente).toBe(4);
     });
 
+    it('o texto guardado não fica desatualizado só porque o dia virou', async () => {
+      useClaude();
+      spend('2026-11-03', 12_345);
+      setModelForTests(fakeModel(() => 'ok').model);
+      await rpc['ai.insight.generate']({ kind: 'financeChanges', period: '2026-11' });
+      vi.setSystemTime(new Date('2026-11-05T15:00:00Z'));
+      expect(rpc['ai.insight']({ kind: 'financeChanges', period: '2026-11' }).stale).toBe(false);
+    });
+
     it('com finanças desligada, o insight do financeiro é recusado', async () => {
       useClaude();
       rpc['ai.update']({ areas: { finance: false } });
@@ -330,29 +356,101 @@ describe('IA', () => {
       useClaude();
       rpc['ai.update']({ bankCategory: 'on' });
       rpc['ai.setKey']({ provider: 'jev', key: 'jev-chave' });
-      const id = movement('PADARIA DO ZE');
+      rpc['ai.acceptNotice']({ provider: 'jev' });
+      const id = movement('PADARIA DO ZE 123.456.789-09');
+      let sent = '';
       const market = ctx.db.select().from(categories).where(eq(categories.name, 'Mercado')).get()!;
       setModelForTests(fakeModel(() => JSON.stringify({ itens: [{ n: 1, categoria: 'Mercado' }] })).model);
-      setJevForTests(async (_key, _state, questions) => {
+      setJevForTests(async (_key, state, questions) => {
+        sent = JSON.stringify(state);
         const criteria = questions.answer!.criteria;
         const key = Object.entries(criteria).find(([, label]) => label.startsWith('Mercado'))![0];
         return { answers: { answer: { type: 'choice', choice: key, probabilities: { [key]: 0.9 } } } };
       });
       expect(await rpc['ai.bankCategory.run']()).toEqual({ suggested: 1 });
       expect(find(id)).toMatchObject({ suggestedCategoryId: market.id, suggestionConfidence: 0.9 });
+      expect(sent).toContain('[CPF]');
+      expect(sent).not.toContain('123.456.789-09');
     });
 
-    it('com o Jev fora do ar, o lançamento fica para a próxima', async () => {
+    it('sem o aviso do Jev aceito, ele não é chamado, nem com o modelo local', async () => {
+      rpc['ai.update']({ provider: 'ollama', model: 'qwen3:8b', bankCategory: 'on' });
+      rpc['ai.setKey']({ provider: 'jev', key: 'jev-chave' });
+      movement('PADARIA DO ZE');
+      setModelForTests(fakeModel(() => JSON.stringify({ itens: [{ n: 1, categoria: 'Mercado' }] })).model);
+      let called = false;
+      setJevForTests(async () => {
+        called = true;
+        return { answers: {} };
+      });
+      await rpc['ai.bankCategory.run']();
+      expect(called).toBe(false);
+      expect(rpc['ai.status']().jevReady).toBe(false);
+    });
+
+    it('com o Jev fora do ar, não decide: fica sem sugestão e não volta a ser enviado', async () => {
       useClaude();
       rpc['ai.update']({ bankCategory: 'on' });
       rpc['ai.setKey']({ provider: 'jev', key: 'jev-chave' });
+      rpc['ai.acceptNotice']({ provider: 'jev' });
       const id = movement('PADARIA DO ZE');
-      setModelForTests(fakeModel(() => JSON.stringify({ itens: [{ n: 1, categoria: 'Mercado' }] })).model);
+      const { model, calls } = fakeModel(() => JSON.stringify({ itens: [{ n: 1, categoria: 'Mercado' }] }));
+      setModelForTests(model);
       setJevForTests(async () => {
         throw new Error('Jev 503');
       });
       await rpc['ai.bankCategory.run']();
-      expect(find(id).aiCheckedAt).toBeNull();
+      expect(find(id)).toMatchObject({ suggestedCategoryId: null });
+      expect(find(id).aiCheckedAt).not.toBeNull();
+      await rpc['ai.bankCategory.run']();
+      expect(calls).toHaveLength(1);
+    });
+
+    it('falha repetida do modelo para no teto de chamadas do dia', async () => {
+      useClaude();
+      rpc['ai.update']({ bankCategory: 'on' });
+      movement('PADARIA DO ZE');
+      let tries = 0;
+      setModelForTests(
+        new MockLanguageModelV4({
+          doGenerate: async () => {
+            tries++;
+            throw new Error('fora do ar');
+          },
+        })
+      );
+      for (let i = 0; i < 15; i++) await rpc['ai.bankCategory.run']();
+      expect(tries).toBe(DAILY_CALLS);
+    });
+
+    it('o botão e o job ao mesmo tempo mandam uma vez só', async () => {
+      useClaude();
+      rpc['ai.update']({ bankCategory: 'on' });
+      movement('UBER *TRIP');
+      const { model, calls } = fakeModel(() => JSON.stringify({ itens: [{ n: 1, categoria: 'nenhuma' }] }));
+      setModelForTests(model);
+      await Promise.all([rpc['ai.bankCategory.run'](), rpc['ai.bankCategory.run']()]);
+      expect(calls).toHaveLength(1);
+    });
+
+    it('pagamento de fatura não conta como pendente nem ocupa a IA', async () => {
+      useClaude();
+      rpc['ai.update']({ bankCategory: 'on' });
+      movement('PAGAMENTO DE FATURA');
+      expect(rpc['ai.status']().bankPending).toBe(0);
+    });
+
+    it('a sugestão da IA de uma categoria apagada sai na próxima leitura', () => {
+      const id = movement('UBER *TRIP');
+      const market = ctx.db.select().from(categories).where(eq(categories.name, 'Mercado')).get()!;
+      ctx.db
+        .update(bankMovements)
+        .set({ suggestedCategoryId: market.id, suggestionSource: 'AI', aiCheckedAt: Date.now() })
+        .where(eq(bankMovements.id, id))
+        .run();
+      expect(bank.listMovements(ctx).find((m) => m.id === id)!.suggestionSource).toBe('AI');
+      ctx.db.update(categories).set({ deletedAt: Date.now() }).where(eq(categories.id, market.id)).run();
+      expect(bank.listMovements(ctx).find((m) => m.id === id)!.suggestedCategoryId).not.toBe(market.id);
     });
 
     it('decide como o Jotta: mesma categoria, filha da mãe escolhida ou soma da família', () => {

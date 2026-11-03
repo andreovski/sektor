@@ -1,11 +1,12 @@
-import { and, desc, eq, gte, isNotNull, isNull, ne, or } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNotNull, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 
 import type { AppCtx } from '../../app';
 import { looksLikeInvoicePayment, shortDescription } from '../../bank/movements';
 import { bankAccounts, bankMovements, categories } from '../../db/schema';
 
-import { askChoice, hasJev } from './jev';
+import { askChoice, jevUsable } from './jev';
+import { aiCalls } from './schema';
 import { ask, isReady } from './run';
 import { allowedAreas, readSettings } from './settings';
 
@@ -16,6 +17,8 @@ import { allowedAreas, readSettings } from './settings';
 const BATCH = 40;
 /** Teto de segurança: quantos lançamentos a IA olha em 24 h. */
 export const DAILY_LIMIT = 200;
+/** E quantas chamadas ao modelo, contando as que falharam: falha repetida não vira gasto sem fim. */
+export const DAILY_CALLS = 10;
 /** Abaixo disto, a conferência do Jev descarta a sugestão. */
 export const MIN_CONFIDENCE = 0.6;
 const NONE = 'nenhuma';
@@ -112,13 +115,31 @@ interface Pending {
   card: boolean;
 }
 
-/** Sugere pela IA. Devolve quantos ganharam sugestão. Falha da IA não sobe: fica para a próxima. */
-export async function suggestCategories(ctx: AppCtx): Promise<number> {
+let running: Promise<number> | null = null;
+
+/**
+ * Sugere pela IA. Devolve quantos ganharam sugestão. Falha da IA não sobe: fica para a próxima.
+ * O job e o botão dividem a mesma rodada, para nada ir duas vezes.
+ */
+export function suggestCategories(ctx: AppCtx): Promise<number> {
+  running ??= run(ctx).finally(() => {
+    running = null;
+  });
+  return running;
+}
+
+async function run(ctx: AppCtx): Promise<number> {
   const settings = readSettings(ctx);
   if (settings.bankCategory !== 'on' || !isReady(settings)) return 0;
   if (!allowedAreas(settings).includes('finance')) return 0;
 
   const since = Date.now() - 24 * 60 * 60 * 1000;
+  const callsToday = ctx.db
+    .select({ id: aiCalls.id })
+    .from(aiCalls)
+    .where(and(eq(aiCalls.feature, 'bank.category'), gte(aiCalls.createdAt, since)))
+    .all().length;
+  if (callsToday >= DAILY_CALLS) return 0;
   const checkedToday = ctx.db
     .select({ id: bankMovements.id })
     .from(bankMovements)
@@ -149,8 +170,17 @@ export async function suggestCategories(ctx: AppCtx): Promise<number> {
     .limit(room)
     .all()
     .map((m) => ({ ...m, card: m.type === 'CREDIT' }));
-  // Pagamento de fatura vira transferência para o cartão ao aceitar: não leva categoria.
-  const movements = found.filter((m) => !(m.kind === 'EXPENSE' && looksLikeInvoicePayment(m.description)));
+  // Pagamento de fatura vira transferência para o cartão ao aceitar: não leva categoria, e fica
+  // marcado como visto para não ocupar vaga de novo.
+  const invoicePayments = found.filter(isInvoicePayment);
+  if (invoicePayments.length) {
+    ctx.db
+      .update(bankMovements)
+      .set({ aiCheckedAt: Date.now() })
+      .where(inArray(bankMovements.id, invoicePayments.map((m) => m.id)))
+      .run();
+  }
+  const movements = found.filter((m) => !isInvoicePayment(m));
   const list = categoriesOf(ctx);
   if (!movements.length || !list.length) return 0;
   const parents = new Map(list.map((c) => [c.id, c.parentId]));
@@ -187,14 +217,13 @@ export async function suggestCategories(ctx: AppCtx): Promise<number> {
         return list.find((c) => c.label === label && c.kind === m.kind)?.id ?? null;
       });
     } catch {
+      // Falhou (ou a área foi desligada no meio): o resto fica para a próxima rodada.
       break;
     }
 
     for (const [i, movement] of batch.entries()) {
       const pick = picks[i] ?? null;
       const decision = pick ? await checkWithJev(ctx, movement, pick, list, parents) : null;
-      // O Jev configurado e fora do ar: fica para a próxima, sem marcar como visto.
-      if (decision === undefined) continue;
       const now = Date.now();
       ctx.db
         .update(bankMovements)
@@ -209,12 +238,13 @@ export async function suggestCategories(ctx: AppCtx): Promise<number> {
               }
             : { aiCheckedAt: now, updatedAt: now }
         )
-        // Pode ter sido lançado ou ganhado sugestão do histórico enquanto a IA pensava.
+        // Pode ter sido lançado ou ganhado outra sugestão enquanto a IA pensava.
         .where(
           and(
             eq(bankMovements.id, movement.id),
             eq(bankMovements.status, 'PENDING'),
-            or(isNull(bankMovements.suggestionSource), ne(bankMovements.suggestionSource, 'HISTORY'))
+            isNull(bankMovements.aiCheckedAt),
+            isNull(bankMovements.suggestedCategoryId)
           )
         )
         .run();
@@ -225,8 +255,8 @@ export async function suggestCategories(ctx: AppCtx): Promise<number> {
 }
 
 /**
- * Sem a chave do Jev, a escolha do modelo vale como está (confiança -1 = não conferida). Com a
- * chave e o Jev sem responder, `undefined`: tenta de novo depois.
+ * Sem o Jev, a escolha do modelo vale como está (confiança -1 = não conferida). Com o Jev ligado e
+ * sem resposta, não decide, como no Jotta: na dúvida, sem sugestão.
  */
 async function checkWithJev(
   ctx: AppCtx,
@@ -234,8 +264,8 @@ async function checkWithJev(
   pick: string,
   list: AiCategory[],
   parents: Map<string, string | null>
-): Promise<AiDecision | null | undefined> {
-  if (!hasJev(ctx)) return { categoryId: pick, confidence: -1 };
+): Promise<AiDecision | null> {
+  if (!jevUsable(ctx)) return { categoryId: pick, confidence: -1 };
   const sameKind = list.filter((c) => c.kind === movement.kind);
   const title = shortDescription(movement.description);
   const text = [
@@ -254,23 +284,29 @@ async function checkWithJev(
     sameKind.map((c) => `${c.label} (${c.kind === 'INCOME' ? 'income' : 'expense'})`),
     'None of these categories fits'
   );
-  if (!scores) return undefined;
+  if (!scores) return null;
   const probabilities = new Map(sameKind.map((c, i) => [c.id, scores[i] ?? 0]));
   return decide(pick, probabilities, parents);
 }
 
-/** Quantos esperam revisão sem sugestão e ainda não passaram pela IA. */
+/** Quantos esperam revisão sem sugestão e ainda não passaram pela IA, com os filtros da rodada. */
 export function pendingForAi(ctx: AppCtx) {
   return ctx.db
-    .select({ id: bankMovements.id })
+    .select({ kind: bankMovements.kind, description: bankMovements.description })
     .from(bankMovements)
+    .innerJoin(bankAccounts, eq(bankAccounts.id, bankMovements.bankAccountId))
     .where(
       and(
         eq(bankMovements.status, 'PENDING'),
         isNull(bankMovements.aiCheckedAt),
-        isNull(bankMovements.suggestedCategoryId)
+        isNull(bankMovements.suggestedCategoryId),
+        isNotNull(bankAccounts.accountId)
       )
     )
-    .all().length;
+    .all()
+    .filter((m) => !isInvoicePayment(m)).length;
 }
 
+function isInvoicePayment(m: { kind: string; description: string }) {
+  return m.kind === 'EXPENSE' && looksLikeInvoicePayment(m.description);
+}

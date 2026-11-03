@@ -288,6 +288,9 @@ function AreasCard({ status }: { status: Status }) {
 function BankCard({ status }: { status: Status }) {
   const update = useRpcMutation('ai.update');
   const setKey = useRpcMutation('ai.setKey');
+  const accept = useRpcMutation('ai.acceptNotice');
+  const [notice, setNotice] = useState(false);
+  const noticeMissing = status.jev && !status.noticeAccepted.includes('jev');
   return (
     <Card className="flex flex-col gap-3">
       <CardHeader title="Revisão do banco" />
@@ -318,10 +321,34 @@ function BankCard({ status }: { status: Status }) {
         onSave={(key) =>
           setKey.mutate(
             { provider: 'jev', key },
-            { onSuccess: () => toast.success(key ? 'Chave do Jev guardada.' : 'Chave do Jev removida.') }
+            {
+              onSuccess: (next) => {
+                toast.success(key ? 'Chave do Jev guardada.' : 'Chave do Jev removida.');
+                if (key && !next.noticeAccepted.includes('jev')) setNotice(true);
+              },
+            }
           )
         }
       />
+      {noticeMissing && (
+        <div className="flex items-center gap-2 text-xs text-warning">
+          O Jev só entra depois do aviso de privacidade.
+          <Button size="sm" onClick={() => setNotice(true)}>
+            Ver aviso
+          </Button>
+        </div>
+      )}
+      {status.jev && !noticeMissing && !status.areas.finance && (
+        <p className="text-xs text-warning">O Jev fica parado enquanto Finanças está desligada para a IA.</p>
+      )}
+      {notice && (
+        <NoticeDialog
+          provider="jev"
+          areas={['finance']}
+          onClose={() => setNotice(false)}
+          onAccept={() => accept.mutate({ provider: 'jev' }, { onSuccess: () => setNotice(false) })}
+        />
+      )}
     </Card>
   );
 }

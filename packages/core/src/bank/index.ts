@@ -1202,10 +1202,20 @@ function refreshSuggestions(ctx: Ctx) {
     .all();
   if (!pending.length) return;
   const suggest = suggester(ctx);
+  const alive = new Set(
+    ctx.db.select({ id: categories.id }).from(categories).where(isNull(categories.deletedAt)).all().map((c) => c.id)
+  );
   for (const { movement, type } of pending) {
     const next = suggestionFor(suggest, movement, type);
-    // A sugestão da IA só sai para a do histórico.
-    if (movement.suggestionSource === 'AI' && next.suggestionSource !== 'HISTORY') continue;
+    // A sugestão da IA só sai para a do histórico, ou quando a categoria dela foi apagada.
+    if (
+      movement.suggestionSource === 'AI' &&
+      next.suggestionSource !== 'HISTORY' &&
+      movement.suggestedCategoryId &&
+      alive.has(movement.suggestedCategoryId)
+    ) {
+      continue;
+    }
     if (
       next.suggestedCategoryId === movement.suggestedCategoryId &&
       next.suggestionSource === movement.suggestionSource

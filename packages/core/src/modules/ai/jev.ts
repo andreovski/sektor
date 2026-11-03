@@ -2,7 +2,9 @@ import type { AppCtx } from '../../app';
 import { stamp } from '../../services/context';
 
 import { aiCalls } from './schema';
-import { readKey } from './settings';
+import { readKey, readSettings } from './settings';
+import { redact } from './redact';
+import { scrub } from './run';
 
 // Jev (TypeSafe, System One): responde perguntas de escolha com a probabilidade de cada opção.
 // Opcional, com a chave da pessoa. Sem ela, nada no Sektor depende dele.
@@ -64,6 +66,15 @@ export function setJevForTests(call: JevCall | null) {
 export const hasJev = (ctx: AppCtx) => Boolean(readKey(ctx, 'jev'));
 
 /**
+ * O Jev é um serviço na nuvem como os outros: só com a chave, o aviso aceito e Finanças liberada,
+ * mesmo quando o modelo principal é local.
+ */
+export function jevUsable(ctx: AppCtx) {
+  const settings = readSettings(ctx);
+  return hasJev(ctx) && settings.noticeAccepted.includes('jev') && settings.areas.finance;
+}
+
+/**
  * A probabilidade de cada opção, pelo índice. Sem a chave ou com erro, `null`: quem chama segue
  * sem a conferência.
  */
@@ -76,7 +87,8 @@ export async function askChoice(
   noneLabel = 'None of these options fits'
 ): Promise<number[] | null> {
   const apiKey = readKey(ctx, 'jev');
-  if (!apiKey || options.length === 0) return null;
+  if (!apiKey || !jevUsable(ctx) || options.length === 0) return null;
+  state = Object.fromEntries(Object.entries(state).map(([k, v]) => [k, redact(v)]));
   const criteria: Record<string, string> = {};
   options.forEach((label, i) => {
     criteria[optionKey(i)] = label;
@@ -105,7 +117,7 @@ export async function askChoice(
     if (!probabilities) return null;
     return options.map((_, i) => probabilities[optionKey(i)] ?? 0);
   } catch (error) {
-    log({ error: error instanceof Error ? error.message.slice(0, 300) : String(error) });
+    log({ error: scrub(error instanceof Error ? error.message : String(error)) });
     return null;
   }
 }

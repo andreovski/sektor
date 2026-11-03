@@ -33,7 +33,12 @@ export function AiCategoryOffer() {
         <div className="flex flex-1 flex-col gap-2 text-sm">
           <p>
             Quer que a IA sugira a categoria do que o histórico não reconheceu? São {data.bankPending}{' '}
-            agora. {data.local ? 'O modelo é local: nada sai daqui.' : `A descrição e o valor vão para o ${PROVIDER_INFO[data.provider].label}.`}{' '}
+            agora.{' '}
+            {data.local
+              ? data.jevReady
+                ? 'O modelo é local, mas a descrição e o valor vão para o Jev conferir.'
+                : 'O modelo é local: nada sai daqui.'
+              : `A descrição e o valor vão para o ${PROVIDER_INFO[data.provider].label}${data.jevReady ? ' e para o Jev' : ''}.`}{' '}
             É sempre sugestão; dá para mudar depois em Ajustes › IA.
           </p>
           <div className="flex gap-2">

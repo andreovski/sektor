@@ -38,6 +38,13 @@ export const PROVIDER_INFO: Record<
   },
 };
 
+/** O Jev entra só na revisão do banco, com a descrição e o valor do lançamento. */
+export const JEV_INFO = {
+  label: 'Jev (TypeSafe)',
+  hint: 'Recebe a descrição e o valor de cada lançamento que a IA categorizar.',
+  policy: null as string | null,
+};
+
 export const AREA_LABELS: Record<Area, string> = {
   finance: 'Finanças',
   tasks: 'Tarefas',
@@ -71,23 +78,32 @@ export function NoticeDialog({
   onAccept,
   onClose,
 }: {
-  provider: Provider;
+  provider: Provider | 'jev';
   areas: Area[];
   onAccept(): void;
   onClose(): void;
 }) {
-  const info = PROVIDER_INFO[provider];
+  const jev = provider === 'jev';
+  const info = jev ? { ...JEV_INFO, warning: undefined } : PROVIDER_INFO[provider];
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()} title={`Usar ${info.label}`}>
       <div className="flex flex-col gap-3 text-sm">
         <p>
-          Com um modelo na nuvem, os dados que a IA usa saem deste computador e vão para o{' '}
-          {info.label}, pela sua chave. O Sektor não guarda nada fora daqui.
+          {jev
+            ? 'O Jev é um serviço na nuvem, mesmo com o modelo principal local. '
+            : 'Com um modelo na nuvem, '}
+          os dados que ele usa saem deste computador e vão para o {info.label}, pela sua chave. O
+          Sektor não guarda nada fora daqui.
         </p>
         <p>
-          Pode sair, em resumo:{' '}
-          {areas.length ? areas.map((a) => AREA_LABELS[a]).join(', ') : 'nada, até você liberar uma área'}
-          . CPF, CNPJ, cartão e número de conta são apagados do texto antes de enviar.
+          {jev ? JEV_INFO.hint : 'Pode sair, em resumo: '}
+          {jev ? null : (
+            <>
+              {areas.length ? areas.map((a) => AREA_LABELS[a]).join(', ') : 'nada, até você liberar uma área'}
+              .
+            </>
+          )}{' '}
+          CPF, CNPJ, cartão e número de conta são apagados do texto antes de enviar.
         </p>
         {info.warning && <p className="text-warning">{info.warning}</p>}
         {info.policy && (

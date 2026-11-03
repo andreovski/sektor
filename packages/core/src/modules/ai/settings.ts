@@ -20,8 +20,8 @@ export interface AiSettings {
   /** Só do Ollama: outro endereço que não o padrão. */
   baseUrl: string | null;
   areas: Record<Area, boolean>;
-  /** O aviso de privacidade aceito, por provedor. Trocar de provedor pede o aviso de novo. */
-  noticeAccepted: Provider[];
+  /** O aviso de privacidade aceito, por provedor (e pelo Jev). Trocar de provedor pede o aviso de novo. */
+  noticeAccepted: (Provider | 'jev')[];
   /** Categoria por IA na revisão do banco: `ask` até a pessoa responder na primeira vez. */
   bankCategory: 'ask' | 'on' | 'off';
   /** Guarda o conteúdo enviado e recebido no registro. */
@@ -64,12 +64,30 @@ export function writeSettings(ctx: Ctx, settings: AiSettings) {
     .run();
 }
 
-export const isLocal = (provider: Provider | null) => provider === 'ollama';
+const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
+
+/** Local é o Ollama neste computador. Um Ollama em outro endereço conta como nuvem. */
+export function isLocal(settings: Pick<AiSettings, 'provider' | 'baseUrl'>) {
+  if (settings.provider !== 'ollama') return false;
+  if (!settings.baseUrl) return true;
+  try {
+    return LOOPBACK.has(new URL(settings.baseUrl).hostname);
+  } catch {
+    return false;
+  }
+}
 
 /** O modelo local lê tudo: nada sai da máquina. */
 export function allowedAreas(settings: AiSettings): Area[] {
-  if (isLocal(settings.provider)) return [...AREAS];
+  if (isLocal(settings)) return [...AREAS];
   return AREAS.filter((a) => settings.areas[a]);
+}
+
+/** O Ollama atende em `/v1`; quem digita o endereço quase sempre esquece. */
+export function normalizeOllamaUrl(url: string | null) {
+  if (!url) return null;
+  const trimmed = url.replace(/\/+$/, '');
+  return /\/v1$/.test(trimmed) ? trimmed : `${trimmed}/v1`;
 }
 
 export const needsKey = (provider: Provider) => provider !== 'ollama';

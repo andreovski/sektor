@@ -7,7 +7,7 @@ import { parse } from '../finance';
 
 import { pendingForAi, suggestCategories } from './bank-category';
 import { generateInsight, getInsight, INSIGHTS, type InsightKind } from './insights';
-import { hasJev } from './jev';
+import { hasJev, jevUsable } from './jev';
 import { OLLAMA_URL, SUGGESTED_MODELS } from './providers';
 import { ask, isReady } from './run';
 import { aiCalls } from './schema';
@@ -15,6 +15,7 @@ import {
   AREAS,
   isLocal,
   needsKey,
+  normalizeOllamaUrl,
   PROVIDERS,
   type Provider,
   readKey,
@@ -29,7 +30,7 @@ const updateSchema = z.object({
   baseUrl: z
     .string()
     .trim()
-    .max(300)
+    .max(300, 'Endereço longo demais.')
     .refine((v) => v === '' || /^https?:\/\//.test(v), 'Use um endereço http:// ou https://.')
     .nullable()
     .optional(),
@@ -63,10 +64,12 @@ export function status(ctx: AppCtx) {
     !settings.provider || !needsKey(settings.provider) || keys[settings.provider as keyof typeof keys];
   return {
     ...settings,
-    local: isLocal(settings.provider),
+    local: isLocal(settings),
     ready: isReady(settings) && keyOk,
     keys,
     jev: hasJev(ctx),
+    /** O Jev só entra com o aviso aceito e Finanças liberada. */
+    jevReady: jevUsable(ctx),
     suggestedModels: SUGGESTED_MODELS,
     ollamaUrl: OLLAMA_URL,
     bankPending: pendingForAi(ctx),
@@ -100,7 +103,9 @@ function calls(ctx: AppCtx, limit = 50) {
     totals.set(row.provider, total);
   }
   return {
-    month: [...totals.entries()].map(([provider, total]) => ({ provider, ...total })),
+    month: settings.devMode
+      ? [...totals.entries()].map(([provider, total]) => ({ provider, ...total }))
+      : [],
     rows: rows.slice(0, Math.min(limit, 200)).map((row) => ({
       id: row.id,
       createdAt: row.createdAt,
@@ -169,7 +174,7 @@ export const handlers = (ctx: AppCtx) => ({
       ...settings,
       ...body,
       areas: { ...settings.areas, ...body.areas },
-      baseUrl: body.baseUrl === undefined ? settings.baseUrl : body.baseUrl || null,
+      baseUrl: body.baseUrl === undefined ? settings.baseUrl : normalizeOllamaUrl(body.baseUrl || null),
     };
     // Trocar de provedor sem dizer o modelo deixa o modelo em branco: o do outro não serve.
     if (body.provider !== undefined && body.provider !== settings.provider && body.model === undefined) {
@@ -178,8 +183,8 @@ export const handlers = (ctx: AppCtx) => ({
     writeSettings(ctx, next);
     return status(ctx);
   },
-  'ai.acceptNotice': ({ provider }: { provider: Provider }) => {
-    if (!PROVIDERS.includes(provider)) throw new AppError(400, 'Provedor inválido.');
+  'ai.acceptNotice': ({ provider }: { provider: Provider | 'jev' }) => {
+    if (provider !== 'jev' && !PROVIDERS.includes(provider)) throw new AppError(400, 'Provedor inválido.');
     const settings = readSettings(ctx);
     if (!settings.noticeAccepted.includes(provider)) {
       writeSettings(ctx, { ...settings, noticeAccepted: [...settings.noticeAccepted, provider] });

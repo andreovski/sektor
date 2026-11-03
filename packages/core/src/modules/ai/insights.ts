@@ -74,7 +74,8 @@ function weeklyPayload(ctx: Ctx, key: string | undefined, areas: Area[]): Payloa
     data.tarefasConcluidas = pair(now.totals.tasks, before.totals.tasks);
     used.push('tasks');
   }
-  if (has('focus')) {
+  // Quem não usa o Foco teria zeros mandados toda semana.
+  if (has('focus') && (now.totals.focusSeconds > 0 || before.totals.focusSeconds > 0)) {
     data.minutosDeFoco = pair(
       Math.round(now.totals.focusSeconds / 60),
       Math.round(before.totals.focusSeconds / 60)
@@ -155,8 +156,16 @@ function payloadOf(ctx: AppCtx, kind: InsightKind, period: string | undefined) {
   return kind === 'weekly' ? weeklyPayload(ctx, period, areas) : financePayload(ctx, period, areas);
 }
 
-const fingerprintOf = (payload: Payload) =>
-  createHash('sha256').update(JSON.stringify(payload)).digest('hex').slice(0, 16);
+/** Campos de data que mudam todo dia sem os números mudarem: ficam fora da comparação. */
+const VOLATILE = new Set(['hoje', 'diaDeHojeNoMesCorrente']);
+
+const fingerprintOf = (payload: Payload) => {
+  const data = Object.fromEntries(Object.entries(payload.data).filter(([key]) => !VOLATILE.has(key)));
+  return createHash('sha256')
+    .update(JSON.stringify({ areas: payload.areas, data }))
+    .digest('hex')
+    .slice(0, 16);
+};
 
 const findSaved = (ctx: Ctx, kind: InsightKind, period: string) =>
   ctx.db
@@ -215,14 +224,15 @@ export async function generateInsight(
     fingerprint: fingerprintOf(payload),
     updatedAt: Date.now(),
   };
-  const saved = findSaved(ctx, kind, payload.period);
-  if (saved) {
-    ctx.db.update(aiInsights).set(values).where(eq(aiInsights.id, saved.id)).run();
-  } else {
-    ctx.db
-      .insert(aiInsights)
-      .values({ ...stamp(), feature: kind, period: payload.period, ...values })
-      .run();
-  }
+  // Dois "Gerar" ao mesmo tempo: vale o último.
+  ctx.db
+    .insert(aiInsights)
+    .values({ ...stamp(), feature: kind, period: payload.period, ...values })
+    .onConflictDoUpdate({
+      target: [aiInsights.feature, aiInsights.period],
+      targetWhere: sql`deleted_at IS NULL`,
+      set: values,
+    })
+    .run();
   return getInsight(ctx, kind, payload.period);
 }
