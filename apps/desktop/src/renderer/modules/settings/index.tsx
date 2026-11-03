@@ -1,12 +1,22 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Settings } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useNavigate, useSearch } from '@tanstack/react-router';
+import {
+  CalendarSync,
+  DatabaseBackup,
+  Info,
+  type LucideIcon,
+  Palette,
+  Settings,
+  UserRound,
+} from 'lucide-react';
+import { type ComponentType, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
 import { useRpc, useRpcMutation } from '../../lib/rpc';
 import {
   Button,
   Card,
+  cn,
   Dialog,
   Field,
   Input,
@@ -219,30 +229,118 @@ function About() {
   );
 }
 
+const GROUPS: {
+  label: string;
+  items: {
+    value: string;
+    label: string;
+    icon: LucideIcon;
+    description: string;
+    panel: ComponentType;
+  }[];
+}[] = [
+  {
+    label: 'Conta',
+    items: [
+      {
+        value: 'perfil',
+        label: 'Perfil',
+        icon: UserRound,
+        description: 'Como o app chama você e em que horário ele trabalha.',
+        panel: Profile,
+      },
+      {
+        value: 'aparencia',
+        label: 'Aparência',
+        icon: Palette,
+        description: 'Modo claro ou escuro e a paleta de cores.',
+        panel: Appearance,
+      },
+    ],
+  },
+  {
+    label: 'Integrações',
+    items: [
+      {
+        value: 'google',
+        label: 'Google',
+        icon: CalendarSync,
+        description: 'Seus calendários e tarefas do Google aqui dentro.',
+        panel: GoogleSettings,
+      },
+    ],
+  },
+  {
+    label: 'Dados',
+    items: [
+      {
+        value: 'backup',
+        label: 'Backup',
+        icon: DatabaseBackup,
+        description: 'Cópias cifradas automáticas e restauração.',
+        panel: Backup,
+      },
+    ],
+  },
+  {
+    label: 'Sistema',
+    items: [
+      {
+        value: 'sobre',
+        label: 'Sobre',
+        icon: Info,
+        description: 'Onde seus dados ficam e a versão do app.',
+        panel: About,
+      },
+    ],
+  },
+];
+
 function SettingsPage() {
+  const { secao } = useSearch({ strict: false }) as { secao?: string };
+  const navigate = useNavigate();
+  const items = GROUPS.flatMap((group) => group.items);
+  const current = items.find((item) => item.value === secao) ?? items[0]!;
+  const Panel = current.panel;
+
   return (
-    <div className="flex max-w-[640px] flex-col gap-6">
+    <div>
       <PageHeader icon={Settings} title="Ajustes" />
-      <section>
-        <SectionLabel>Você</SectionLabel>
-        <Profile />
-      </section>
-      <section>
-        <SectionLabel>Aparência</SectionLabel>
-        <Appearance />
-      </section>
-      <section>
-        <SectionLabel>Google</SectionLabel>
-        <GoogleSettings />
-      </section>
-      <section>
-        <SectionLabel>Backup</SectionLabel>
-        <Backup />
-      </section>
-      <section>
-        <SectionLabel>Sobre</SectionLabel>
-        <About />
-      </section>
+      <div className="grid grid-cols-[200px_minmax(0,640px)] items-start gap-10">
+        <aside aria-label="Seções dos ajustes" className="sticky top-8 flex flex-col gap-5">
+          {GROUPS.map((group) => (
+            <nav key={group.label} aria-label={group.label}>
+              <SectionLabel>{group.label}</SectionLabel>
+              <div className="flex flex-col gap-0.5">
+                {group.items.map(({ value, label, icon: Icon }) => (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-current={value === current.value ? 'page' : undefined}
+                    onClick={() =>
+                      void navigate({ to: '/ajustes', search: { secao: value } as never, replace: true })
+                    }
+                    className={cn(
+                      'flex h-8 items-center gap-2 rounded-control px-2 text-left text-sm transition-colors',
+                      value === current.value
+                        ? 'bg-active text-foreground'
+                        : 'text-muted hover:bg-hover hover:text-foreground'
+                    )}
+                  >
+                    <Icon size={15} />
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </nav>
+          ))}
+        </aside>
+        <section key={current.value} aria-label={current.label} className="tab-panel">
+          <h2 className="text-lg font-semibold">{current.label}</h2>
+          <p className="mb-4 text-sm text-muted">{current.description}</p>
+          <Panel />
+        </section>
+      </div>
     </div>
   );
 }

@@ -70,7 +70,7 @@ await test('1. janela não navega para file:///tmp/x.html', async () => {
   });
   await page.waitForTimeout(500);
   assert.equal(page.url(), start);
-  await go(page, '/ajustes');
+  await go(page, '/ajustes?secao=backup');
   await page.getByText('Pasta de backup').first().waitFor({ timeout: 5000 });
 
   // O caminho que o will-navigate não pega: mesmo assim a página de fora não recebe nada.
@@ -225,14 +225,16 @@ await test('8/9. ajustes: nome no Início, backup com senha uma vez', async () =
   recovery.dir = dir;
   recovery.folder = folder;
   const { app, page } = await launch(dir);
-  await go(page, '/ajustes');
+  await go(page, '/ajustes?secao=sobre');
   await page.getByText('Pasta de dados').first().waitFor({ timeout: 5000 });
   await page.getByTestId('data-dir').getByText(dir).waitFor();
+  await go(page, '/ajustes');
   await page.getByLabel('Seu nome').fill('André');
   await page.getByLabel('Fuso horário').selectOption('Asia/Tokyo');
   await page.getByRole('button', { name: 'Salvar' }).click();
   await page.getByText('Ajustes salvos.').waitFor();
 
+  await go(page, '/ajustes?secao=backup');
   await stubOpen(app, folder);
   await page.getByRole('button', { name: 'Escolher pasta' }).click();
   const code = page.getByTestId('recovery-password');
@@ -264,6 +266,7 @@ await test('8. restaura na mesma máquina: confirma, reinicia e guarda a base an
   await page.getByLabel('Seu nome').fill('Depois do backup');
   await page.getByRole('button', { name: 'Salvar' }).click();
   await page.getByText('Ajustes salvos.').waitFor();
+  await go(page, '/ajustes?secao=backup');
   await stubOpen(app, recovery.file);
   await page.getByRole('button', { name: 'Restaurar de um arquivo' }).click();
   const gone = closed(app);
@@ -287,7 +290,7 @@ await test('8. restaura na mesma máquina: confirma, reinicia e guarda a base an
 await test('8. restaura em outra máquina com a senha', async () => {
   const dir = newDir();
   const { app, page } = await launch(dir);
-  await go(page, '/ajustes');
+  await go(page, '/ajustes?secao=backup');
   await stubOpen(app, recovery.file);
   await page.getByRole('button', { name: 'Restaurar de um arquivo' }).click();
   await page.getByRole('button', { name: 'Restaurar e reiniciar' }).click();
@@ -302,7 +305,7 @@ await test('8. restaura em outra máquina com a senha', async () => {
 
   const again = await launch(dir);
   await again.page.getByRole('heading', { name: /, André$/ }).waitFor({ timeout: 5000 });
-  await go(again.page, '/ajustes');
+  await go(again.page, '/ajustes?secao=backup');
   await again.page.getByText('Nenhuma. Sem pasta').waitFor({ timeout: 5000 });
   await again.app.close();
 });
@@ -334,7 +337,7 @@ await test('8. cofre perdeu a chave: a tela de erro restaura com a senha', async
 
 await test('Google: conectar abre o navegador, confere o state e cancela fechando a porta', async () => {
   const { app, page } = await launch(newDir());
-  await go(page, '/ajustes');
+  await go(page, '/ajustes?secao=google');
   await page.getByRole('heading', { name: 'Ajustes' }).waitFor({ timeout: 5000 });
   const button = page.getByRole('button', { name: 'Conectar conta Google' });
   await page
@@ -479,7 +482,7 @@ await test('arquivo: o que estava em claro é cifrado ao abrir, e continua abrin
 
   const folder = newDir();
   vault.folder = folder;
-  await go(page, '/ajustes');
+  await go(page, '/ajustes?secao=backup');
   await stubOpen(app, folder);
   await page.getByRole('button', { name: 'Escolher pasta' }).click();
   const code = page.getByTestId('recovery-password');
@@ -496,7 +499,7 @@ await test('arquivo: o que estava em claro é cifrado ao abrir, e continua abrin
 
 async function restoreElsewhere(dir) {
   const { app, page } = await launch(dir);
-  await go(page, '/ajustes');
+  await go(page, '/ajustes?secao=backup');
   await page.getByRole('button', { name: 'Restaurar de um arquivo' }).waitFor({ timeout: 5000 });
   await stubOpen(app, vault.backup);
   await page.getByRole('button', { name: 'Restaurar de um arquivo' }).click();
