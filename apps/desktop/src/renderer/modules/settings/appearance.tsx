@@ -294,6 +294,7 @@ export function Appearance() {
         ))}
       </div>
       <Wallpapers />
+      <span className="border-t border-line pt-4 text-sm font-medium">Paleta de cores</span>
       <div role="radiogroup" aria-label="Paleta" className="grid grid-cols-3 gap-3">
         {'tones' in wallpaper && (
           <button
