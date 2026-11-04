@@ -251,53 +251,58 @@ export function MedsTab() {
   const day = useRpc('health.day', { date });
   const meds = useRpc('health.medList');
   return (
-    <div className="grid items-start gap-4 lg:grid-cols-[360px_1fr]">
-      <Card>
-        <CardHeader icon={Pill} title={`Doses · ${dayLabel(date)}`} />
-        <div className="mb-3">
-          <DayStepper date={date} onChange={setDate} />
-        </div>
-        {day.data ? (
-          <DoseList
-            day={day.data}
-            empty={<p className="py-4 text-center text-sm text-muted">Nenhuma dose neste dia.</p>}
+    <div className="flex flex-col gap-3">
+      {/* O cabeçalho fica por cima das duas colunas, para os cards começarem na mesma altura. */}
+      <div className="flex items-center justify-between">
+        {meds.data?.overall.percent != null ? (
+          <Stat
+            label="Aderência geral em 30 dias"
+            value={`${meds.data.overall.percent}%`}
+            hint={`${meds.data.overall.taken} de ${meds.data.overall.expected} doses`}
           />
         ) : (
-          <Loading />
+          <SectionLabel>Remédios e suplementos</SectionLabel>
         )}
-      </Card>
-      <div>
-        <div className="mb-3 flex items-center justify-between">
-          {meds.data?.overall.percent != null ? (
-            <Stat
-              label="Aderência geral em 30 dias"
-              value={`${meds.data.overall.percent}%`}
-              hint={`${meds.data.overall.taken} de ${meds.data.overall.expected} doses`}
+        <Button variant="primary" onClick={() => setEditing('new')}>
+          <Plus size={15} /> Novo
+        </Button>
+      </div>
+      <div className="grid items-start gap-4 lg:grid-cols-[360px_1fr]">
+        <Card>
+          <CardHeader icon={Pill} title={`Doses · ${dayLabel(date)}`} />
+          <div className="mb-3">
+            <DayStepper date={date} onChange={setDate} />
+          </div>
+          {day.data ? (
+            <DoseList
+              day={day.data}
+              empty={
+                <p className="py-4 text-center text-sm text-muted">Nenhuma dose neste dia.</p>
+              }
             />
           ) : (
-            <SectionLabel>Remédios e suplementos</SectionLabel>
+            <Loading />
           )}
-          <Button variant="primary" onClick={() => setEditing('new')}>
-            <Plus size={15} /> Novo
-          </Button>
+        </Card>
+        <div>
+          {!meds.data ? (
+            <Loading />
+          ) : meds.data.items.length === 0 ? (
+            <Card>
+              <EmptyState
+                icon={Pill}
+                title="Nada cadastrado"
+                text="Cadastre um remédio ou suplemento para acompanhar as doses."
+              />
+            </Card>
+          ) : (
+            <div className="grid gap-3 md:grid-cols-2">
+              {meds.data.items.map((med) => (
+                <MedCard key={med.id} med={med} onEdit={() => setEditing(med)} />
+              ))}
+            </div>
+          )}
         </div>
-        {!meds.data ? (
-          <Loading />
-        ) : meds.data.items.length === 0 ? (
-          <Card>
-            <EmptyState
-              icon={Pill}
-              title="Nada cadastrado"
-              text="Cadastre um remédio ou suplemento para acompanhar as doses."
-            />
-          </Card>
-        ) : (
-          <div className="grid gap-3 md:grid-cols-2">
-            {meds.data.items.map((med) => (
-              <MedCard key={med.id} med={med} onEdit={() => setEditing(med)} />
-            ))}
-          </div>
-        )}
       </div>
       {editing && (
         <MedForm med={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />
