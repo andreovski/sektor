@@ -1,7 +1,15 @@
 import { parseCapture } from '@sektor/core/src/modules/tasks/capture';
 import { TASK_PRIORITY_LABELS } from '@sektor/core/src/modules/tasks/contract';
 import { relativeDay } from '@sektor/core/src/modules/tasks/logic';
-import { CalendarDays, CornerDownLeft, Inbox } from 'lucide-react';
+import {
+  CalendarDays,
+  CheckSquare,
+  CornerDownLeft,
+  Inbox,
+  type LucideIcon,
+  Sparkles,
+  StickyNote,
+} from 'lucide-react';
 import { type FormEvent, type ReactNode, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -23,10 +31,10 @@ const BOX =
   'relative w-[760px] max-w-full rounded-[22px] border border-line-strong bg-raised/90 px-4 pb-3 text-left shadow-popover backdrop-blur focus-within:border-primary/50';
 
 type Mode = 'task' | 'note' | 'agent';
-const MODES: { id: Mode; label: string; module: ModuleId }[] = [
-  { id: 'task', label: 'Tarefa', module: 'tasks' },
-  { id: 'note', label: 'Nota', module: 'projects' },
-  { id: 'agent', label: 'Agente', module: 'assistant' },
+const MODES: { id: Mode; label: string; icon: LucideIcon; module: ModuleId }[] = [
+  { id: 'task', label: 'Tarefa', icon: CheckSquare, module: 'tasks' },
+  { id: 'note', label: 'Nota', icon: StickyNote, module: 'projects' },
+  { id: 'agent', label: 'Agente', icon: Sparkles, module: 'assistant' },
 ];
 const MODE_KEY = 'sektor.home.capture';
 const NOTE_PROJECT_KEY = 'sektor.home.noteProject';
@@ -58,24 +66,41 @@ export function HomeCapture({ assistant }: { assistant: HomeAssistant }) {
     setChosen(next);
     write(MODE_KEY, next);
   };
+  // As abas andam como o dock: só o ícone, e a aberta mostra o nome.
   const tabs =
     modes.length > 1 ? (
-      <div role="tablist" aria-label="O que capturar" className="-mr-2 flex gap-4 border-b border-line">
-        {modes.map((m) => (
-          <button
-            key={m.id}
-            type="button"
-            role="tab"
-            aria-selected={m.id === mode}
-            onClick={() => pick(m.id)}
-            className={cn(
-              '-mb-px h-9 border-b-2 px-0.5 text-[13px] font-medium transition-colors',
-              m.id === mode ? 'border-primary text-foreground' : 'border-transparent text-muted hover:text-foreground'
-            )}
-          >
-            {m.label}
-          </button>
-        ))}
+      <div role="tablist" aria-label="O que capturar" className="-mr-2 flex gap-1 border-b border-line pt-2 pb-2">
+        {modes.map(({ id, label, icon: Icon }) => {
+          const active = id === mode;
+          return (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              aria-label={label}
+              title={label}
+              onClick={() => pick(id)}
+              className={cn(
+                'flex h-7 items-center rounded-full border px-2.5 text-[13px] transition-colors duration-200',
+                active
+                  ? 'border-primary/40 bg-primary/15 text-primary'
+                  : 'border-transparent text-muted hover:bg-hover hover:text-foreground'
+              )}
+            >
+              <Icon size={14} />
+              <span
+                aria-hidden={!active}
+                className={cn(
+                  'grid transition-[grid-template-columns,opacity,margin] duration-300 ease-[var(--ease-standard)] motion-reduce:transition-none',
+                  active ? 'ml-1.5 grid-cols-[1fr] opacity-100' : 'grid-cols-[0fr] opacity-0'
+                )}
+              >
+                <span className="overflow-hidden whitespace-nowrap">{label}</span>
+              </span>
+            </button>
+          );
+        })}
       </div>
     ) : null;
   if (mode === 'task') return <CaptureBox tabs={tabs} />;
