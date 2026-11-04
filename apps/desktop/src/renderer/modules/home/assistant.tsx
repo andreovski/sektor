@@ -1,11 +1,12 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { ArrowUp, Check, ChevronDown, Flag, History, ImagePlus, Mic, PenSquare, RotateCcw, X } from 'lucide-react';
+import { ArrowUp, Check, ChevronDown, Flag, History, ImagePlus, Mic, PenSquare, RotateCcw, Square, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { money } from '../../lib/format';
 import { type PreparedImage, prepareImage } from '../../lib/image';
+import { useVoice, type VoiceState } from '../../lib/voice/use-voice';
 import { call, useRpc } from '../../lib/rpc';
 import { Button, cn, Select } from '../../ui';
 import { CategorySelect, useAccounts, useCategories } from '../finance/parts';
@@ -571,6 +572,38 @@ export function useHomeAssistant() {
 
 type HomeAssistant = ReturnType<typeof useHomeAssistant>;
 
+/** No lugar do campo enquanto a voz grava, baixa o modelo ou transcreve. */
+function VoiceStatus({ state }: { state: VoiceState }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (state.step !== 'recording') return;
+    const timer = setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(timer);
+  }, [state.step]);
+  let label = '';
+  if (state.step === 'recording') {
+    const seconds = Math.max(0, Math.floor((now - state.startedAt) / 1000));
+    label = `Ouvindo… ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')} · clique para enviar, Esc cancela`;
+  } else if (state.step === 'loading') {
+    label =
+      state.progress === null
+        ? 'Baixando o modelo de voz…'
+        : `Baixando o modelo de voz… ${Math.round(state.progress * 100)}% (só na primeira vez)`;
+  } else if (state.step === 'transcribing') {
+    label = 'Transcrevendo no seu computador…';
+  }
+  return (
+    <div role="status" className="flex h-11 min-w-0 flex-1 items-center gap-2.5 text-[15px] text-muted">
+      {state.step === 'recording' ? (
+        <span aria-hidden className="size-2.5 animate-pulse rounded-full bg-danger" />
+      ) : (
+        <Dots />
+      )}
+      <span className="truncate">{label}</span>
+    </div>
+  );
+}
+
 /** O campo do assistente: no meio da capa fechado, preso embaixo com a conversa aberta. */
 export function AssistantInput({ assistant, docked }: { assistant: HomeAssistant; docked?: boolean }) {
   const [text, setText] = useState('');
@@ -581,6 +614,18 @@ export function AssistantInput({ assistant, docked }: { assistant: HomeAssistant
   const { model, models } = assistant;
   const blocked = !model || Boolean(model.problem);
   const canSend = Boolean(text.trim() || images.length);
+  const voice = useVoice(
+    (spoken) => {
+      const sent = images;
+      setImages([]);
+      assistant.send(spoken, { images: sent, source: 'voice' }).catch(() => {
+        setText(spoken);
+        setImages(sent);
+      });
+    },
+    (message) => toast.error(message)
+  );
+  const listening = voice.state.step !== 'idle' && voice.state.step !== 'confirm';
   const submit = () => {
     const value = text;
     const sent = images;
@@ -613,6 +658,12 @@ export function AssistantInput({ assistant, docked }: { assistant: HomeAssistant
   useEffect(() => {
     if (docked) input.current?.focus();
   }, [docked]);
+  useEffect(() => {
+    if (voice.state.step !== 'recording') return;
+    const onKey = (event: KeyboardEvent) => event.key === 'Escape' && voice.cancel();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [voice]);
 
   return (
     <div
@@ -662,8 +713,25 @@ export function AssistantInput({ assistant, docked }: { assistant: HomeAssistant
           ))}
         </div>
       )}
+      {voice.state.step === 'confirm' && (
+        <div className="flex flex-wrap items-center gap-2 border-b border-line pt-1 pb-2.5 text-[13px] text-muted">
+          <span className="min-w-0 flex-1">
+            A voz é transcrita pelo Whisper no seu Mac: o áudio não sai daqui. Na primeira vez, ele baixa o
+            modelo (uns 560 MB).
+          </span>
+          <Button size="sm" variant="primary" onClick={voice.accept}>
+            Baixar e falar
+          </Button>
+          <Button size="sm" variant="ghost" onClick={voice.cancel}>
+            Agora não
+          </Button>
+        </div>
+      )}
       <div className="flex items-center gap-3">
         <span aria-hidden className="text-xl text-primary">›</span>
+        {listening ? (
+          <VoiceStatus state={voice.state} />
+        ) : (
         <input
           ref={input}
           aria-label="Peça algo ao assistente"
@@ -688,6 +756,7 @@ export function AssistantInput({ assistant, docked }: { assistant: HomeAssistant
           style={{ outline: 'none' }}
           className="h-11 min-w-0 flex-1 bg-transparent text-[17px] placeholder:text-subtle disabled:opacity-70"
         />
+        )}
         <input
           ref={picker}
           type="file"
@@ -704,7 +773,7 @@ export function AssistantInput({ assistant, docked }: { assistant: HomeAssistant
           aria-label="Anexar foto"
           title="Anexar foto (também dá para colar ou arrastar)"
           onClick={() => picker.current?.click()}
-          disabled={blocked || assistant.busy || images.length >= MAX_IMAGES}
+          disabled={blocked || assistant.busy || listening || images.length >= MAX_IMAGES}
           className="grid size-9 place-items-center rounded-[12px] text-muted transition-colors hover:bg-hover hover:text-foreground disabled:opacity-40"
         >
           <ImagePlus size={17} />
@@ -722,12 +791,18 @@ export function AssistantInput({ assistant, docked }: { assistant: HomeAssistant
         ) : (
           <button
             type="button"
-            aria-label="Falar (em breve)"
-            title="Falar: chega na etapa de voz"
-            disabled
-            className="grid size-11 place-items-center rounded-[14px] border border-primary/40 bg-primary/15 text-primary opacity-60"
+            aria-label={voice.state.step === 'recording' ? 'Parar e enviar' : 'Falar'}
+            title={voice.state.step === 'recording' ? 'Parar e enviar (Esc cancela)' : 'Falar'}
+            onClick={voice.toggle}
+            disabled={blocked || assistant.busy || voice.state.step === 'loading' || voice.state.step === 'transcribing'}
+            className={cn(
+              'grid size-11 place-items-center rounded-[14px] border transition-colors disabled:opacity-50',
+              voice.state.step === 'recording'
+                ? 'border-danger/60 bg-danger/15 text-danger'
+                : 'border-primary/40 bg-primary/15 text-primary hover:bg-primary/25'
+            )}
           >
-            <Mic size={18} />
+            {voice.state.step === 'recording' ? <Square size={15} fill="currentColor" /> : <Mic size={18} />}
           </button>
         )}
       </div>

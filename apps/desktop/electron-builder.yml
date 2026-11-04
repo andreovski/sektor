@@ -11,6 +11,8 @@ mac:
   target: dir
   identity: '-'
   hardenedRuntime: false
+  extendInfo:
+    NSMicrophoneUsageDescription: O Sektor usa o microfone para você falar com o assistente. O áudio é transcrito no seu computador.
 electronFuses:
   runAsNode: false
   enableNodeOptionsEnvironmentVariable: false
