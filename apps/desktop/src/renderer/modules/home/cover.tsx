@@ -1,5 +1,6 @@
 import { type CSSProperties, useEffect, useRef } from 'react';
 
+import { useWallpaper } from '../../lib/theme';
 import { cn } from '../../ui';
 
 const CELL = 10;
@@ -112,6 +113,7 @@ function PixelField() {
  * que tem 8 px no tema; daí os 4 px de cada lado.
  */
 export function Cover({ className, style }: { className?: string; style?: CSSProperties }) {
+  const wallpaper = useWallpaper();
   return (
     <div
       aria-hidden
@@ -122,7 +124,15 @@ export function Cover({ className, style }: { className?: string; style?: CSSPro
         className
       )}
     >
-      <PixelField />
+      {'src' in wallpaper ? (
+        <>
+          <img src={wallpaper.src} alt="" className="absolute inset-0 size-full object-cover" />
+          {/* Véu na cor do fundo: a saudação e a captura leem bem em qualquer foto. */}
+          <div className="cover-scrim absolute inset-0" />
+        </>
+      ) : (
+        <PixelField />
+      )}
     </div>
   );
 }

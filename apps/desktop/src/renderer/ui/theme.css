@@ -468,3 +468,10 @@ html:active-view-transition-type(page-back) {
   padding: 0 0 1rem;
   font-size: 0.875rem;
 }
+
+/* Véu sobre o wallpaper da capa, mais forte no centro, onde ficam a saudação e a captura. */
+.cover-scrim {
+  background:
+    radial-gradient(50% 60% at 50% 42%, color-mix(in oklch, var(--background) 45%, transparent), transparent),
+    color-mix(in oklch, var(--background) 30%, transparent);
+}
