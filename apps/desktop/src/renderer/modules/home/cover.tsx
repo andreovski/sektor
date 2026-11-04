@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { type CSSProperties, useEffect, useRef } from 'react';
 
 import { cn } from '../../ui';
 
@@ -111,10 +111,11 @@ function PixelField() {
  * Sai da largura de `main` até a da área de rolagem. 100vw conta a barra de rolagem,
  * que tem 8 px no tema; daí os 4 px de cada lado.
  */
-export function Cover({ className }: { className?: string }) {
+export function Cover({ className, style }: { className?: string; style?: CSSProperties }) {
   return (
     <div
       aria-hidden
+      style={style}
       className={cn(
         'pointer-events-none absolute top-0 left-1/2 h-[430px] w-[calc(100vw-8px)] -translate-x-1/2 overflow-hidden',
         '[mask-image:linear-gradient(to_bottom,black_45%,transparent)]',

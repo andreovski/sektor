@@ -1,10 +1,12 @@
-import { type LucideIcon, Monitor, Moon, Sun } from 'lucide-react';
+import { Layers, type LucideIcon, Monitor, Moon, Sun } from 'lucide-react';
 
 import {
   PALETTES,
+  setCoverEverywhere,
   setPalette,
   setTheme,
   type ThemeChoice,
+  useCoverEverywhere,
   usePalette,
   useThemeChoice,
 } from '../../lib/theme';
@@ -57,6 +59,7 @@ function HomePreview() {
 export function Appearance() {
   const theme = useThemeChoice();
   const palette = usePalette();
+  const coverEverywhere = useCoverEverywhere();
   return (
     <Card className="flex flex-col gap-4">
       <div role="radiogroup" aria-label="Tema" className="grid grid-cols-3 gap-3">
@@ -106,6 +109,21 @@ export function Appearance() {
           </button>
         ))}
       </div>
+      <label className="flex items-center gap-3 border-t border-line pt-4 text-sm">
+        <Layers size={16} className="shrink-0 text-muted" />
+        <span className="flex-1">
+          Capa da Início em todos os módulos
+          <span className="block text-xs text-subtle">
+            Os pixels do topo seguem pelas outras telas, mais apagados.
+          </span>
+        </span>
+        <input
+          type="checkbox"
+          data-testid="cover-everywhere"
+          checked={coverEverywhere}
+          onChange={(event) => setCoverEverywhere(event.target.checked)}
+        />
+      </label>
     </Card>
   );
 }

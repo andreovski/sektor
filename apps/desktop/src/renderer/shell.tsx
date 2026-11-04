@@ -17,6 +17,8 @@ import {
 } from 'lucide-react';
 
 import { type ModuleId, useModules } from './lib/modules';
+import { useCoverEverywhere } from './lib/theme';
+import { Cover } from './modules/home/cover';
 import { Button, cn, EmptyState, ModuleIcon } from './ui';
 
 const ITEMS: { to: string; label: string; icon: LucideIcon; module?: ModuleId }[] = [
@@ -96,6 +98,24 @@ function Dock() {
   );
 }
 
+/** Opacidade da capa fora da Início: presente, mas atrás do conteúdo. */
+const TRAIL_OPACITY = 0.2;
+
+/**
+ * A capa da Início que segue pelos outros módulos, atenuada. Na Início fica invisível e a
+ * própria tela mostra a dela (que encolhe com o assistente); a troca é um cruzamento de opacidade.
+ */
+function CoverTrail({ home }: { home: boolean }) {
+  const on = useCoverEverywhere();
+  if (!on) return null;
+  return (
+    <Cover
+      className="transition-opacity duration-500 ease-[var(--ease-standard)] motion-reduce:transition-none"
+      style={{ opacity: home ? 0 : TRAIL_OPACITY }}
+    />
+  );
+}
+
 /** Link antigo ou de outro módulo para um módulo desligado: diz onde religar em vez de abrir. */
 function ModuleOff({ label, icon }: { label: string; icon: LucideIcon }) {
   const navigate = useNavigate();
@@ -127,8 +147,9 @@ export function Shell() {
   // A nota em pop-up é uma janela à parte: sem dock e sem a moldura da página.
   if (path.startsWith('/nota-fixa/')) return <Outlet />;
   return (
-    <div ref={scroller} className="h-full overflow-y-auto">
-      <main className="page mx-auto max-w-[1180px] px-8 pt-8 pb-28">
+    <div ref={scroller} className="relative h-full overflow-y-auto">
+      <CoverTrail home={path === '/'} />
+      <main className="page relative mx-auto max-w-[1180px] px-8 pt-8 pb-28">
         <ModuleIcon.Provider value={current?.icon ?? null}>
           {current && !isOn(current.module) ? (
             <ModuleOff label={current.label} icon={current.icon} />

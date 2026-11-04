@@ -18,6 +18,7 @@ export type Palette = (typeof PALETTES)[number]['value'];
 
 const THEME_KEY = 'sektor-theme';
 const PALETTE_KEY = 'sektor-palette';
+const COVER_KEY = 'sektor-cover-everywhere';
 
 function read(key: string) {
   try {
@@ -43,6 +44,7 @@ const systemDark = window.matchMedia('(prefers-color-scheme: dark)');
 const resolved = (): Theme => (choice === 'system' ? (systemDark.matches ? 'dark' : 'light') : choice);
 let theme = resolved();
 let palette: Palette = savedPalette?.value ?? 'floresta';
+let coverEverywhere = read(COVER_KEY) === 'on';
 const listeners = new Set<() => void>();
 
 function paint() {
@@ -84,6 +86,14 @@ export function setPalette(next: Palette) {
   repaint();
 }
 
+/** Sem troca de tema: a capa entra e sai com a própria transição de opacidade. */
+export function setCoverEverywhere(next: boolean) {
+  if (next === coverEverywhere) return;
+  coverEverywhere = next;
+  write(COVER_KEY, next ? 'on' : 'off');
+  listeners.forEach((listener) => listener());
+}
+
 function subscribe(listener: () => void) {
   listeners.add(listener);
   return () => listeners.delete(listener);
@@ -93,3 +103,4 @@ function subscribe(listener: () => void) {
 export const useTheme = () => useSyncExternalStore(subscribe, () => theme);
 export const useThemeChoice = () => useSyncExternalStore(subscribe, () => choice);
 export const usePalette = () => useSyncExternalStore(subscribe, () => palette);
+export const useCoverEverywhere = () => useSyncExternalStore(subscribe, () => coverEverywhere);
