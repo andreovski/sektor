@@ -114,7 +114,7 @@ function Wallpapers() {
   return (
     <div className="flex flex-col gap-3">
       <span className="text-sm font-medium">Wallpaper da capa</span>
-      <div role="radiogroup" aria-label="Wallpaper" className="grid grid-cols-7 gap-2.5">
+      <div role="radiogroup" aria-label="Wallpaper" className="grid grid-cols-4 gap-3">
         <button
           type="button"
           role="radio"

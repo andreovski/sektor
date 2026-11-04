@@ -2,6 +2,7 @@
 // a paleta "Do wallpaper" ser só mais um jogo de matizes em `theme.css`.
 
 import horizonte from '../assets/wallpapers/horizonte.webp';
+import mar from '../assets/wallpapers/mar.webp';
 import noite from '../assets/wallpapers/noite.webp';
 import prisma from '../assets/wallpapers/prisma.webp';
 import revoada from '../assets/wallpapers/revoada.webp';
@@ -13,6 +14,8 @@ export interface Tones {
   accentC: number;
   secondH: number;
   secondC: number;
+  /** Luz média da imagem (0 a 1); foto escura no tema claro pede um véu mais forte atrás do texto. */
+  lightness?: number;
   /** Cores marcantes da imagem, da mais forte para a mais fraca, para sugerir a primária. */
   swatches: { l: number; c: number; h: number }[];
 }
@@ -31,6 +34,7 @@ export const PRESETS = [
   { id: 'noite', label: 'Noite', src: noite },
   { id: 'horizonte', label: 'Horizonte', src: horizonte },
   { id: 'prisma', label: 'Prisma', src: prisma },
+  { id: 'mar', label: 'Mar', src: mar },
 ] as const;
 
 const SAMPLE = 72;
@@ -80,12 +84,14 @@ export async function extractTones(src: string): Promise<Tones> {
   let tintA = 0;
   let tintB = 0;
   let chroma = 0;
+  let light = 0;
   let count = 0;
   for (let index = 0; index < data.length; index += 4) {
     const color = oklch(data[index]!, data[index + 1]!, data[index + 2]!);
     tintA += color.a;
     tintB += color.b;
     chroma += color.c;
+    light += color.l;
     count++;
     // Quase preto, quase branco ou cinza não dizem a cor da imagem.
     if (color.c < 0.035 || color.l < 0.22 || color.l > 0.95) continue;
@@ -121,6 +127,7 @@ export async function extractTones(src: string): Promise<Tones> {
     accentC: round(clamp(accent.c, 0.08, 0.17)),
     secondH: second.h,
     secondC: round(clamp(second.c, 0.07, 0.15)),
+    lightness: round(light / count, 2),
     swatches,
   };
 }

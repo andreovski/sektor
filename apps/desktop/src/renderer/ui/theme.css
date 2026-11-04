@@ -475,3 +475,19 @@ html:active-view-transition-type(page-back) {
     radial-gradient(50% 60% at 50% 42%, color-mix(in oklch, var(--background) 45%, transparent), transparent),
     color-mix(in oklch, var(--background) 30%, transparent);
 }
+/* No claro o véu é branco e lava as cores da foto: fica bem mais leve, só onde está o texto. */
+:root[data-theme='light'] .cover-scrim {
+  background: radial-gradient(
+    45% 50% at 50% 40%,
+    color-mix(in oklch, var(--background) 35%, transparent),
+    transparent
+  );
+}
+/* Foto escura no claro: o texto escuro precisa de um fundo claro atrás, só no miolo. */
+:root[data-theme='light'] .cover-scrim[data-dark] {
+  background: radial-gradient(
+    42% 46% at 50% 40%,
+    color-mix(in oklch, var(--background) 72%, transparent),
+    transparent
+  );
+}
