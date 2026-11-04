@@ -77,7 +77,7 @@ function Tag({ areas }: { areas: string[] }) {
   return (
     <span
       className={cn(
-        'rounded-control border-[1.5px] px-2 py-0.5 font-mono text-[11px] font-medium tracking-[0.08em]',
+        'rounded-control border-[1.5px] px-1.5 py-0.5 font-mono text-[10px] font-medium tracking-[0.08em]',
         tag.className
       )}
     >
@@ -157,8 +157,8 @@ function ProposalCard({
   const quiet = status === 'DISCARDED' || status === 'UNDONE';
 
   return (
-    <div className={cn('overflow-hidden rounded-[18px] border border-line bg-surface', quiet && 'opacity-60')}>
-      <div className="flex items-center justify-between border-b border-dashed border-line-strong px-5 py-3 font-mono text-[11px] tracking-[0.12em] text-subtle uppercase">
+    <div className={cn('max-w-[560px] overflow-hidden rounded-[14px] border border-line bg-surface', quiet && 'opacity-60')}>
+      <div className="flex items-center justify-between border-b border-dashed border-line-strong px-4 py-2 font-mono text-[10px] tracking-[0.12em] text-subtle uppercase">
         <span>{card.kind}</span>
         {badge && (
           <span className={cn('flex items-center gap-1', badge.className)}>
@@ -168,20 +168,20 @@ function ProposalCard({
           </span>
         )}
       </div>
-      <div className="flex flex-col gap-2.5 px-5 py-4">
+      <div className="flex flex-col gap-1.5 px-4 py-3">
         {card.amountCents != null ? (
-          <p className={cn('text-[26px] font-semibold tabular-nums', card.amountTone === 'income' ? 'text-success' : 'text-foreground')}>
+          <p className={cn('text-[20px] font-semibold tabular-nums', card.amountTone === 'income' ? 'text-success' : 'text-foreground')}>
             {money(card.amountCents)}
-            <span className="ml-3 align-middle text-base font-normal text-muted">{card.title}</span>
+            <span className="ml-2 align-middle text-sm font-normal text-muted">{card.title}</span>
           </p>
         ) : (
-          <p className="text-lg font-semibold">{card.title}</p>
+          <p className="text-[15px] font-semibold">{card.title}</p>
         )}
         {card.rows.map((row) => {
           const choosing = status === 'PENDING' && needs && row.value === 'Escolha antes de salvar';
           return (
-            <div key={row.label} className="grid grid-cols-[140px_minmax(0,1fr)] items-center gap-3 text-[15px]">
-              <span className="font-mono text-[11px] tracking-[0.12em] text-subtle uppercase">{row.label}</span>
+            <div key={row.label} className="grid grid-cols-[110px_minmax(0,1fr)] items-center gap-3 text-[13px]">
+              <span className="font-mono text-[10px] tracking-[0.12em] text-subtle uppercase">{row.label}</span>
               {choosing && row.label === 'Conta' ? (
                 <Select aria-label="Conta" value={accountId} onChange={(event) => setAccountId(event.target.value)}>
                   <option value="">Escolha a conta</option>
@@ -220,17 +220,17 @@ function ProposalCard({
                 type="button"
                 disabled={busy || missing}
                 onClick={() => void act('ai.proposal.apply')}
-                className="flex h-12 items-center justify-center gap-2 text-[15px] font-medium text-primary transition-colors hover:bg-hover disabled:opacity-50"
+                className="flex h-9 items-center justify-center gap-1.5 text-[13px] font-medium text-primary transition-colors hover:bg-hover disabled:opacity-50"
               >
-                <Check size={16} /> Salvar
+                <Check size={14} /> Salvar
               </button>
               <button
                 type="button"
                 disabled={busy}
                 onClick={() => void act('ai.proposal.discard')}
-                className="flex h-12 items-center justify-center gap-2 border-l border-line font-mono text-[12px] tracking-[0.12em] text-muted uppercase transition-colors hover:bg-hover"
+                className="flex h-9 items-center justify-center gap-1.5 border-l border-line font-mono text-[11px] tracking-[0.12em] text-muted uppercase transition-colors hover:bg-hover"
               >
-                <X size={14} /> Descartar
+                <X size={12} /> Descartar
               </button>
             </>
           ) : (
@@ -240,16 +240,16 @@ function ProposalCard({
                   type="button"
                   disabled={busy}
                   onClick={() => void act('ai.proposal.undo')}
-                  className="flex h-12 items-center justify-center gap-2 text-[15px] font-medium text-primary transition-colors hover:bg-hover"
+                  className="flex h-9 items-center justify-center gap-1.5 text-[13px] font-medium text-primary transition-colors hover:bg-hover"
                 >
-                  <RotateCcw size={15} /> Desfazer
+                  <RotateCcw size={13} /> Desfazer
                 </button>
               ) : (
-                <span className="flex h-12 items-center justify-center text-sm text-subtle">Sem desfazer</span>
+                <span className="flex h-9 items-center justify-center text-xs text-subtle">Sem desfazer</span>
               )}
               <Link
                 to={proposal.link}
-                className="flex h-12 items-center justify-center border-l border-line font-mono text-[12px] tracking-[0.12em] text-muted uppercase transition-colors hover:bg-hover"
+                className="flex h-9 items-center justify-center border-l border-line font-mono text-[11px] tracking-[0.12em] text-muted uppercase transition-colors hover:bg-hover"
               >
                 {LINKS[proposal.link] ?? 'Abrir'}
               </Link>
@@ -274,17 +274,17 @@ function TurnView({
 }) {
   const answer = turn.answer;
   return (
-    <article className="grid grid-cols-[64px_minmax(0,1fr)] gap-x-5 pt-5">
+    <article className="grid grid-cols-[56px_minmax(0,1fr)] gap-x-4 pt-4">
       <div className="flex flex-col items-center">
         <Tag areas={answer?.areas ?? []} />
         <span aria-hidden className="mt-2 w-0.5 flex-1 bg-primary/30" />
       </div>
       <div className="flex min-w-0 flex-col gap-2 pb-2">
-        <p className="text-xl leading-snug font-semibold">
+        <p className="text-[17px] leading-snug font-semibold">
           <span className="mr-2 text-primary">›</span>
           {turn.question}
         </p>
-        <span className="font-mono text-[11px] tracking-[0.08em] text-subtle">
+        <span className="font-mono text-[10px] tracking-[0.08em] text-subtle">
           {time(turn.askedAt)} · TEXTO
         </span>
         {turn.pending ? (
@@ -293,13 +293,13 @@ function TurnView({
           </div>
         ) : answer ? (
           <>
-            <p className="text-[16px] leading-relaxed whitespace-pre-wrap text-foreground/90">
+            <p className="text-[14px] leading-relaxed whitespace-pre-wrap text-foreground/90">
               <AiText text={answer.text} />
             </p>
             {answer.proposals.map((proposal) => (
               <ProposalCard key={proposal.id} proposal={proposal} onChange={onProposal} onReload={onReload} />
             ))}
-            <span className="font-mono text-[11px] tracking-[0.08em] text-subtle uppercase">
+            <span className="font-mono text-[10px] tracking-[0.08em] text-subtle uppercase">
               {answer.tools.length ? `Usou ${answer.tools.join(', ')}` : 'Sem consulta'}
               {devMode && answer.model ? ` · ${answer.model}` : ''}
             </span>
