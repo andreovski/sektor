@@ -102,6 +102,7 @@ function Dots() {
 
 const STATUS: Record<Proposal['status'], { label: string; className: string } | null> = {
   PENDING: null,
+  APPLYING: { label: 'Salvando…', className: 'text-muted' },
   APPLIED: { label: 'Salvo', className: 'text-success' },
   DISCARDED: { label: 'Descartado', className: 'text-subtle' },
   UNDONE: { label: 'Desfeito', className: 'text-subtle' },
@@ -116,8 +117,18 @@ const LINKS: Record<string, string> = {
 };
 
 /** O cartão da proposta, como no Jotta: o que vai mudar, e salvar ou descartar. */
-function ProposalCard({ proposal, onChange }: { proposal: Proposal; onChange(next: Proposal): void }) {
-  const accounts = useAccounts().filter((a) => !a.archived);
+function ProposalCard({
+  proposal,
+  onChange,
+  onReload,
+}: {
+  proposal: Proposal;
+  onChange(next: Proposal): void;
+  onReload(): void;
+}) {
+  const income = proposal.needs?.kind === 'INCOME';
+  // Entrada não cai em cartão de crédito.
+  const accounts = useAccounts().filter((a) => !a.archived && !(income && a.type === 'CREDIT_CARD'));
   const categories = useCategories();
   const [accountId, setAccountId] = useState('');
   const [categoryId, setCategoryId] = useState('');
@@ -137,6 +148,8 @@ function ProposalCard({ proposal, onChange }: { proposal: Proposal; onChange(nex
       onChange(next as Proposal);
     } catch (error) {
       toast.error((error as Error).message);
+      // A proposta pode ter virado "Falhou": o cartão mostra o estado de verdade.
+      onReload();
     } finally {
       setBusy(false);
     }
@@ -252,10 +265,12 @@ function TurnView({
   turn,
   devMode,
   onProposal,
+  onReload,
 }: {
   turn: Turn & { pending?: boolean };
   devMode: boolean;
   onProposal(next: Proposal): void;
+  onReload(): void;
 }) {
   const answer = turn.answer;
   return (
@@ -282,7 +297,7 @@ function TurnView({
               <AiText text={answer.text} />
             </p>
             {answer.proposals.map((proposal) => (
-              <ProposalCard key={proposal.id} proposal={proposal} onChange={onProposal} />
+              <ProposalCard key={proposal.id} proposal={proposal} onChange={onProposal} onReload={onReload} />
             ))}
             <span className="font-mono text-[11px] tracking-[0.08em] text-subtle uppercase">
               {answer.tools.length ? `Usou ${answer.tools.join(', ')}` : 'Sem consulta'}
@@ -486,6 +501,10 @@ export function useHomeAssistant() {
     },
     currentId,
     conversation,
+    reload: () => {
+      if (!currentId) return;
+      void call('ai.chat.get', { id: currentId }).then(setConversation, () => {});
+    },
     /** Troca a proposta resolvida na conversa aberta e avisa as telas que algo foi gravado. */
     updateProposal: (next: Proposal) => {
       setConversation((current) =>
@@ -694,7 +713,13 @@ export function AssistantConversation({ assistant }: { assistant: HomeAssistant 
           </p>
         ) : (
           turns.map((turn) => (
-            <TurnView key={turn.id} turn={turn} devMode={assistant.devMode} onProposal={assistant.updateProposal} />
+            <TurnView
+              key={turn.id}
+              turn={turn}
+              devMode={assistant.devMode}
+              onProposal={assistant.updateProposal}
+              onReload={assistant.reload}
+            />
           ))
         )}
         <div ref={end} aria-hidden className="h-40" />

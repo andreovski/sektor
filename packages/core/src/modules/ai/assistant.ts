@@ -7,7 +7,7 @@ import { AppError, notFound, stamp, todayIn } from '../../services/context';
 import { costMicros, languageModel } from './providers';
 import { redact } from './redact';
 import { explain, resolveModel, scrub } from './run';
-import { buildActionTools, proposalsOf } from './actions';
+import { applyProposal, buildActionTools, proposalsOf } from './actions';
 import { aiCalls, aiConversations, aiMessages, aiProposals } from './schema';
 import { allowedAreas, type Area, isLocal, readSettings } from './settings';
 import { buildTools, TOOL_LABELS } from './tools';
@@ -143,9 +143,7 @@ export async function send(
   // Falhou: a pergunta sai, e a conversa nova também, para tentar de novo sem duplicar.
   const undo = () => {
     // Proposta montada antes da falha fica sem resposta: sai junto, menos a que já salvou.
-    if (proposed.length) {
-      ctx.db.delete(aiProposals).where(and(inArray(aiProposals.id, proposed), eq(aiProposals.status, 'PENDING'))).run();
-    }
+    if (proposed.length) ctx.db.delete(aiProposals).where(inArray(aiProposals.id, proposed)).run();
     ctx.db.delete(aiMessages).where(eq(aiMessages.id, question.id)).run();
     if (created) ctx.db.delete(aiConversations).where(eq(aiConversations.id, conversation.id)).run();
   };
@@ -153,6 +151,7 @@ export async function send(
   const used: string[] = [];
   const areasUsed = new Set<Area>();
   const proposed: string[] = [];
+  const autoApply: string[] = [];
   const toolCtx = {
     app: ctx,
     allowed: () => allowedAreas(readSettings(ctx), config),
@@ -163,7 +162,13 @@ export async function send(
   };
   const tools = {
     ...buildTools(toolCtx),
-    ...buildActionTools({ ...toolCtx, conversationId: conversation.id, proposed: (id) => proposed.push(id) }),
+    ...buildActionTools({
+      ...toolCtx,
+      conversationId: conversation.id,
+      modelId: config.id,
+      proposed: (id) => proposed.push(id),
+      autoApply: (id) => autoApply.push(id),
+    }),
   };
   const messages: ModelMessage[] = [
     ...history.map((m) => ({ role: m.role, content: redact(m.text) }) as ModelMessage),
@@ -243,6 +248,15 @@ export async function send(
     .get();
   if (proposed.length) {
     ctx.db.update(aiProposals).set({ messageId: reply.id }).where(inArray(aiProposals.id, proposed)).run();
+  }
+  // Só agora, com a resposta e o cartão guardados, o lançamento que o Jev confirmou é salvo:
+  // se a resposta tivesse falhado, não sobraria escrita sem cartão para desfazer.
+  for (const id of autoApply) {
+    try {
+      await applyProposal(ctx, id, { auto: true });
+    } catch {
+      // Fica como proposta: a pessoa salva no cartão.
+    }
   }
   ctx.db
     .update(aiConversations)

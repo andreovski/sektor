@@ -14,7 +14,8 @@ import { getTask, listTaskLists } from '../tasks/service';
 import { askChoice, jevUsable } from './jev';
 import { redact } from './redact';
 import { aiProposals, type ProposalCard } from './schema';
-import type { Area } from './settings';
+import { allowedAreas, type Area, readSettings } from './settings';
+import { scrubStrings } from './tools';
 
 // A fase 3c: o assistente propõe, a pessoa confirma. As ferramentas daqui só montam a proposta
 // (com o antes e o depois) e a guardam; quem grava é `applyProposal`, pelos mesmos métodos do
@@ -38,7 +39,7 @@ export type ProposalKind =
   | 'habit.check';
 
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data em AAAA-MM-DD.');
-const clock = z.string().regex(/^\d{2}:\d{2}$/, 'Hora em HH:MM.');
+const clock = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Hora em HH:MM.');
 
 const money = (cents: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cents / 100);
@@ -89,12 +90,23 @@ function transactionRow(app: AppCtx, id: string) {
   return row;
 }
 
+/** Parcela, recorrência e pagamento de fatura mexem em mais coisas: só pela tela de Finanças. */
+function assertStandalone(tx: ReturnType<typeof transactionRow>) {
+  if (tx.recurrenceId || tx.installmentGroupId) {
+    throw new AppError(409, 'Esse lançamento faz parte de uma série ou de parcelas; mude pela tela de Finanças.');
+  }
+  if (tx.paysInvoiceId) throw new AppError(409, 'Esse lançamento paga uma fatura; mude pela tela de Finanças.');
+}
+
 interface Ctx {
   app: AppCtx;
   conversationId: string;
+  modelId: string;
   allowed(): Area[];
   used(name: string, area: Area | null): void;
   proposed(id: string): void;
+  /** Lançamento que o Jev confirmou: salva depois que a resposta estiver guardada. */
+  autoApply(id: string): void;
 }
 
 function save(
@@ -107,7 +119,7 @@ function save(
 ) {
   return ctx.app.db
     .insert(aiProposals)
-    .values({ ...stamp(), conversationId: ctx.conversationId, kind, area, payload, before, card, status: 'PENDING' })
+    .values({ ...stamp(), conversationId: ctx.conversationId, modelId: ctx.modelId, kind, area, payload, before, card, status: 'PENDING' })
     .returning()
     .get();
 }
@@ -170,6 +182,7 @@ export function buildActionTools(ctx: Ctx): ToolSet {
           inputSchema: z.object({ id: z.string().min(1) }),
           execute: async ({ id }) => {
             const task = getTask(app, id);
+            if (task.completedAt) return { erro: 'Essa tarefa já está concluída.' };
             const card: ProposalCard = { kind: 'Concluir tarefa', title: task.title, rows: [{ label: 'Prazo', value: task.dueDate ? day(task.dueDate) : 'Sem prazo' }] };
             const row = save(ctx, 'task.complete', 'tasks', { id }, card, { status: task.status });
             ctx.proposed(row.id);
@@ -201,6 +214,8 @@ export function buildActionTools(ctx: Ctx): ToolSet {
               if (!prazo) changes.dueTime = null;
               rows.push({ label: 'Prazo', value: prazo ? day(prazo) : 'Sem prazo', before: task.dueDate ? day(task.dueDate) : 'Sem prazo' });
             }
+            const willHaveDate = prazo !== undefined ? prazo : task.dueDate;
+            if (hora && !willHaveDate) return { erro: 'Hora precisa de um prazo; diga o dia também.' };
             if (hora !== undefined && hora !== task.dueTime) {
               changes.dueTime = hora;
               rows.push({ label: 'Hora', value: hora ?? 'Sem hora', before: task.dueTime ?? 'Sem hora' });
@@ -227,6 +242,8 @@ export function buildActionTools(ctx: Ctx): ToolSet {
             local: z.string().max(300).optional(),
           }),
           execute: async ({ titulo, dia, inicio, fim, local }) => {
+            if (fim && !inicio) return { erro: 'Diga também a hora de início.' };
+            if (inicio && fim && fim <= inicio) return { erro: 'O fim precisa ser depois do início.' };
             const allDay = !inicio;
             const start = allDay ? `${dia}T00:00:00.000Z` : wallInstant(dia, inicio, app.timeZone).toISOString();
             const endTime = fim ?? (inicio ? `${String((Number(inicio.slice(0, 2)) + 1) % 24).padStart(2, '0')}${inicio.slice(2)}` : null);
@@ -315,8 +332,8 @@ export function buildActionTools(ctx: Ctx): ToolSet {
             const row = save(ctx, 'transaction.create', 'finance', payload, card);
             ctx.proposed(row.id);
             if (account && category && confidence !== null && confidence >= AUTO_SAVE_SCORE) {
-              await applyProposal(app, row.id, { auto: true });
-              return { proposta: row.id, resumo: `${card.kind}: ${card.title}`, situacao: 'salvo sozinho (o Jev conferiu); a pessoa pode desfazer' };
+              ctx.autoApply(row.id);
+              return { proposta: row.id, resumo: `${card.kind}: ${card.title}`, situacao: 'será salvo sozinho (o Jev conferiu); a pessoa pode desfazer' };
             }
             return pending(row.id, card);
           },
@@ -336,6 +353,7 @@ export function buildActionTools(ctx: Ctx): ToolSet {
           }),
           execute: async ({ id, valorCentavos, descricao, dia, categoria }) => {
             const tx = transactionRow(app, id);
+            assertStandalone(tx);
             const labels = categoryList(app);
             const labelOf = (cid: string | null) => labels.find((c) => c.id === cid)?.label ?? 'Sem categoria';
             const changes: Record<string, unknown> = {};
@@ -378,6 +396,7 @@ export function buildActionTools(ctx: Ctx): ToolSet {
           execute: async ({ tipo, id }) => {
             const area: Area = tipo === 'tarefa' ? 'tasks' : tipo === 'evento' ? 'agenda' : 'finance';
             if (!ctx.allowed().includes(area)) return { erro: 'Essa área está desligada para a IA.' };
+            ctx.used('propor_apagar', area);
             let card: ProposalCard;
             let kind: ProposalKind;
             if (tipo === 'tarefa') {
@@ -393,6 +412,7 @@ export function buildActionTools(ctx: Ctx): ToolSet {
               kind = 'event.delete';
             } else {
               const tx = transactionRow(app, id);
+              assertStandalone(tx);
               card = { kind: 'Apagar lançamento', title: tx.description, amountCents: tx.amountCents, amountTone: tx.kind === 'INCOME' ? 'income' : 'expense', rows: [{ label: 'Data', value: day(tx.date) }] };
               kind = 'transaction.delete';
             }
@@ -455,9 +475,9 @@ export function buildActionTools(ctx: Ctx): ToolSet {
         if (name !== 'propor_apagar' && !ctx.allowed().includes(def.area)) {
           return { erro: 'Essa área foi desligada para a IA.' };
         }
-        ctx.used(name, def.area);
+        if (name !== 'propor_apagar') ctx.used(name, def.area);
         try {
-          return await (base.execute as (i: unknown, o: unknown) => unknown)(input, options);
+          return scrubStrings(await (base.execute as (i: unknown, o: unknown) => unknown)(input, options));
         } catch (error) {
           return { erro: error instanceof AppError ? error.message : 'Não consegui montar essa proposta.' };
         }
@@ -502,37 +522,110 @@ export async function applyProposal(
 ) {
   const row = own(app, id);
   if (row.status !== 'PENDING') throw new AppError(409, 'Essa proposta já foi resolvida.');
-  const payload = { ...row.payload, ...pick(row.kind as ProposalKind, options.overrides) };
+  assertAreaOpen(app, row);
+  const kind = row.kind as ProposalKind;
+  const payload = { ...row.payload, ...pick(kind, options.overrides) };
+  if (kind === 'transaction.create' && (!payload.accountId || !payload.categoryId)) {
+    throw new AppError(400, 'Escolha a conta e a categoria no cartão.');
+  }
+  // Reserva antes de gravar: dois cliques não gravam duas vezes.
+  const claimed = app.db
+    .update(aiProposals)
+    .set({ status: 'APPLYING', updatedAt: Date.now() })
+    .where(and(eq(aiProposals.id, id), eq(aiProposals.status, 'PENDING')))
+    .run();
+  if (claimed.changes === 0) throw new AppError(409, 'Essa proposta já foi resolvida.');
   const call = rpc(app);
   let result: Record<string, unknown> | null = null;
+  // O antes é lido agora, na hora de gravar, só dos campos que mudam.
+  let before = row.before;
   try {
-    const kind = row.kind as ProposalKind;
     if (CREATE_METHOD[kind]) {
-      if (kind === 'transaction.create' && (!payload.accountId || !payload.categoryId)) {
-        throw new AppError(400, 'Escolha a conta e a categoria no cartão.');
-      }
       const created = (await call(CREATE_METHOD[kind]!, payload)) as { id: string } | { id: string }[];
       result = { id: Array.isArray(created) ? created[0]!.id : created.id };
-    } else if (kind === 'task.complete') await call('tasks.complete', payload);
-    else if (kind === 'task.update') await call('tasks.update', payload);
-    else if (kind === 'task.delete') await call('tasks.delete', payload);
+    } else if (kind === 'task.complete') {
+      const task = getTask(app, payload.id as string);
+      if (task.completedAt) throw new AppError(409, 'Essa tarefa já está concluída.');
+      before = { status: task.status };
+      await call('tasks.complete', payload);
+    } else if (kind === 'task.update') {
+      const task = getTask(app, payload.id as string) as unknown as Record<string, unknown>;
+      before = Object.fromEntries(Object.keys(payload).filter((k) => k !== 'id').map((k) => [k, task[k] ?? null]));
+      await call('tasks.update', payload);
+    } else if (kind === 'task.delete') await call('tasks.delete', payload);
     else if (kind === 'event.delete') await call('events.delete', { ...payload, scope: 'all' });
-    else if (kind === 'transaction.update') await call('transactions.update', payload);
-    else if (kind === 'transaction.delete') await call('transactions.delete', payload);
-    else if (kind === 'habit.check') await call('habits.toggle', payload);
+    else if (kind === 'transaction.update') {
+      const tx = transactionRow(app, payload.id as string);
+      assertStandalone(tx);
+      const current = tx as unknown as Record<string, unknown>;
+      before = Object.fromEntries(Object.keys(payload).filter((k) => k !== 'id').map((k) => [k, current[k] ?? null]));
+      await call('transactions.update', payload);
+    } else if (kind === 'transaction.delete') {
+      assertStandalone(transactionRow(app, payload.id as string));
+      await call('transactions.delete', payload);
+    } else if (kind === 'habit.check') {
+      if (habitDone(app, payload.id as string, payload.date as string)) {
+        throw new AppError(409, 'Esse hábito já está marcado nesse dia.');
+      }
+      await call('habits.toggle', payload);
+    }
   } catch (error) {
     const message = error instanceof AppError ? error.message : 'Não consegui salvar.';
-    // Conta ou categoria faltando não é falha: a pessoa escolhe e tenta de novo.
-    if (error instanceof AppError && error.status === 400) throw error;
-    app.db.update(aiProposals).set({ status: 'FAILED', error: message, updatedAt: Date.now() }).where(eq(aiProposals.id, id)).run();
+    // Erro de validação deixa a proposta aberta para tentar de novo; o resto é falha.
+    const retry = error instanceof AppError && error.status === 400;
+    app.db
+      .update(aiProposals)
+      .set({ status: retry ? 'PENDING' : 'FAILED', error: retry ? null : message, updatedAt: Date.now() })
+      .where(eq(aiProposals.id, id))
+      .run();
     throw error instanceof AppError ? error : new AppError(500, message);
   }
   app.db
     .update(aiProposals)
-    .set({ status: 'APPLIED', payload, result, auto: Boolean(options.auto), updatedAt: Date.now() })
-    .where(and(eq(aiProposals.id, id), eq(aiProposals.status, 'PENDING')))
+    .set({
+      status: 'APPLIED',
+      payload,
+      before,
+      card: cardAfter(app, row.card, kind, payload),
+      result,
+      auto: Boolean(options.auto),
+      updatedAt: Date.now(),
+    })
+    .where(eq(aiProposals.id, id))
     .run();
   return proposalView(own(app, id));
+}
+
+/** O cartão salvo mostra a conta e a categoria escolhidas, não "Escolha antes de salvar". */
+function cardAfter(app: AppCtx, card: ProposalCard, kind: ProposalKind, payload: Record<string, unknown>) {
+  if (kind !== 'transaction.create') return card;
+  const account = accountList(app).find((a) => a.id === payload.accountId)?.name;
+  const category = categoryList(app).find((c) => c.id === payload.categoryId)?.label;
+  return {
+    ...card,
+    rows: card.rows.map((r) =>
+      r.label === 'Conta' && account ? { ...r, value: account } : r.label === 'Categoria' && category ? { ...r, value: category } : r
+    ),
+  };
+}
+
+function habitDone(app: AppCtx, habitId: string, date: string) {
+  return Boolean(
+    app.db
+      .select({ id: habitChecks.id })
+      .from(habitChecks)
+      .where(and(eq(habitChecks.habitId, habitId), eq(habitChecks.date, date), isNull(habitChecks.deletedAt)))
+      .get()
+  );
+}
+
+/** Área desligada para o modelo que propôs não grava nem desfaz. */
+function assertAreaOpen(app: AppCtx, row: typeof aiProposals.$inferSelect) {
+  const settings = readSettings(app);
+  const config = settings.models.find((m) => m.id === row.modelId) ?? null;
+  if (!allowedAreas(settings, config).includes(row.area as Area)) {
+    throw new AppError(403, 'Essa área está desligada para a IA em Ajustes › IA.');
+  }
 }
 
 /** No cartão a pessoa só troca conta e categoria do lançamento; o resto é o que foi proposto. */
@@ -555,17 +648,33 @@ export function discardProposal(app: AppCtx, id: string) {
 export async function undoProposal(app: AppCtx, id: string) {
   const row = own(app, id);
   if (row.status !== 'APPLIED') throw new AppError(409, 'Só dá para desfazer o que foi salvo.');
+  assertAreaOpen(app, row);
   const kind = row.kind as ProposalKind;
+  if (kind.endsWith('.delete')) throw new AppError(409, 'Apagar não tem desfazer.');
+  const claimed = app.db
+    .update(aiProposals)
+    .set({ status: 'APPLYING', updatedAt: Date.now() })
+    .where(and(eq(aiProposals.id, id), eq(aiProposals.status, 'APPLIED')))
+    .run();
+  if (claimed.changes === 0) throw new AppError(409, 'Só dá para desfazer o que foi salvo.');
   const call = rpc(app);
-  if (DELETE_METHOD[kind]) {
-    const created = row.result?.id;
-    if (typeof created !== 'string') throw new AppError(409, 'Não sei o que foi criado.');
-    await call(DELETE_METHOD[kind]!, kind === 'event.create' ? { id: created, scope: 'all' } : { id: created });
-  } else if (kind === 'task.complete') await call('tasks.reopen', { id: row.payload.id });
-  else if (kind === 'task.update') await call('tasks.update', { id: row.payload.id, ...row.before });
-  else if (kind === 'transaction.update') await call('transactions.update', { id: row.payload.id, ...row.before });
-  else if (kind === 'habit.check') await call('habits.toggle', row.payload);
-  else throw new AppError(409, 'Apagar não tem desfazer.');
+  try {
+    if (DELETE_METHOD[kind]) {
+      const created = row.result?.id;
+      if (typeof created !== 'string') throw new AppError(409, 'Não sei o que foi criado.');
+      await call(DELETE_METHOD[kind]!, kind === 'event.create' ? { id: created, scope: 'all' } : { id: created });
+    } else if (kind === 'task.complete') {
+      await call('tasks.reopen', { id: row.payload.id, ...(row.before?.status ? { status: row.before.status } : {}) });
+    } else if (kind === 'task.update') await call('tasks.update', { id: row.payload.id, ...row.before });
+    else if (kind === 'transaction.update') await call('transactions.update', { id: row.payload.id, ...row.before });
+    else if (kind === 'habit.check') {
+      // Só desmarca se ainda está marcado: desmarcado na tela, não volta a marcar.
+      if (habitDone(app, row.payload.id as string, row.payload.date as string)) await call('habits.toggle', row.payload);
+    }
+  } catch (error) {
+    app.db.update(aiProposals).set({ status: 'APPLIED', updatedAt: Date.now() }).where(eq(aiProposals.id, id)).run();
+    throw error instanceof AppError ? error : new AppError(500, 'Não consegui desfazer.');
+  }
   app.db.update(aiProposals).set({ status: 'UNDONE', updatedAt: Date.now() }).where(eq(aiProposals.id, id)).run();
   return proposalView(own(app, id));
 }

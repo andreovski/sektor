@@ -59,7 +59,7 @@ function categoryLabels(app: AppCtx) {
 }
 
 /** Limpa CPF, cartão e afins dos textos que voltam ao modelo; número fica como está. */
-function scrubStrings(value: unknown): unknown {
+export function scrubStrings(value: unknown): unknown {
   if (typeof value === 'string') return redact(value);
   if (typeof value === 'number') return Number.isInteger(value) ? value : Math.round(value * 1000) / 1000;
   if (Array.isArray(value)) return value.map(scrubStrings);

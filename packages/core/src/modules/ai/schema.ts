@@ -70,10 +70,12 @@ export const aiProposals = sqliteTable('ai_proposals', {
   messageId: text('message_id'),
   kind: text('kind').notNull(),
   area: text('area').notNull(),
+  /** O modelo que propôs: as áreas que ele pode ler valem também para gravar. */
+  modelId: text('model_id'),
   payload: text('payload', { mode: 'json' }).$type<Record<string, unknown>>().notNull(),
   before: text('before', { mode: 'json' }).$type<Record<string, unknown> | null>(),
   card: text('card', { mode: 'json' }).$type<ProposalCard>().notNull(),
-  status: text('status', { enum: ['PENDING', 'APPLIED', 'DISCARDED', 'UNDONE', 'FAILED'] }).notNull(),
+  status: text('status', { enum: ['PENDING', 'APPLYING', 'APPLIED', 'DISCARDED', 'UNDONE', 'FAILED'] }).notNull(),
   result: text('result', { mode: 'json' }).$type<Record<string, unknown> | null>(),
   auto: integer('auto', { mode: 'boolean' }).notNull().default(false),
   error: text('error'),

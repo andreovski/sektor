@@ -8,10 +8,11 @@ CREATE TABLE ai_proposals (
   message_id TEXT,
   kind TEXT NOT NULL,
   area TEXT NOT NULL,
+  model_id TEXT,
   payload TEXT NOT NULL,
   before TEXT,
   card TEXT NOT NULL,
-  status TEXT NOT NULL CHECK (status IN ('PENDING', 'APPLIED', 'DISCARDED', 'UNDONE', 'FAILED')),
+  status TEXT NOT NULL CHECK (status IN ('PENDING', 'APPLYING', 'APPLIED', 'DISCARDED', 'UNDONE', 'FAILED')),
   result TEXT,
   auto INTEGER NOT NULL DEFAULT 0,
   error TEXT

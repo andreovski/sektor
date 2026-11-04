@@ -188,6 +188,67 @@ describe('ações do assistente', () => {
     expect(tools[0]).not.toContain('propor_lancamento');
   });
 
+  it('área desligada depois de propor não deixa salvar', async () => {
+    const { proposal } = await ask({ name: 'propor_tarefa', input: { titulo: 'Bloqueada' } });
+    await value('ai.update', { areas: { tasks: false } });
+    await expect(value('ai.proposal.apply', { id: proposal.id })).rejects.toThrow(/desligada/);
+    expect(openTasks()).toHaveLength(0);
+  });
+
+  it('Jev seguro mas a resposta falha: nada fica salvo', async () => {
+    await value('accounts.create', { name: 'Nubank', type: 'CHECKING', initialBalanceCents: 0 });
+    await value('ai.setKey', { provider: 'jev', key: 'jev' });
+    await value('ai.acceptNotice', { provider: 'jev' });
+    setJevForTests(async (_key, _state, questions) => {
+      const criteria = questions.answer!.criteria;
+      const key = Object.entries(criteria).find(([, label]) => label === 'Nubank' || label === 'Mercado')![0];
+      return { answers: { answer: { type: 'choice', choice: key, probabilities: { [key]: 0.95 } } } };
+    });
+    let step = 0;
+    setModelForTests(
+      new MockLanguageModelV4({
+        doGenerate: async () => {
+          step++;
+          if (step === 1) {
+            return {
+              content: [{ type: 'tool-call', toolCallId: 't1', toolName: 'propor_lancamento', input: JSON.stringify({ tipo: 'gasto', valorCentavos: 900, descricao: 'Mercado' }) }],
+              finishReason: { unified: 'tool-calls', raw: undefined },
+              usage,
+              warnings: [],
+            };
+          }
+          throw new Error('caiu');
+        },
+      })
+    );
+    await expect(value('ai.chat.send', { text: 'gastei 9 no mercado' })).rejects.toThrow();
+    expect(app.handle.orm.select().from(transactions).where(isNull(transactions.deletedAt)).all()).toHaveLength(0);
+    expect(app.handle.orm.select().from(aiProposals).all()).toHaveLength(0);
+  });
+
+  it('concluir tarefa já feita é recusado; desfazer devolve a situação de antes', async () => {
+    const task = await value('tasks.create', { title: 'Em andamento', status: 'IN_PROGRESS' });
+    const { proposal } = await ask({ name: 'propor_concluir_tarefa', input: { id: task.id } });
+    await value('ai.proposal.apply', { id: proposal.id });
+    await value('ai.proposal.undo', { id: proposal.id });
+    expect((await value('tasks.get', { id: task.id })).status).toBe('IN_PROGRESS');
+    await value('tasks.complete', { id: task.id });
+    const again = await ask({ name: 'propor_concluir_tarefa', input: { id: task.id } });
+    expect(again.proposal).toBeUndefined();
+  });
+
+  it('hábito marcado na tela antes de salvar não é desmarcado', async () => {
+    const habit = await value('habits.create', { name: 'Água', kind: 'CONTINUOUS', color: 'blue', frequency: 'DAILY' });
+    const { proposal } = await ask({ name: 'propor_habito_feito', input: { habito: 'Água' } });
+    await value('habits.toggle', { id: habit.id, date: '2026-11-04' });
+    await expect(value('ai.proposal.apply', { id: proposal.id })).rejects.toThrow(/já está marcado/);
+  });
+
+  it('evento com fim antes do início é recusado', async () => {
+    const { conversation } = await ask({ name: 'propor_evento', input: { titulo: 'X', dia: '2026-11-05', inicio: '10:00', fim: '09:00' } });
+    expect(conversation.messages[1].proposals).toEqual([]);
+  });
+
   it('apagar a conversa leva as propostas; o que foi salvo continua', async () => {
     const { conversation, proposal } = await ask({ name: 'propor_tarefa', input: { titulo: 'Fica' } });
     await value('ai.proposal.apply', { id: proposal.id });
