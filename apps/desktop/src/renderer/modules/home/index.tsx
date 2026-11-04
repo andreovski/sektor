@@ -4,7 +4,8 @@ import { type ModuleId, useModules } from '../../lib/modules';
 import { useRpc } from '../../lib/rpc';
 import { cn, SectionLabel } from '../../ui';
 
-import { AssistantChat, AssistantInput, useHomeAssistant } from './assistant';
+import { AssistantChat, useHomeAssistant } from './assistant';
+import { HomeCapture } from './capture';
 import { Cover } from './cover';
 import { coverDate, greeting, localDate } from './dates';
 import { FinanceCard, GoalsCard, ProjectsCard } from './progress-cards';
@@ -108,7 +109,7 @@ function HomePage() {
           {name ? `, ${name}` : ''}
         </h1>
         <p className={cn('mt-1 text-muted first-letter:uppercase', !open && 'mb-8')}>{coverDate(now)}</p>
-        {!open && assistantOn && <AssistantInput assistant={assistant} />}
+        {!open && <HomeCapture assistant={assistant} />}
       </header>
       {open ? (
         <AssistantChat assistant={assistant} />

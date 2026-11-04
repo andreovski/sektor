@@ -570,7 +570,7 @@ export function useHomeAssistant() {
   };
 }
 
-type HomeAssistant = ReturnType<typeof useHomeAssistant>;
+export type HomeAssistant = ReturnType<typeof useHomeAssistant>;
 
 /** No lugar do campo enquanto a voz grava, baixa o modelo ou transcreve. */
 function VoiceStatus({ state }: { state: VoiceState }) {
