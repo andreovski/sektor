@@ -110,8 +110,8 @@ function PixelField() {
 }
 
 /**
- * Sai da largura de `main` até a da área de rolagem. 100vw conta a barra de rolagem,
- * que tem 8 px no tema; daí os 4 px de cada lado.
+ * Sai da largura de `main` até a da janela. 100vw conta a barra de rolagem, que nem sempre
+ * existe (com a conversa aberta a tela não rola); a área de rolagem corta o que passar dela.
  */
 export function Cover({
   className,
@@ -129,7 +129,7 @@ export function Cover({
       aria-hidden
       style={style}
       className={cn(
-        'pointer-events-none absolute top-0 left-1/2 h-[430px] w-[calc(100vw-8px)] -translate-x-1/2 overflow-hidden',
+        'pointer-events-none absolute top-0 left-1/2 h-[430px] w-screen -translate-x-1/2 overflow-hidden',
         '[mask-image:linear-gradient(to_bottom,black_45%,transparent)]',
         className
       )}

@@ -148,7 +148,7 @@ export function Shell() {
   // A nota em pop-up é uma janela à parte: sem dock e sem a moldura da página.
   if (path.startsWith('/nota-fixa/')) return <Outlet />;
   return (
-    <div ref={scroller} className="relative h-full overflow-y-auto">
+    <div ref={scroller} className="relative h-full overflow-x-hidden overflow-y-auto">
       <CoverTrail home={path === '/'} />
       <main className="page relative mx-auto max-w-[1180px] px-8 pt-8 pb-28">
         <ModuleIcon.Provider value={current?.icon ?? null}>
