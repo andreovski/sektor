@@ -5,8 +5,9 @@ import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { call, useRpc } from '../../lib/rpc';
-import { cn, Select } from '../../ui';
-import { AiText, PROVIDER_INFO } from '../ai/shared';
+import { cn } from '../../ui';
+import { ModelMenu } from '../ai/model-menu';
+import { AiText } from '../ai/shared';
 
 import { localDate } from './dates';
 import { MOODS } from './today-cards';
@@ -19,8 +20,8 @@ type Message = Conversation['messages'][number];
 
 const SUGGESTIONS = [
   'Quanto gastei com mercado no mês passado?',
-  'O que tenho na agenda amanhã?',
-  'Quais tarefas vencem esta semana?',
+  'O que tenho amanhã na agenda?',
+  'Que tarefas vencem esta semana?',
 ];
 
 /** A etiqueta da área, como no Jotta. As cores são do tipo, não do tema. */
@@ -354,12 +355,13 @@ export function AssistantInput({ assistant, docked }: { assistant: HomeAssistant
   }, [docked]);
 
   return (
-    <div
-      className={cn(
-        'w-[760px] max-w-full rounded-[22px] border border-line-strong bg-raised/90 py-2 pr-2 pl-4 shadow-popover backdrop-blur focus-within:border-primary/50',
-        docked && 'sticky bottom-24 z-10 mx-auto'
+    <div className={cn('flex w-[760px] max-w-full flex-col gap-2', docked && 'mx-auto shrink-0')}>
+      {models.length > 1 && (
+        <div className="flex">
+          <ModelMenu models={models} value={assistant.modelId} onChange={assistant.choose} />
+        </div>
       )}
-    >
+    <div className="rounded-[22px] border border-line-strong bg-raised/90 py-2 pr-2 pl-4 text-left shadow-popover backdrop-blur focus-within:border-primary/50">
       <div className="flex items-center gap-3">
         <span aria-hidden className="text-xl text-primary">›</span>
         <input
@@ -403,7 +405,7 @@ export function AssistantInput({ assistant, docked }: { assistant: HomeAssistant
         )}
       </div>
       {!docked && (
-        <div className="flex flex-wrap items-center gap-2 pt-2 pb-1">
+        <div className="flex items-center gap-1.5 pt-2 pb-1">
           {!models.length ? (
             <Link
               to="/ajustes"
@@ -419,7 +421,7 @@ export function AssistantInput({ assistant, docked }: { assistant: HomeAssistant
                 type="button"
                 disabled={blocked || assistant.busy}
                 onClick={() => void assistant.send(suggestion).catch(() => {})}
-                className="h-8 rounded-full border border-line-strong bg-white/[0.03] px-3 text-[13px] text-muted transition-colors hover:bg-hover disabled:opacity-50"
+                className="h-7 shrink-0 rounded-full border border-line-strong bg-white/[0.03] px-2.5 text-xs whitespace-nowrap text-muted transition-colors hover:bg-hover disabled:opacity-50"
               >
                 {suggestion}
               </button>
@@ -431,18 +433,29 @@ export function AssistantInput({ assistant, docked }: { assistant: HomeAssistant
               aria-label="Conversas anteriores"
               title="Conversas anteriores"
               onClick={assistant.showHistory}
-              className="ml-auto grid size-8 place-items-center rounded-full border border-primary/40 text-primary hover:bg-hover"
+              className="ml-auto grid size-7 shrink-0 place-items-center rounded-full border border-primary/40 text-primary hover:bg-hover"
             >
-              <History size={15} />
+              <History size={14} />
             </button>
           )}
         </div>
       )}
     </div>
+    </div>
   );
 }
 
 /** A conversa aberta: o resumo do dia em fichas, a linha do tempo e o histórico ao lado. */
+/** A conversa e o campo preso embaixo, na altura da janela: só a conversa rola. */
+export function AssistantChat({ assistant }: { assistant: HomeAssistant }) {
+  return (
+    <div className="tab-panel flex h-[calc(100vh-190px)] flex-col gap-4 pb-[104px]">
+      <AssistantConversation assistant={assistant} />
+      <AssistantInput assistant={assistant} docked />
+    </div>
+  );
+}
+
 export function AssistantConversation({ assistant }: { assistant: HomeAssistant }) {
   const end = useRef<HTMLDivElement>(null);
   const turns: (Turn & { pending?: boolean })[] = turnsOf(assistant.conversation?.messages ?? []);
@@ -460,24 +473,10 @@ export function AssistantConversation({ assistant }: { assistant: HomeAssistant 
   }, [turns.length, assistant.currentId, assistant.conversation?.messages.length]);
 
   return (
-    <div className="relative mx-auto flex w-[760px] max-w-full flex-col gap-3 pb-6">
+    <div className="relative mx-auto flex min-h-0 w-[760px] max-w-full flex-1 flex-col gap-3">
       <nav aria-label="Conversa" className="flex flex-wrap items-center gap-2">
         <DaySummary />
         <div className="ml-auto flex items-center gap-2">
-          {assistant.models.length > 1 && (
-            <Select
-              aria-label="Modelo"
-              className="h-9 w-auto text-xs"
-              value={assistant.modelId ?? ''}
-              onChange={(event) => assistant.choose(event.target.value)}
-            >
-              {assistant.models.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {PROVIDER_INFO[m.provider].short} · {m.model}
-                </option>
-              ))}
-            </Select>
-          )}
           <IconButton label="Histórico" active={assistant.history} onClick={assistant.toggleHistory}>
             <History size={16} />
           </IconButton>
@@ -500,7 +499,7 @@ export function AssistantConversation({ assistant }: { assistant: HomeAssistant 
         </div>
       )}
 
-      <div className="min-h-[40vh] border-t border-line">
+      <div className="min-h-0 flex-1 overflow-y-auto border-t border-line pb-4">
         {turns.length === 0 ? (
           <p className="pt-10 pl-[84px] text-[15px] text-muted">
             Conversa nova. Pergunte sobre as contas, a agenda, as tarefas ou o seu dia.

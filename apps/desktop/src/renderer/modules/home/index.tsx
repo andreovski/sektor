@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { useRpc } from '../../lib/rpc';
 import { cn, SectionLabel } from '../../ui';
 
-import { AssistantConversation, AssistantInput, useHomeAssistant } from './assistant';
+import { AssistantChat, AssistantInput, useHomeAssistant } from './assistant';
 import { Cover } from './cover';
 import { coverDate, greeting, localDate } from './dates';
 import { FinanceCard, GoalsCard, ProjectsCard } from './progress-cards';
@@ -90,10 +90,7 @@ function HomePage() {
         {!open && <AssistantInput assistant={assistant} />}
       </header>
       {open ? (
-        <div className="tab-panel flex flex-col gap-4">
-          <AssistantConversation assistant={assistant} />
-          <AssistantInput assistant={assistant} docked />
-        </div>
+        <AssistantChat assistant={assistant} />
       ) : (
         /* A chave recarrega os cartões na virada do dia, com o app aberto na bandeja. */
         <Sections key={localDate(now.getTime())} />
