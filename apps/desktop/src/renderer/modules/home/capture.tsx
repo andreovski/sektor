@@ -57,6 +57,11 @@ function write(key: string, value: string) {
   }
 }
 
+/** O campo da aba que acabou de nascer. */
+function focusField() {
+  document.querySelector<HTMLInputElement>('.capture-box input:not([type="file"]):not(:disabled)')?.focus();
+}
+
 export function HomeCapture({ assistant }: { assistant: HomeAssistant }) {
   const { isOn } = useModules();
   const surface = useContext(CaptureSurface);
@@ -73,6 +78,8 @@ export function HomeCapture({ assistant }: { assistant: HomeAssistant }) {
   const pick = (next: Mode) => {
     setChosen(next);
     write(surface.modeKey, next);
+    // Na captura rápida, trocar de aba (clicando ou pelo teclado) já deixa o cursor no campo.
+    if (surface.floating) requestAnimationFrame(focusField);
   };
   // Na captura rápida, a mão fica no ⌥ do atalho: ⌥1, ⌥2 e ⌥3 trocam de aba, e ⌥← e ⌥→ também
   // com o campo vazio (com texto, as setas seguem andando de palavra em palavra).
@@ -97,10 +104,7 @@ export function HomeCapture({ assistant }: { assistant: HomeAssistant }) {
       event.preventDefault();
       setChosen(next.id);
       write(surface.modeKey, next.id);
-      // O campo da aba nova nasce agora: o cursor vai para ele.
-      requestAnimationFrame(() =>
-        document.querySelector<HTMLInputElement>('.capture-box input:not([type="file"]):not(:disabled)')?.focus()
-      );
+      requestAnimationFrame(focusField);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);

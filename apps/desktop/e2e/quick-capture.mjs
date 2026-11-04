@@ -106,6 +106,14 @@ try {
   await panel.keyboard.press('Alt+ArrowRight');
   check('⌥→ com texto não troca a aba', (await panel.getByRole('tab', { selected: true }).getAttribute('aria-label')) === 'Tarefa');
   await task.fill('');
+  // Sem modelo nos testes o campo do Agente fica desligado: a prova é voltar para Tarefa.
+  await panel.getByRole('tab', { name: 'Agente' }).click();
+  await panel.getByRole('tab', { name: 'Tarefa' }).click();
+  await panel.waitForTimeout(100);
+  check(
+    'clicar na aba deixa o cursor no campo',
+    await panel.getByLabel('Capturar tarefa').evaluate((element) => element === document.activeElement)
+  );
   await panel.keyboard.press('Escape');
   await panel.waitForTimeout(200);
   check(
