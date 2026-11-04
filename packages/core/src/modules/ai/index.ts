@@ -70,11 +70,19 @@ const insightSchema = z.object({
 });
 type InsightInput = { kind: InsightKind; period?: string; modelId?: string | null };
 
+const chatImage = z.object({
+  /** A foto em base64, já reduzida pela tela. */
+  data: z.string().min(1).max(assistant.MAX_IMAGE_BASE64, 'Foto grande demais.'),
+  mediaType: z.enum(['image/jpeg', 'image/png', 'image/webp']),
+  thumb: z.string().startsWith('data:image/').max(80_000, 'Miniatura grande demais.'),
+});
 const chatSchema = z.object({
   conversationId: z.string().nullable().optional(),
-  text: z.string().trim().min(1, 'Escreva a pergunta.').max(2000, 'Pergunta longa demais.'),
+  text: z.string().trim().max(2000, 'Pergunta longa demais.'),
   modelId: z.string().nullable().optional(),
-});
+  images: z.array(chatImage).max(assistant.MAX_IMAGES, `No máximo ${assistant.MAX_IMAGES} fotos por pergunta.`).optional(),
+  source: z.enum(['text', 'voice']).optional(),
+}).refine((input) => input.text || input.images?.length, { message: 'Escreva a pergunta.', path: ['text'] });
 type ChatInput = z.infer<typeof chatSchema>;
 
 const DAY = 24 * 60 * 60 * 1000;

@@ -51,6 +51,10 @@ export const aiMessages = sqliteTable('ai_messages', {
   /** Áreas cujos dados a resposta usou: um modelo na nuvem não recebe a que não pode ler. */
   areas: text('areas').notNull().default(''),
   model: text('model'),
+  /** Miniaturas (data URL) das fotos da pergunta. A foto inteira vai ao modelo e não fica. */
+  images: text('images', { mode: 'json' }).$type<string[]>().notNull().default([]),
+  /** A pergunta foi digitada ou falada. */
+  source: text('source', { enum: ['text', 'voice'] }).notNull().default('text'),
 });
 
 export interface ProposalCard {

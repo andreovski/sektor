@@ -1,10 +1,11 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { ArrowUp, Check, ChevronDown, Flag, History, Mic, PenSquare, RotateCcw, X } from 'lucide-react';
+import { ArrowUp, Check, ChevronDown, Flag, History, ImagePlus, Mic, PenSquare, RotateCcw, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { money } from '../../lib/format';
+import { type PreparedImage, prepareImage } from '../../lib/image';
 import { call, useRpc } from '../../lib/rpc';
 import { Button, cn, Select } from '../../ui';
 import { CategorySelect, useAccounts, useCategories } from '../finance/parts';
@@ -56,15 +57,30 @@ interface Turn {
   id: string;
   question: string;
   askedAt: number;
+  images: string[];
+  source: 'text' | 'voice';
   answer: Message | null;
 }
+
+/** O jeito como a pergunta chegou, no rodapé dela. */
+const sourceLabel = (turn: Pick<Turn, 'images' | 'source'>) =>
+  [turn.source === 'voice' ? 'VOZ' : 'TEXTO', turn.images.length ? 'FOTO' : null].filter(Boolean).join(' + ');
+
+const MAX_IMAGES = 3;
 
 /** Pergunta e resposta juntas, que é como a linha do tempo mostra. */
 function turnsOf(messages: Message[]): Turn[] {
   const turns: Turn[] = [];
   for (const message of messages) {
     if (message.role === 'user') {
-      turns.push({ id: message.id, question: message.text, askedAt: message.createdAt, answer: null });
+      turns.push({
+        id: message.id,
+        question: message.text,
+        askedAt: message.createdAt,
+        images: message.images,
+        source: message.source,
+        answer: null,
+      });
     } else if (turns.length) {
       turns[turns.length - 1]!.answer = message;
     }
@@ -280,12 +296,26 @@ function TurnView({
         <span aria-hidden className="mt-2 w-0.5 flex-1 bg-primary/30" />
       </div>
       <div className="flex min-w-0 flex-col gap-2 pb-2">
-        <p className="text-[17px] leading-snug font-semibold">
-          <span className="mr-2 text-primary">›</span>
-          {turn.question}
-        </p>
+        {turn.question && (
+          <p className="text-[17px] leading-snug font-semibold">
+            <span className="mr-2 text-primary">›</span>
+            {turn.question}
+          </p>
+        )}
+        {turn.images.length > 0 && (
+          <div className="flex gap-2">
+            {turn.images.map((src, i) => (
+              <img
+                key={i}
+                src={src}
+                alt={`Foto ${i + 1}`}
+                className="h-20 rounded-control border border-line object-cover"
+              />
+            ))}
+          </div>
+        )}
         <span className="font-mono text-[10px] tracking-[0.08em] text-subtle">
-          {time(turn.askedAt)} · TEXTO
+          {time(turn.askedAt)} · {sourceLabel(turn)}
         </span>
         {turn.pending ? (
           <div className="flex items-center gap-2.5 py-1 text-sm text-muted">
@@ -430,7 +460,13 @@ export function useHomeAssistant() {
   const [open, setOpen] = useState(false);
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [conversation, setConversation] = useState<Conversation | null>(null);
-  const [pending, setPending] = useState<{ text: string; at: number; conversationId: string | null } | null>(null);
+  const [pending, setPending] = useState<{
+    text: string;
+    at: number;
+    conversationId: string | null;
+    images: string[];
+    source: 'text' | 'voice';
+  } | null>(null);
   const [history, setHistory] = useState(false);
   const [chosen, setChosen] = useState('');
   const viewing = useRef<string | null>(null);
@@ -456,15 +492,18 @@ export function useHomeAssistant() {
   const modelId = chosen || data?.resolved.assistant.modelId || null;
   const model = models.find((m) => m.id === modelId) ?? null;
 
-  const send = async (question: string) => {
+  const send = async (
+    question: string,
+    { images = [], source = 'text' }: { images?: PreparedImage[]; source?: 'text' | 'voice' } = {}
+  ) => {
     const text = question.trim();
-    if (!text || pending || !model || model.problem) return;
+    if ((!text && !images.length) || pending || !model || model.problem) return;
     const from = currentId;
     setOpen(true);
     setHistory(false);
-    setPending({ text, at: Date.now(), conversationId: from });
+    setPending({ text, at: Date.now(), conversationId: from, images: images.map((i) => i.thumb), source });
     try {
-      const next = await call('ai.chat.send', { conversationId: from, text, modelId });
+      const next = await call('ai.chat.send', { conversationId: from, text, modelId, images, source });
       if (viewing.current === from) {
         setConversation(next);
         setCurrentId(next.id);
@@ -535,14 +574,41 @@ type HomeAssistant = ReturnType<typeof useHomeAssistant>;
 /** O campo do assistente: no meio da capa fechado, preso embaixo com a conversa aberta. */
 export function AssistantInput({ assistant, docked }: { assistant: HomeAssistant; docked?: boolean }) {
   const [text, setText] = useState('');
+  const [images, setImages] = useState<PreparedImage[]>([]);
+  const [dragging, setDragging] = useState(false);
   const input = useRef<HTMLInputElement>(null);
+  const picker = useRef<HTMLInputElement>(null);
   const { model, models } = assistant;
   const blocked = !model || Boolean(model.problem);
+  const canSend = Boolean(text.trim() || images.length);
   const submit = () => {
     const value = text;
-    if (!value.trim()) return;
+    const sent = images;
+    if (!canSend) return;
     setText('');
-    assistant.send(value).catch(() => setText(value));
+    setImages([]);
+    assistant.send(value, { images: sent }).catch(() => {
+      setText(value);
+      setImages(sent);
+    });
+  };
+  /** Foto escolhida, colada ou arrastada. Passou de três, as primeiras ficam. */
+  const attach = async (files: Iterable<File>) => {
+    const list = [...files].filter((f) => f.type.startsWith('image/'));
+    if (!list.length) return;
+    const room = MAX_IMAGES - images.length;
+    if (room <= 0) {
+      toast.error(`No máximo ${MAX_IMAGES} fotos por pergunta.`);
+      return;
+    }
+    if (list.length > room) toast.error(`No máximo ${MAX_IMAGES} fotos por pergunta.`);
+    try {
+      const prepared = await Promise.all(list.slice(0, room).map(prepareImage));
+      setImages((current) => [...current, ...prepared].slice(0, MAX_IMAGES));
+      input.current?.focus();
+    } catch (error) {
+      toast.error((error as Error).message);
+    }
   };
   useEffect(() => {
     if (docked) input.current?.focus();
@@ -562,11 +628,40 @@ export function AssistantInput({ assistant, docked }: { assistant: HomeAssistant
         </div>
       )}
     <div
+      onDragOver={(event) => {
+        if (blocked || assistant.busy || !event.dataTransfer.types.includes('Files')) return;
+        event.preventDefault();
+        setDragging(true);
+      }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={(event) => {
+        event.preventDefault();
+        setDragging(false);
+        if (!blocked && !assistant.busy) void attach(event.dataTransfer.files);
+      }}
       className={cn(
         'rounded-[22px] border border-line-strong py-2 pr-2 pl-4 text-left shadow-popover focus-within:border-primary/50',
-        docked ? 'bg-raised/85 backdrop-blur-xl' : 'bg-raised/90 backdrop-blur'
+        docked ? 'bg-raised/85 backdrop-blur-xl' : 'bg-raised/90 backdrop-blur',
+        dragging && 'border-primary'
       )}
     >
+      {images.length > 0 && (
+        <div className="flex gap-2 pt-1 pb-2">
+          {images.map((image, i) => (
+            <div key={i} className="relative">
+              <img src={image.thumb} alt={`Foto ${i + 1}`} className="size-14 rounded-control border border-line object-cover" />
+              <button
+                type="button"
+                aria-label={`Tirar a foto ${i + 1}`}
+                onClick={() => setImages((current) => current.filter((_, j) => j !== i))}
+                className="absolute -top-1.5 -right-1.5 grid size-5 place-items-center rounded-full border border-line-strong bg-raised text-muted hover:text-foreground"
+              >
+                <X size={11} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="flex items-center gap-3">
         <span aria-hidden className="text-xl text-primary">›</span>
         <input
@@ -575,6 +670,12 @@ export function AssistantInput({ assistant, docked }: { assistant: HomeAssistant
           value={text}
           disabled={blocked || assistant.busy}
           onChange={(event) => setText(event.target.value)}
+          onPaste={(event) => {
+            const files = [...event.clipboardData.files].filter((f) => f.type.startsWith('image/'));
+            if (!files.length) return;
+            event.preventDefault();
+            void attach(files);
+          }}
           onKeyDown={(event) => {
             if (event.key === 'Enter') submit();
             if (event.key === 'Escape' && docked) assistant.collapse();
@@ -582,12 +683,33 @@ export function AssistantInput({ assistant, docked }: { assistant: HomeAssistant
           placeholder={
             !models.length
               ? 'Escolha um modelo em Ajustes › IA para usar o assistente'
-              : (model?.problem ?? 'Peça algo')
+              : (model?.problem ?? (images.length ? 'Diga o que fazer com a foto, ou envie' : 'Peça algo'))
           }
           style={{ outline: 'none' }}
           className="h-11 min-w-0 flex-1 bg-transparent text-[17px] placeholder:text-subtle disabled:opacity-70"
         />
-        {text.trim() ? (
+        <input
+          ref={picker}
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          multiple
+          hidden
+          onChange={(event) => {
+            void attach(event.target.files ?? []);
+            event.target.value = '';
+          }}
+        />
+        <button
+          type="button"
+          aria-label="Anexar foto"
+          title="Anexar foto (também dá para colar ou arrastar)"
+          onClick={() => picker.current?.click()}
+          disabled={blocked || assistant.busy || images.length >= MAX_IMAGES}
+          className="grid size-9 place-items-center rounded-[12px] text-muted transition-colors hover:bg-hover hover:text-foreground disabled:opacity-40"
+        >
+          <ImagePlus size={17} />
+        </button>
+        {canSend ? (
           <button
             type="button"
             aria-label="Perguntar"
@@ -670,6 +792,8 @@ export function AssistantConversation({ assistant }: { assistant: HomeAssistant 
       id: 'pending',
       question: assistant.pending.text,
       askedAt: assistant.pending.at,
+      images: assistant.pending.images,
+      source: assistant.pending.source,
       answer: null,
       pending: true,
     });

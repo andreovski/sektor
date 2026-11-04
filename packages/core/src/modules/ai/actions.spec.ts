@@ -164,6 +164,24 @@ describe('ações do assistente', () => {
     expect(event.proposal).toMatchObject({ status: 'APPLIED', auto: true });
   });
 
+  it('lançamento lido de uma foto espera a confirmação, mesmo com o Jev seguro', async () => {
+    await value('accounts.create', { name: 'Nubank', type: 'CHECKING', initialBalanceCents: 0 });
+    await value('ai.setKey', { provider: 'jev', key: 'jev' });
+    await value('ai.acceptNotice', { provider: 'jev' });
+    fakeJev('money spent', 0.99, () => true);
+    const script = scripted({
+      name: 'propor_lancamento',
+      input: { tipo: 'gasto', valorCentavos: 4590, descricao: 'Padaria', conta: 'Nubank', categoria: 'Mercado' },
+    });
+    setModelForTests(script.model);
+    const conversation = await value('ai.chat.send', {
+      text: 'registra',
+      images: [{ data: 'aGVsbG8=', mediaType: 'image/jpeg', thumb: 'data:image/jpeg;base64,aGk=' }],
+    });
+    expect(conversation.messages[1].proposals[0].status).toBe('PENDING');
+    expect(app.handle.orm.select().from(transactions).all()).toHaveLength(0);
+  });
+
   it('Jev em dúvida sobre o tipo: a tarefa espera a confirmação', async () => {
     await value('ai.setKey', { provider: 'jev', key: 'jev' });
     await value('ai.acceptNotice', { provider: 'jev' });

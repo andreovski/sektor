@@ -1,3 +1,4 @@
+import { APICallError } from 'ai';
 import { MockLanguageModelV4 } from 'ai/test';
 import { eq, sql } from 'drizzle-orm';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -283,6 +284,49 @@ describe('assistente', () => {
     );
     await expect(rpc['ai.chat.send']({ text: 'Oi' })).rejects.toThrow();
     expect(rpc['ai.chat.list']()).toEqual([]);
+  });
+
+  it('a foto vai ao modelo, a miniatura fica e a foto não volta no histórico', async () => {
+    useClaude();
+    const first = scripted(null, () => 'Vi a nota.');
+    setModelForTests(first.model);
+    const photo = { data: 'aGVsbG8=', mediaType: 'image/jpeg' as const, thumb: 'data:image/jpeg;base64,aGk=' };
+    const conversation = await rpc['ai.chat.send']({ text: '', images: [photo] });
+    expect(conversation.title).toBe('Foto');
+    expect(conversation.messages[0]).toMatchObject({ text: '', images: [photo.thumb], source: 'text' });
+    expect(first.seen[0]!.prompt).toContain('aGVsbG8=');
+
+    const next = scripted(null, () => 'Ok.');
+    setModelForTests(next.model);
+    await rpc['ai.chat.send']({ conversationId: conversation.id, text: 'e o total?', source: 'voice' });
+    expect(next.seen[0]!.prompt).not.toContain('aGVsbG8=');
+    expect(next.seen[0]!.prompt).toContain('mandou uma foto');
+    const saved = rpc['ai.chat.get']({ id: conversation.id });
+    expect(saved.messages[2]!.source).toBe('voice');
+  });
+
+  it('modelo que não lê foto dá um aviso claro', async () => {
+    useClaude();
+    setModelForTests(
+      new MockLanguageModelV4({
+        doGenerate: async () => {
+          throw new APICallError({
+            message: 'image input is not supported',
+            url: 'x',
+            requestBodyValues: {},
+            statusCode: 400,
+            isRetryable: false,
+          });
+        },
+      })
+    );
+    await expect(
+      rpc['ai.chat.send']({
+        text: 'olha',
+        images: [{ data: 'aGVsbG8=', mediaType: 'image/png', thumb: 'data:image/png;base64,aGk=' }],
+      })
+    ).rejects.toThrow(/não lê foto/);
+    expect(rpc['ai.chat.list']()).toHaveLength(0);
   });
 
   it('pergunta vazia é recusada', async () => {
