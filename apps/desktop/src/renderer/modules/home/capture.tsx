@@ -153,7 +153,7 @@ function CaptureTabs({
       {agentExtra && (mode === 'agent' || open === 'agent') && (
         <div
           className={cn(
-            'ml-auto transition-[opacity,translate] duration-300 ease-[var(--ease-standard)] motion-reduce:transition-none',
+            'mr-2 ml-auto transition-[opacity,translate] duration-300 ease-[var(--ease-standard)] motion-reduce:transition-none',
             open === 'agent' && mode === 'agent' ? 'translate-x-0 opacity-100' : 'pointer-events-none translate-x-2 opacity-0'
           )}
         >
