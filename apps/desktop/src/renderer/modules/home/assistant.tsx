@@ -359,7 +359,7 @@ export function AssistantInput({ assistant, docked }: { assistant: HomeAssistant
       className={cn(
         'flex w-[760px] max-w-full flex-col gap-2',
         // Preso embaixo, por cima da conversa, que passa por trás dele.
-        docked && 'absolute -bottom-3 left-1/2 z-10 -translate-x-1/2'
+        docked && 'absolute -bottom-5 left-1/2 z-10 -translate-x-1/2'
       )}
     >
       {models.length > 1 && (
@@ -512,7 +512,7 @@ export function AssistantConversation({ assistant }: { assistant: HomeAssistant 
       )}
 
       {/* O respiro de baixo é a altura do campo: a última resposta não fica escondida atrás dele. */}
-      <div className="min-h-0 flex-1 overflow-y-auto border-t border-line">
+      <div className="min-h-0 flex-1 overflow-y-auto border-t border-line [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {turns.length === 0 ? (
           <p className="pt-10 pl-[84px] text-[15px] text-muted">
             Conversa nova. Pergunte sobre as contas, a agenda, as tarefas ou o seu dia.
