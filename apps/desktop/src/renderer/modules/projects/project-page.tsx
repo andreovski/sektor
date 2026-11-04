@@ -79,7 +79,7 @@ function Tabs({
   tabs: { value: Tab; label: string; count?: number }[];
 }) {
   return (
-    <div role="tablist" aria-label="Seções do projeto" className="mb-4 flex gap-1 border-b border-line">
+    <div role="tablist" aria-label="Seções do projeto" className="mb-3 flex gap-1 border-b border-line">
       {tabs.map((tab) => (
         <button
           key={tab.value}
@@ -119,7 +119,7 @@ export function ProjectPage() {
     <button
       type="button"
       onClick={back}
-      className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted hover:text-foreground"
+      className="mb-3 inline-flex items-center gap-1.5 text-sm text-muted hover:text-foreground"
     >
       <ArrowLeft size={14} />
       Projetos
@@ -147,7 +147,7 @@ export function ProjectPage() {
   return (
     <div>
       {backLink}
-      <header className="mb-6 flex items-start gap-3">
+      <header className="mb-4 flex items-start gap-3">
         <span
           className="grid size-11 shrink-0 place-items-center rounded-control border"
           style={{
@@ -189,7 +189,7 @@ export function ProjectPage() {
         </Button>
       </header>
 
-      <div className="mb-6 grid grid-cols-4 gap-3">
+      <div className="mb-4 grid grid-cols-4 gap-3">
         <StatCard
           label="Progresso"
           value={`${percent}%`}

@@ -17,7 +17,7 @@ import {
   Plus,
   Trash2,
 } from 'lucide-react';
-import { type KeyboardEvent, useRef, useState } from 'react';
+import { type KeyboardEvent, useLayoutEffect, useRef, useState } from 'react';
 
 import { useRpc, useRpcMutation } from '../../lib/rpc';
 import { Button, cn, EmptyState, Input, Select } from '../../ui';
@@ -25,6 +25,42 @@ import { RichTextEditor } from '../../ui/rich-text';
 
 import { ConfirmDialog } from './confirm-dialog';
 import { useNoteBody, useRefetchOnFocus } from './note-sync';
+
+// O dock flutua 68px acima da base da janela; a nota termina um pouco antes dele.
+const ABOVE_DOCK = 88;
+// O `pb-28` da página guarda lugar para o dock; aqui a nota já desconta isso, então a margem
+// negativa devolve a sobra e a página fica sem rolagem (8px de folga para a entrada da aba).
+const PAGE_BOTTOM_PAD = 112;
+const MIN_HEIGHT = 360;
+
+function scrollParent(element: HTMLElement) {
+  let parent = element.parentElement;
+  while (parent && !/(auto|scroll)/.test(getComputedStyle(parent).overflowY)) {
+    parent = parent.parentElement;
+  }
+  return parent;
+}
+
+/** Altura que leva o elemento até o dock: a página para, e quem rola é o que está dentro. */
+function useFillHeight(element: HTMLElement | null) {
+  const [height, setHeight] = useState<number>();
+  useLayoutEffect(() => {
+    const scroller = element && scrollParent(element);
+    if (!element || !scroller) return;
+    const measure = () => {
+      const top =
+        element.getBoundingClientRect().top -
+        scroller.getBoundingClientRect().top +
+        scroller.scrollTop;
+      setHeight(Math.max(MIN_HEIGHT, scroller.clientHeight - top - ABOVE_DOCK));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(scroller);
+    return () => observer.disconnect();
+  }, [element]);
+  return height;
+}
 
 function Editor({
   note,
@@ -41,8 +77,8 @@ function Editor({
   const remove = useRpcMutation('projectNotes.delete');
 
   return (
-    <div className="flex min-h-[460px] min-w-0 flex-col rounded-panel border border-line bg-surface px-6 py-4 shadow-card">
-      <div className="mb-4 flex items-center gap-2 border-b border-line pb-3">
+    <div className="flex min-h-0 min-w-0 flex-col rounded-panel border border-line bg-surface shadow-card">
+      <div className="flex shrink-0 items-center gap-2 border-b border-line px-4 py-2">
         {folders.length > 0 && (
           <Select
             aria-label="Pasta da nota"
@@ -93,15 +129,17 @@ function Editor({
           <Trash2 size={13} />
         </Button>
       </div>
-      <RichTextEditor
-        variant="page"
-        autoFocus={!note.body}
-        aria-label="Texto da nota"
-        placeholder={'Comece com um título, ou digite "/" para blocos'}
-        value={body}
-        onChange={setBody}
-        className="flex-1"
-      />
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 pt-3">
+        <RichTextEditor
+          variant="page"
+          autoFocus={!note.body}
+          aria-label="Texto da nota"
+          placeholder={'Comece com um título, ou digite "/" para blocos'}
+          value={body}
+          onChange={setBody}
+          className="min-h-full"
+        />
+      </div>
       {confirming && (
         <ConfirmDialog
           title="Apagar nota"
@@ -269,6 +307,8 @@ export function NotesTab({ projectId }: { projectId: string }) {
   const [renaming, setRenaming] = useState<string | null>(null);
   const [naming, setNaming] = useState(false);
   const [deleting, setDeleting] = useState<ProjectNoteFolderResponse | null>(null);
+  const [frame, setFrame] = useState<HTMLDivElement | null>(null);
+  const height = useFillHeight(frame);
   const list = notes.data ?? [];
   const folders = folderList.data ?? [];
   const current = list.find((note) => note.id === chosen) ?? list[0];
@@ -321,9 +361,13 @@ export function NotesTab({ projectId }: { projectId: string }) {
   );
 
   return (
-    <div className="grid grid-cols-[250px_minmax(0,1fr)] items-start gap-3">
-      <nav aria-label="Notas do projeto" className="flex flex-col gap-2">
-        <div className="flex gap-1.5">
+    <div
+      ref={setFrame}
+      className="grid grid-cols-[250px_minmax(0,1fr)] gap-3"
+      style={height ? { height, marginBottom: ABOVE_DOCK - PAGE_BOTTOM_PAD - 8 } : undefined}
+    >
+      <nav aria-label="Notas do projeto" className="flex min-h-0 flex-col gap-2">
+        <div className="flex shrink-0 gap-1.5">
           <Button className="flex-1" onClick={() => add()} disabled={create.isPending}>
             <FilePlus size={14} />
             Nova nota
@@ -341,7 +385,7 @@ export function NotesTab({ projectId }: { projectId: string }) {
             onCancel={() => setNaming(false)}
           />
         )}
-        <ul className="flex flex-col gap-0.5">
+        <ul className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto">
           {folders.map((folder) => {
             const open = !closed.has(folder.id);
             const inside = list.filter((note) => note.folderId === folder.id);
