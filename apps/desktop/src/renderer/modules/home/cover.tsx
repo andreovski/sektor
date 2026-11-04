@@ -141,7 +141,7 @@ export function Cover({
           <div className="cover-scrim absolute inset-0" />
           {wallpaper.credit && !trail && (
             // O Unsplash pede o fotógrafo e o Unsplash, com link, onde a foto aparece.
-            <p className="pointer-events-auto absolute top-9 right-6 text-[11px] text-foreground/70 [text-shadow:0_1px_2px_var(--background)]">
+            <p className="pointer-events-auto absolute top-9 right-6 text-[11px] text-foreground opacity-35 transition-opacity duration-200 [text-shadow:0_1px_2px_var(--background)] hover:opacity-100 focus-within:opacity-100">
               Foto de{' '}
               <a href={wallpaper.credit.url} target="_blank" rel="noreferrer" className="underline">
                 {wallpaper.credit.name}
