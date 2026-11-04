@@ -65,6 +65,16 @@
   --second-h: 290;
   --second-c: 0.12;
 }
+[data-palette='dracula'] {
+  --tint-h: 277;
+  --tint-c: 1.2;
+  --accent-h: 302;
+  --accent-c: 0.149;
+  --accent-dark-l: 0.742;
+  --accent-light-l: 0.49;
+  --second-h: 343;
+  --second-c: 0.177;
+}
 
 :root,
 [data-palette] {
@@ -165,6 +175,67 @@
   --cover-from: oklch(76% var(--accent-c) var(--accent-h));
   --cover-to: oklch(82% var(--second-c) var(--second-h));
   color-scheme: light;
+}
+
+/* Dracula usa as cores da paleta oficial (draculatheme.com/spec), não só os matizes.
+   No claro vira Alucard, a variante clara oficial. */
+[data-palette='dracula'] {
+  --background: #282a36;
+  --surface: #2e303e;
+  --surface-raised: #343746;
+  --surface-sunken: #21222c;
+  --foreground: #f8f8f2;
+  --muted-foreground: color-mix(in oklch, #f8f8f2 74%, #6272a4);
+  --subtle-foreground: color-mix(in oklch, #f8f8f2 48%, #6272a4);
+  --border: rgb(248 248 242 / 0.08);
+  --border-strong: #44475a;
+  --primary: #bd93f9;
+  --primary-hover: color-mix(in oklch, #bd93f9 82%, #f8f8f2);
+  --primary-foreground: #282a36;
+  --secondary: #ff79c6;
+  --ring: rgb(189 147 249 / 0.7);
+  --success: #50fa7b;
+  --warning: #f1fa8c;
+  --danger: #ff6e6e;
+  --info: #8be9fd;
+  --tone-violet: #bd93f9;
+  --tone-green: #50fa7b;
+  --tone-amber: #f1fa8c;
+  --tone-orange: #ffb86c;
+  --tone-rose: #ff79c6;
+  --tone-cyan: #8be9fd;
+  --cover-from: #bd93f9;
+  --cover-to: #ff79c6;
+}
+
+:root[data-theme='light'][data-palette='dracula'],
+:root[data-theme='light'] [data-palette='dracula'] {
+  --background: #fffbeb;
+  --surface: #fffdf5;
+  --surface-raised: #ffffff;
+  --surface-sunken: #f4efda;
+  --foreground: #1f1f1f;
+  --muted-foreground: color-mix(in oklch, #1f1f1f 70%, #6c664b);
+  --subtle-foreground: #6c664b;
+  --border: rgb(31 31 31 / 0.1);
+  --border-strong: #cfcfde;
+  --primary: #644ac9;
+  --primary-hover: color-mix(in oklch, #644ac9 85%, #1f1f1f);
+  --primary-foreground: #fffbeb;
+  --secondary: #a3144d;
+  --ring: rgb(100 74 201 / 0.6);
+  --success: #14710a;
+  --warning: #846e15;
+  --danger: #cb3a2a;
+  --info: #036a96;
+  --tone-violet: #644ac9;
+  --tone-green: #14710a;
+  --tone-amber: #846e15;
+  --tone-orange: #a34d14;
+  --tone-rose: #a3144d;
+  --tone-cyan: #036a96;
+  --cover-from: #644ac9;
+  --cover-to: #a3144d;
 }
 
 @theme inline {
@@ -362,6 +433,14 @@ html:active-view-transition-type(page-back) {
   .tab-panel {
     animation: none !important;
   }
+}
+
+/* A faixa de pixels da capa, em miniatura, no preview de cada paleta em Ajustes. */
+.palette-preview-cover {
+  background: linear-gradient(120deg, var(--cover-from), var(--cover-to));
+  mask-image: radial-gradient(circle, #000 0.9px, transparent 1.3px), linear-gradient(#000 30%, transparent);
+  mask-size: 4px 4px, 100% 100%;
+  mask-composite: intersect;
 }
 
 ::-webkit-scrollbar {

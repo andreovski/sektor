@@ -11,6 +11,7 @@ export const PALETTES = [
   { value: 'ameixa', label: 'Ameixa' },
   { value: 'rose', label: 'Rosé' },
   { value: 'grafite', label: 'Grafite' },
+  { value: 'dracula', label: 'Dracula' },
 ] as const;
 
 export type Palette = (typeof PALETTES)[number]['value'];

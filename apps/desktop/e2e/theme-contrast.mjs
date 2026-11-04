@@ -7,7 +7,7 @@ import { _electron as electron } from 'playwright';
 
 const TEXT = 4.5;
 const SHAPE = 3;
-const PALETTES = ['floresta', 'papel', 'oceano', 'ameixa', 'rose', 'grafite'];
+const PALETTES = ['floresta', 'papel', 'oceano', 'ameixa', 'rose', 'grafite', 'dracula'];
 const PAIRS = [
   ['--foreground', '--background', TEXT],
   ['--foreground', '--surface-raised', TEXT],
