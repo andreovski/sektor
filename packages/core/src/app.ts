@@ -37,6 +37,11 @@ export interface AppCtx extends Ctx {
   notify(title: string, body: string): void;
   /** Credenciais do app no Google. Sem elas, nada do Google roda. */
   google?: GoogleConfig | null;
+  /**
+   * Chama um método do RPC como a tela chamaria: mesma validação e mesmos efeitos (o Google
+   * sabe da escrita). É por aqui que o assistente grava o que a pessoa confirmou.
+   */
+  rpc?(method: string, input: unknown): Promise<unknown>;
 }
 
 export interface GoogleConfig {
@@ -156,7 +161,7 @@ export function createApp(options: AppOptions): App {
   const jobs = [...JOBS, ...backupJobs(store)];
 
   const running = new Set<string>();
-  return {
+  const app: App = {
     handle,
     ctx,
     async call(method, input) {
@@ -204,4 +209,10 @@ export function createApp(options: AppOptions): App {
     connectGoogle: (input) => connectAccount(ctx, input),
     syncGoogle: () => syncAll(ctx),
   };
+  ctx.rpc = async (method, input) => {
+    const result = await app.call(method, input);
+    if (!result.ok) throw new AppError(result.status, result.message);
+    return result.value;
+  };
+  return app;
 }

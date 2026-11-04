@@ -112,6 +112,15 @@ export const TOOL_LABELS: Record<string, string> = {
   foco: 'foco',
   saude: 'saúde',
   diario: 'diário',
+  propor_tarefa: 'proposta de tarefa',
+  propor_concluir_tarefa: 'proposta de concluir tarefa',
+  propor_mudar_tarefa: 'proposta de mudar tarefa',
+  propor_evento: 'proposta de evento',
+  propor_lancamento: 'proposta de lançamento',
+  propor_mudar_lancamento: 'proposta de mudar lançamento',
+  propor_apagar: 'proposta de apagar',
+  propor_lembrete: 'proposta de lembrete',
+  propor_habito_feito: 'proposta de hábito feito',
 };
 
 export function buildTools(ctx: Ctx): ToolSet {
@@ -206,6 +215,7 @@ export function buildTools(ctx: Ctx): ToolSet {
             // Direto no banco, sem o limite da lista da tela: o total precisa de todos.
             const all = app.db
               .select({
+                id: transactions.id,
                 date: transactions.date,
                 description: transactions.description,
                 amountCents: transactions.amountCents,
@@ -231,6 +241,7 @@ export function buildTools(ctx: Ctx): ToolSet {
               totalCentavos: all.reduce((sum, t) => sum + t.amountCents, 0),
               mostrando: Math.min(all.length, 40),
               lancamentos: all.slice(0, 40).map((t) => ({
+                id: t.id,
                 data: t.date,
                 descricao: t.description,
                 valorCentavos: t.amountCents,
@@ -299,6 +310,7 @@ export function buildTools(ctx: Ctx): ToolSet {
               quantidade: list.length,
               mostrando: Math.min(list.length, 50),
               tarefas: list.slice(0, 50).map((t) => ({
+                id: t.id,
                 titulo: t.title,
                 situacao: t.status,
                 prioridade: t.priority,
@@ -383,6 +395,7 @@ export function buildTools(ctx: Ctx): ToolSet {
               eventos: list.slice(0, 80).map((e) =>
                 e.allDay
                   ? {
+                      id: e.eventId,
                       titulo: e.title,
                       diaInteiro: true,
                       de: e.startAt.slice(0, 10),
@@ -390,6 +403,7 @@ export function buildTools(ctx: Ctx): ToolSet {
                       local: e.location,
                     }
                   : {
+                      id: e.eventId,
                       titulo: e.title,
                       inicio: localTime(app, e.startAt),
                       fim: localTime(app, e.endAt),

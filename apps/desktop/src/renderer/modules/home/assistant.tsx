@@ -1,11 +1,13 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { ArrowUp, ChevronDown, Flag, History, Mic, PenSquare } from 'lucide-react';
+import { ArrowUp, Check, ChevronDown, Flag, History, Mic, PenSquare, RotateCcw, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
+import { money } from '../../lib/format';
 import { call, useRpc } from '../../lib/rpc';
-import { cn } from '../../ui';
+import { Button, cn, Select } from '../../ui';
+import { CategorySelect, useAccounts, useCategories } from '../finance/parts';
 import { ModelMenu } from '../ai/model-menu';
 import { AiText } from '../ai/shared';
 
@@ -17,6 +19,7 @@ import { MOODS } from './today-cards';
 
 type Conversation = Awaited<ReturnType<typeof call<'ai.chat.get'>>>;
 type Message = Conversation['messages'][number];
+type Proposal = Message['proposals'][number];
 
 const SUGGESTIONS = [
   'Quanto gastei com mercado no mês passado?',
@@ -97,7 +100,163 @@ function Dots() {
   );
 }
 
-function TurnView({ turn, devMode }: { turn: Turn & { pending?: boolean }; devMode: boolean }) {
+const STATUS: Record<Proposal['status'], { label: string; className: string } | null> = {
+  PENDING: null,
+  APPLIED: { label: 'Salvo', className: 'text-success' },
+  DISCARDED: { label: 'Descartado', className: 'text-subtle' },
+  UNDONE: { label: 'Desfeito', className: 'text-subtle' },
+  FAILED: { label: 'Falhou', className: 'text-danger' },
+};
+
+const LINKS: Record<string, string> = {
+  '/tarefas': 'Nas tarefas',
+  '/agenda': 'Na agenda',
+  '/financas': 'Nas finanças',
+  '/habitos': 'Nos hábitos',
+};
+
+/** O cartão da proposta, como no Jotta: o que vai mudar, e salvar ou descartar. */
+function ProposalCard({ proposal, onChange }: { proposal: Proposal; onChange(next: Proposal): void }) {
+  const accounts = useAccounts().filter((a) => !a.archived);
+  const categories = useCategories();
+  const [accountId, setAccountId] = useState('');
+  const [categoryId, setCategoryId] = useState('');
+  const [busy, setBusy] = useState(false);
+  const { card, status, needs } = proposal;
+  const badge = STATUS[status];
+  const missing = Boolean(needs && ((needs.account && !accountId) || (needs.category && !categoryId)));
+  const act = async (method: 'ai.proposal.apply' | 'ai.proposal.discard' | 'ai.proposal.undo') => {
+    setBusy(true);
+    try {
+      const next = await call(method, {
+        id: proposal.id,
+        ...(method === 'ai.proposal.apply' && needs
+          ? { ...(accountId ? { accountId } : {}), ...(categoryId ? { categoryId } : {}) }
+          : {}),
+      } as never);
+      onChange(next as Proposal);
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const quiet = status === 'DISCARDED' || status === 'UNDONE';
+
+  return (
+    <div className={cn('overflow-hidden rounded-[18px] border border-line bg-surface', quiet && 'opacity-60')}>
+      <div className="flex items-center justify-between border-b border-dashed border-line-strong px-5 py-3 font-mono text-[11px] tracking-[0.12em] text-subtle uppercase">
+        <span>{card.kind}</span>
+        {badge && (
+          <span className={cn('flex items-center gap-1', badge.className)}>
+            {status === 'APPLIED' && <Check size={12} />}
+            {badge.label}
+            {proposal.auto && status === 'APPLIED' ? ' sozinho' : ''}
+          </span>
+        )}
+      </div>
+      <div className="flex flex-col gap-2.5 px-5 py-4">
+        {card.amountCents != null ? (
+          <p className={cn('text-[26px] font-semibold tabular-nums', card.amountTone === 'income' ? 'text-success' : 'text-foreground')}>
+            {money(card.amountCents)}
+            <span className="ml-3 align-middle text-base font-normal text-muted">{card.title}</span>
+          </p>
+        ) : (
+          <p className="text-lg font-semibold">{card.title}</p>
+        )}
+        {card.rows.map((row) => {
+          const choosing = status === 'PENDING' && needs && row.value === 'Escolha antes de salvar';
+          return (
+            <div key={row.label} className="grid grid-cols-[140px_minmax(0,1fr)] items-center gap-3 text-[15px]">
+              <span className="font-mono text-[11px] tracking-[0.12em] text-subtle uppercase">{row.label}</span>
+              {choosing && row.label === 'Conta' ? (
+                <Select aria-label="Conta" value={accountId} onChange={(event) => setAccountId(event.target.value)}>
+                  <option value="">Escolha a conta</option>
+                  {accounts.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name}
+                    </option>
+                  ))}
+                </Select>
+              ) : choosing && row.label === 'Categoria' ? (
+                <CategorySelect
+                  value={categoryId}
+                  onChange={setCategoryId}
+                  kind={(needs?.kind ?? 'EXPENSE') as 'EXPENSE' | 'INCOME'}
+                  categories={categories}
+                  placeholder="Escolha a categoria"
+                />
+              ) : (
+                <span>
+                  {row.before && (
+                    <span className="mr-2 text-subtle line-through">{row.before}</span>
+                  )}
+                  {row.value}
+                </span>
+              )}
+            </div>
+          );
+        })}
+        {proposal.error && <p className="text-sm text-danger">{proposal.error}</p>}
+      </div>
+      {(status === 'PENDING' || status === 'APPLIED') && (
+        <div className="grid grid-cols-2 border-t border-line">
+          {status === 'PENDING' ? (
+            <>
+              <button
+                type="button"
+                disabled={busy || missing}
+                onClick={() => void act('ai.proposal.apply')}
+                className="flex h-12 items-center justify-center gap-2 text-[15px] font-medium text-primary transition-colors hover:bg-hover disabled:opacity-50"
+              >
+                <Check size={16} /> Salvar
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void act('ai.proposal.discard')}
+                className="flex h-12 items-center justify-center gap-2 border-l border-line font-mono text-[12px] tracking-[0.12em] text-muted uppercase transition-colors hover:bg-hover"
+              >
+                <X size={14} /> Descartar
+              </button>
+            </>
+          ) : (
+            <>
+              {proposal.undoable ? (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void act('ai.proposal.undo')}
+                  className="flex h-12 items-center justify-center gap-2 text-[15px] font-medium text-primary transition-colors hover:bg-hover"
+                >
+                  <RotateCcw size={15} /> Desfazer
+                </button>
+              ) : (
+                <span className="flex h-12 items-center justify-center text-sm text-subtle">Sem desfazer</span>
+              )}
+              <Link
+                to={proposal.link}
+                className="flex h-12 items-center justify-center border-l border-line font-mono text-[12px] tracking-[0.12em] text-muted uppercase transition-colors hover:bg-hover"
+              >
+                {LINKS[proposal.link] ?? 'Abrir'}
+              </Link>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TurnView({
+  turn,
+  devMode,
+  onProposal,
+}: {
+  turn: Turn & { pending?: boolean };
+  devMode: boolean;
+  onProposal(next: Proposal): void;
+}) {
   const answer = turn.answer;
   return (
     <article className="grid grid-cols-[64px_minmax(0,1fr)] gap-x-5 pt-5">
@@ -122,8 +281,11 @@ function TurnView({ turn, devMode }: { turn: Turn & { pending?: boolean }; devMo
             <p className="text-[16px] leading-relaxed whitespace-pre-wrap text-foreground/90">
               <AiText text={answer.text} />
             </p>
+            {answer.proposals.map((proposal) => (
+              <ProposalCard key={proposal.id} proposal={proposal} onChange={onProposal} />
+            ))}
             <span className="font-mono text-[11px] tracking-[0.08em] text-subtle uppercase">
-              {answer.tools.length ? `Consultou ${answer.tools.join(', ')}` : 'Sem consulta'}
+              {answer.tools.length ? `Usou ${answer.tools.join(', ')}` : 'Sem consulta'}
               {devMode && answer.model ? ` · ${answer.model}` : ''}
             </span>
             {devMode && <div aria-hidden className="h-1.5 rounded-full bg-primary/80" />}
@@ -292,8 +454,8 @@ export function useHomeAssistant() {
         setConversation(next);
         setCurrentId(next.id);
       }
-      void client.invalidateQueries({ queryKey: ['ai.chat.list'] });
-      void client.invalidateQueries({ queryKey: ['ai.calls'] });
+      // Um lançamento salvo sozinho pelo Jev muda as outras telas também.
+      void client.invalidateQueries();
     } catch (error) {
       toast.error((error as Error).message);
       throw error;
@@ -324,6 +486,19 @@ export function useHomeAssistant() {
     },
     currentId,
     conversation,
+    /** Troca a proposta resolvida na conversa aberta e avisa as telas que algo foi gravado. */
+    updateProposal: (next: Proposal) => {
+      setConversation((current) =>
+        current && {
+          ...current,
+          messages: current.messages.map((m) => ({
+            ...m,
+            proposals: m.proposals.map((p) => (p.id === next.id ? next : p)),
+          })),
+        }
+      );
+      void client.invalidateQueries();
+    },
     pending: pending && pending.conversationId === currentId ? pending : null,
     busy: Boolean(pending),
     send,
@@ -518,7 +693,9 @@ export function AssistantConversation({ assistant }: { assistant: HomeAssistant 
             Conversa nova. Pergunte sobre as contas, a agenda, as tarefas ou o seu dia.
           </p>
         ) : (
-          turns.map((turn) => <TurnView key={turn.id} turn={turn} devMode={assistant.devMode} />)
+          turns.map((turn) => (
+            <TurnView key={turn.id} turn={turn} devMode={assistant.devMode} onProposal={assistant.updateProposal} />
+          ))
         )}
         <div ref={end} aria-hidden className="h-40" />
       </div>
