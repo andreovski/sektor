@@ -44,7 +44,7 @@ const systemDark = window.matchMedia('(prefers-color-scheme: dark)');
 const resolved = (): Theme => (choice === 'system' ? (systemDark.matches ? 'dark' : 'light') : choice);
 let theme = resolved();
 let palette: Palette = savedPalette?.value ?? 'floresta';
-let coverEverywhere = read(COVER_KEY) === 'on';
+let coverEverywhere = read(COVER_KEY) !== 'off';
 const listeners = new Set<() => void>();
 
 function paint() {
