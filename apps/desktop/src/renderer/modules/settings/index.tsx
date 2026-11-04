@@ -4,6 +4,7 @@ import {
   CalendarSync,
   Landmark,
   DatabaseBackup,
+  ImageIcon,
   Info,
   LayoutGrid,
   type LucideIcon,
@@ -33,6 +34,7 @@ import { BanksPanel } from '../finance/banks';
 import { Appearance } from './appearance';
 import { GoogleSettings } from './google';
 import { ModulesSettings } from './modules';
+import { UnsplashSettings } from './unsplash';
 import { useRestore } from './restore';
 
 const size = (bytes: number) =>
@@ -294,6 +296,13 @@ const GROUPS: {
         icon: Sparkles,
         description: 'Um modelo à sua escolha, local ou com a sua chave, e o que ele pode ler.',
         panel: AiSettings,
+      },
+      {
+        value: 'unsplash',
+        label: 'Unsplash',
+        icon: ImageIcon,
+        description: 'A sua chave do Unsplash, para buscar fotos para o wallpaper da capa.',
+        panel: UnsplashSettings,
       },
     ],
   },

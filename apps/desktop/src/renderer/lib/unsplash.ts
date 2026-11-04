@@ -1,6 +1,8 @@
 // Busca no Unsplash com a chave de quem usa o app (o repositório é público, então ela não vem
 // no código). As fotos são carregadas direto do Unsplash, como as regras da API pedem.
 
+import { useSyncExternalStore } from 'react';
+
 import type { Credit } from './wallpaper';
 
 const KEY = 'sektor-unsplash-key';
@@ -25,7 +27,7 @@ interface ApiPhoto {
   user: { name: string; links: { html: string } };
 }
 
-export function readUnsplashKey() {
+function readKey() {
   try {
     return localStorage.getItem(KEY) ?? '';
   } catch {
@@ -33,14 +35,28 @@ export function readUnsplashKey() {
   }
 }
 
-export function saveUnsplashKey(key: string) {
+let key = readKey();
+const listeners = new Set<() => void>();
+
+export function saveUnsplashKey(next: string) {
+  key = next;
   try {
-    if (key) localStorage.setItem(KEY, key);
+    if (next) localStorage.setItem(KEY, next);
     else localStorage.removeItem(KEY);
   } catch {
     // Sem armazenamento, a chave vale até fechar o app.
   }
+  listeners.forEach((listener) => listener());
 }
+
+export const useUnsplashKey = () =>
+  useSyncExternalStore(
+    (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    () => key
+  );
 
 async function request(path: string, key: string) {
   const response = await fetch(`${API}${path}`, {

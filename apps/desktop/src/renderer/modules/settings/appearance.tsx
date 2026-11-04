@@ -1,3 +1,4 @@
+import { useNavigate } from '@tanstack/react-router';
 import { Check, HardDrive, ImagePlus, Layers, type LucideIcon, Monitor, Moon, Sun } from 'lucide-react';
 import { type CSSProperties, useRef, useState } from 'react';
 import { toast } from 'sonner';
@@ -16,7 +17,7 @@ import {
   useThemeChoice,
   useWallpaper,
 } from '../../lib/theme';
-import { unsplashLink } from '../../lib/unsplash';
+import { unsplashLink, useUnsplashKey } from '../../lib/unsplash';
 import { extractTones, PRESETS, readLocalImage, swatchColor } from '../../lib/wallpaper';
 import { Card, cn } from '../../ui';
 
@@ -86,6 +87,8 @@ function Wallpapers() {
   const [loading, setLoading] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
   const picker = useRef<HTMLInputElement>(null);
+  const unsplashKey = useUnsplashKey();
+  const navigate = useNavigate();
   const fromUnsplash = wallpaper.id.startsWith('unsplash-') && 'thumb' in wallpaper;
   const fromComputer = wallpaper.id === 'local' && 'thumb' in wallpaper;
   const choose = async (id: string, src: string) => {
@@ -183,7 +186,12 @@ function Wallpapers() {
           role="radio"
           aria-checked={fromUnsplash}
           data-testid="wallpaper-unsplash"
-          onClick={() => setSearching(true)}
+          title={unsplashKey ? undefined : 'Configure a chave em Integrações › Unsplash'}
+          onClick={() =>
+            unsplashKey
+              ? setSearching(true)
+              : void navigate({ to: '/ajustes', search: { secao: 'unsplash' } as never })
+          }
           className={tile(fromUnsplash)}
         >
           {fromUnsplash ? (
