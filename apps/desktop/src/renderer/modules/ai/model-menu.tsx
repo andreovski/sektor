@@ -95,10 +95,14 @@ export function ModelMenu({
   models,
   value,
   onChange,
+  side = 'top',
+  align = 'start',
 }: {
   models: MenuModel[];
   value: string | null;
   onChange(id: string): void;
+  side?: 'top' | 'bottom';
+  align?: 'start' | 'end';
 }) {
   const current = models.find((m) => m.id === value) ?? models[0];
   if (!current) return null;
@@ -118,8 +122,8 @@ export function ModelMenu({
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <DropdownMenu.Content
-          side="top"
-          align="start"
+          side={side}
+          align={align}
           sideOffset={8}
           className="z-50 w-80 rounded-panel border border-line bg-raised p-1.5 shadow-popover"
         >

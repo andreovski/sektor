@@ -682,7 +682,8 @@ export function AssistantInput({
         docked && 'absolute -bottom-5 left-1/2 z-10 -translate-x-1/2'
       )}
     >
-      {models.length > 1 && (
+      {/* Com as abas do Início, o modelo fica na linha delas. */}
+      {models.length > 1 && !tabs && (
         <div className="flex">
           <ModelMenu models={models} value={assistant.modelId} onChange={assistant.choose} />
         </div>

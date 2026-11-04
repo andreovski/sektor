@@ -10,7 +10,7 @@ import {
   Sparkles,
   StickyNote,
 } from 'lucide-react';
-import { type FormEvent, type ReactNode, useEffect, useState } from 'react';
+import { type FormEvent, type ReactNode, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { todayString } from '../../lib/format';
@@ -19,6 +19,8 @@ import { useRpc, useRpcMutation } from '../../lib/rpc';
 import { Button, cn, Select } from '../../ui';
 import { CapturePlace } from '../tasks/capture-field';
 import { Chip, PriorityBars } from '../tasks/chips';
+
+import { ModelMenu } from '../ai/model-menu';
 
 import { AssistantInput, type HomeAssistant } from './assistant';
 
@@ -62,50 +64,104 @@ export function HomeCapture({ assistant }: { assistant: HomeAssistant }) {
   // Módulo desligado leva a aba: fica a primeira que sobrou.
   const mode = modes.some((m) => m.id === chosen) ? chosen : modes[0]?.id;
   if (!mode) return null;
+  // Cada aba monta o seu campo, e as abas nascem de novo junto: elas recebem a aba de antes para
+  // fechar o nome dela e abrir o da nova, como no dock.
+  const previous = useRef<Mode | undefined>(undefined);
   const pick = (next: Mode) => {
     setChosen(next);
     write(MODE_KEY, next);
   };
-  // As abas andam como o dock: só o ícone, e a aberta mostra o nome.
   const tabs =
     modes.length > 1 ? (
-      <div role="tablist" aria-label="O que capturar" className="-mr-2 flex gap-1 border-b border-line pt-2 pb-2">
-        {modes.map(({ id, label, icon: Icon }) => {
-          const active = id === mode;
-          return (
-            <button
-              key={id}
-              type="button"
-              role="tab"
-              aria-selected={active}
-              aria-label={label}
-              title={label}
-              onClick={() => pick(id)}
-              className={cn(
-                'flex h-7 items-center rounded-full border px-2.5 text-[13px] transition-colors duration-200',
-                active
-                  ? 'border-primary/40 bg-primary/15 text-primary'
-                  : 'border-transparent text-muted hover:bg-hover hover:text-foreground'
-              )}
-            >
-              <Icon size={14} />
-              <span
-                aria-hidden={!active}
-                className={cn(
-                  'grid transition-[grid-template-columns,opacity,margin] duration-300 ease-[var(--ease-standard)] motion-reduce:transition-none',
-                  active ? 'ml-1.5 grid-cols-[1fr] opacity-100' : 'grid-cols-[0fr] opacity-0'
-                )}
-              >
-                <span className="overflow-hidden whitespace-nowrap">{label}</span>
-              </span>
-            </button>
-          );
-        })}
-      </div>
+      <CaptureTabs
+        modes={modes}
+        mode={mode}
+        from={previous.current}
+        onPick={pick}
+        // O modelo é do Agente: só aparece com ele aberto, no canto direito.
+        agentExtra={
+          assistant.models.length > 1 ? (
+            <ModelMenu
+              models={assistant.models}
+              value={assistant.modelId}
+              onChange={assistant.choose}
+              side="bottom"
+              align="end"
+            />
+          ) : null
+        }
+      />
     ) : null;
+  previous.current = mode;
   if (mode === 'task') return <CaptureBox tabs={tabs} />;
   if (mode === 'note') return <NoteBox tabs={tabs} />;
   return <AssistantInput assistant={assistant} tabs={tabs} />;
+}
+
+function CaptureTabs({
+  modes,
+  mode,
+  from,
+  onPick,
+  agentExtra,
+}: {
+  modes: typeof MODES;
+  mode: Mode;
+  from: Mode | undefined;
+  onPick(mode: Mode): void;
+  agentExtra: ReactNode;
+}) {
+  const [open, setOpen] = useState(from ?? mode);
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setOpen(mode));
+    return () => cancelAnimationFrame(frame);
+  }, [mode]);
+  return (
+    <div role="tablist" aria-label="O que capturar" className="-mr-2 flex gap-1 border-b border-line pt-2 pb-2">
+      {modes.map(({ id, label, icon: Icon }) => {
+        const active = id === mode;
+        const expanded = id === open;
+        return (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            aria-label={label}
+            title={label}
+            onClick={() => onPick(id)}
+            className={cn(
+              'flex h-7 items-center rounded-full border px-2.5 text-[13px] transition-colors duration-200',
+              expanded
+                ? 'border-primary/40 bg-primary/15 text-primary'
+                : 'border-transparent text-muted hover:bg-hover hover:text-foreground'
+            )}
+          >
+            <Icon size={14} />
+            <span
+              aria-hidden={!active}
+              className={cn(
+                'grid transition-[grid-template-columns,opacity,margin] duration-300 ease-[var(--ease-standard)] motion-reduce:transition-none',
+                expanded ? 'ml-1.5 grid-cols-[1fr] opacity-100' : 'grid-cols-[0fr] opacity-0'
+              )}
+            >
+              <span className="overflow-hidden whitespace-nowrap">{label}</span>
+            </span>
+          </button>
+        );
+      })}
+      {agentExtra && (mode === 'agent' || open === 'agent') && (
+        <div
+          className={cn(
+            'ml-auto transition-[opacity,translate] duration-300 ease-[var(--ease-standard)] motion-reduce:transition-none',
+            open === 'agent' && mode === 'agent' ? 'translate-x-0 opacity-100' : 'pointer-events-none translate-x-2 opacity-0'
+          )}
+        >
+          {agentExtra}
+        </div>
+      )}
+    </div>
+  );
 }
 
 /** Nota rápida num projeto. O projeto escolhido fica guardado para a próxima. */
