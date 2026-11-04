@@ -52,10 +52,12 @@ function BoardCard({
 function Column({
   column,
   showPlace,
+  fill,
   onOpen,
 }: {
   column: StatusGroup;
   showPlace?: boolean;
+  fill?: boolean;
   onOpen(id: string): void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: column.status });
@@ -65,22 +67,23 @@ function Column({
       ref={setNodeRef}
       aria-label={column.title}
       className={cn(
-        'flex min-h-[420px] min-w-0 flex-col rounded-panel border bg-sunken/60 p-2',
+        'flex min-w-0 flex-col rounded-panel border bg-sunken/60 p-2',
+        fill ? 'min-h-0' : 'min-h-[420px]',
         isOver ? 'border-primary/50' : 'border-line'
       )}
     >
-      <h3 className="mb-2 flex items-center gap-2 px-1 pt-0.5 text-xs font-medium text-muted">
+      <h3 className="mb-2 flex shrink-0 items-center gap-2 px-1 pt-0.5 text-xs font-medium text-muted">
         <span className={cn('size-2 rounded-full', STATUS_DOT[column.status])} />
         <span className="truncate">{column.title}</span>
         <span className="ml-auto tabular-nums text-subtle">{column.tasks.length}</span>
       </h3>
-      <ul className="flex flex-col gap-2">
+      <ul className={cn('flex flex-col gap-2', fill && 'min-h-0 flex-1 overflow-y-auto')}>
         {shown.map((task) => (
           <BoardCard key={task.id} task={task} showPlace={showPlace} onOpen={onOpen} />
         ))}
       </ul>
       {shown.length < column.tasks.length && (
-        <p className="mt-2 px-1 text-[11px] text-subtle">
+        <p className="mt-2 shrink-0 px-1 text-[11px] text-subtle">
           Mostrando as {shown.length} mais recentes
         </p>
       )}
@@ -91,11 +94,14 @@ function Column({
 export function Kanban({
   tasks,
   showPlace,
+  fill,
   onOpen,
 }: {
   tasks: TaskResponse[];
   /** Marca em cada cartão o projeto e a lista (na visão Todas). */
   showPlace?: boolean;
+  /** Ocupa a altura do pai, e cada coluna rola por dentro. */
+  fill?: boolean;
   onOpen(id: string): void;
 }) {
   const update = useRpcMutation('tasks.update');
@@ -132,10 +138,16 @@ export function Kanban({
       onDragEnd={onDragEnd}
       onDragCancel={() => setActiveId(null)}
     >
-      <div className="overflow-x-auto pb-1">
-        <div className="grid min-w-[860px] grid-cols-5 gap-2">
+      <div className={cn('overflow-x-auto pb-1', fill && 'h-full')}>
+        <div className={cn('grid min-w-[860px] grid-cols-5 gap-2', fill && 'h-full')}>
           {boardColumns(tasks, moved).map((column) => (
-            <Column key={column.status} column={column} showPlace={showPlace} onOpen={onOpen} />
+            <Column
+              key={column.status}
+              column={column}
+              showPlace={showPlace}
+              fill={fill}
+              onOpen={onOpen}
+            />
           ))}
         </div>
       </div>

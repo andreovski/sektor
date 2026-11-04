@@ -2,6 +2,7 @@ import { findTask } from '@sektor/core/src/modules/tasks/logic';
 import { CheckCircle2 } from 'lucide-react';
 import { useState } from 'react';
 
+import { useFillHeight } from '../../lib/fill-height';
 import { useRpc } from '../../lib/rpc';
 import { EmptyState } from '../../ui';
 import { CaptureField } from '../tasks/capture-field';
@@ -14,6 +15,8 @@ export function ProjectTasks({ projectId, mode }: { projectId: string; mode: 'ka
   const [showDone, setShowDone] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [board, setBoard] = useState<HTMLDivElement | null>(null);
+  const fill = useFillHeight(board);
   const lists = useRpc('taskLists.list');
   const tasks = useRpc('tasks.list', {
     projectId,
@@ -45,7 +48,10 @@ export function ProjectTasks({ projectId, mode }: { projectId: string; mode: 'ka
       {tasks.isPending ? (
         <p className="py-10 text-center text-sm text-muted">Carregando tarefas…</p>
       ) : mode === 'kanban' ? (
-        <Kanban tasks={tasks.data ?? []} onOpen={setOpenId} />
+        // Como nas Notas: a página fica parada e cada coluna rola por dentro.
+        <div ref={setBoard} style={fill}>
+          <Kanban fill tasks={tasks.data ?? []} onOpen={setOpenId} />
+        </div>
       ) : tasks.data?.length ? (
         <ListBody tasks={tasks.data} listId={null} showCompleted={showDone} onOpen={setOpenId} />
       ) : (
