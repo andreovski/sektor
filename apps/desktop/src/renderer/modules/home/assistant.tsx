@@ -605,7 +605,16 @@ function VoiceStatus({ state }: { state: VoiceState }) {
 }
 
 /** O campo do assistente: no meio da capa fechado, preso embaixo com a conversa aberta. */
-export function AssistantInput({ assistant, docked }: { assistant: HomeAssistant; docked?: boolean }) {
+export function AssistantInput({
+  assistant,
+  docked,
+  tabs,
+}: {
+  assistant: HomeAssistant;
+  docked?: boolean;
+  /** As abas da captura do Início, no topo do campo. */
+  tabs?: React.ReactNode;
+}) {
   const [text, setText] = useState('');
   const [images, setImages] = useState<PreparedImage[]>([]);
   const [dragging, setDragging] = useState(false);
@@ -696,6 +705,7 @@ export function AssistantInput({ assistant, docked }: { assistant: HomeAssistant
         dragging && 'border-primary'
       )}
     >
+      {tabs && <div className="-mt-2 mb-1">{tabs}</div>}
       {images.length > 0 && (
         <div className="flex gap-2 pt-1 pb-2">
           {images.map((image, i) => (

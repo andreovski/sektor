@@ -2,7 +2,7 @@ import { parseCapture } from '@sektor/core/src/modules/tasks/capture';
 import { TASK_PRIORITY_LABELS } from '@sektor/core/src/modules/tasks/contract';
 import { relativeDay } from '@sektor/core/src/modules/tasks/logic';
 import { CalendarDays, CornerDownLeft, Inbox } from 'lucide-react';
-import { type FormEvent, useEffect, useState } from 'react';
+import { type FormEvent, type ReactNode, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
 import { todayString } from '../../lib/format';
@@ -58,40 +58,33 @@ export function HomeCapture({ assistant }: { assistant: HomeAssistant }) {
     setChosen(next);
     write(MODE_KEY, next);
   };
-  return (
-    <div className="flex w-[760px] max-w-full flex-col items-center gap-3">
-      {modes.length > 1 && (
-        <div
-          role="tablist"
-          aria-label="O que capturar"
-          className="flex gap-1 rounded-full border border-line-strong bg-raised/80 p-1 backdrop-blur"
-        >
-          {modes.map((m) => (
-            <button
-              key={m.id}
-              type="button"
-              role="tab"
-              aria-selected={m.id === mode}
-              onClick={() => pick(m.id)}
-              className={cn(
-                'h-7 rounded-full px-3.5 text-[13px] font-medium transition-colors',
-                m.id === mode ? 'bg-primary/15 text-primary' : 'text-muted hover:text-foreground'
-              )}
-            >
-              {m.label}
-            </button>
-          ))}
-        </div>
-      )}
-      {mode === 'task' && <CaptureBox />}
-      {mode === 'note' && <NoteBox />}
-      {mode === 'agent' && <AssistantInput assistant={assistant} />}
-    </div>
-  );
+  const tabs =
+    modes.length > 1 ? (
+      <div role="tablist" aria-label="O que capturar" className="-mr-2 flex gap-4 border-b border-line">
+        {modes.map((m) => (
+          <button
+            key={m.id}
+            type="button"
+            role="tab"
+            aria-selected={m.id === mode}
+            onClick={() => pick(m.id)}
+            className={cn(
+              '-mb-px h-9 border-b-2 px-0.5 text-[13px] font-medium transition-colors',
+              m.id === mode ? 'border-primary text-foreground' : 'border-transparent text-muted hover:text-foreground'
+            )}
+          >
+            {m.label}
+          </button>
+        ))}
+      </div>
+    ) : null;
+  if (mode === 'task') return <CaptureBox tabs={tabs} />;
+  if (mode === 'note') return <NoteBox tabs={tabs} />;
+  return <AssistantInput assistant={assistant} tabs={tabs} />;
 }
 
 /** Nota rápida num projeto. O projeto escolhido fica guardado para a próxima. */
-function NoteBox() {
+function NoteBox({ tabs }: { tabs: ReactNode }) {
   const [text, setText] = useState('');
   const projects = useRpc('projects.list', {});
   const list = projects.data ?? [];
@@ -118,13 +111,15 @@ function NoteBox() {
 
   if (projects.data && !list.length) {
     return (
-      <div className={cn(BOX, 'pt-3 text-sm text-muted')}>
-        As notas ficam nos projetos. Crie um projeto em Projetos para guardar a primeira.
+      <div className={cn(BOX, 'text-sm text-muted')}>
+        {tabs}
+        <p className="pt-3">As notas ficam nos projetos. Crie um projeto em Projetos para guardar a primeira.</p>
       </div>
     );
   }
   return (
     <form onSubmit={submit} className={BOX}>
+      {tabs}
       <div className="flex items-center gap-2 pt-3">
         <input
           aria-label="Escrever nota"
@@ -161,7 +156,7 @@ function NoteBox() {
   );
 }
 
-export function CaptureBox() {
+export function CaptureBox({ tabs }: { tabs?: ReactNode }) {
   const [text, setText] = useState('');
   const capture = useRpcMutation('tasks.capture');
   const today = todayString();
@@ -187,6 +182,7 @@ export function CaptureBox() {
       onSubmit={submit}
       className={BOX}
     >
+      {tabs}
       <div className="flex items-center gap-2 pt-3">
         <input
           id={CAPTURE_INPUT_ID}
