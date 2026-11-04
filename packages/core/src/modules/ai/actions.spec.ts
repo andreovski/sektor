@@ -41,6 +41,20 @@ function scripted(call: { name: string; input: object } | null, answer = 'Confir
   return { model, tools };
 }
 
+/** Jev de mentira: responde a pergunta de tipo com `kind` e, nas outras, escolhe pelo rótulo. */
+function fakeJev(kind: string, kindScore: number, pick: (label: string) => boolean, score = 0.93) {
+  setJevForTests(async (_key, _state, questions) => {
+    const { criteria, instructions } = questions.answer!;
+    if (instructions.startsWith('The user wrote this request')) {
+      const key = Object.entries(criteria).find(([, label]) => label.toLowerCase().startsWith(kind))![0];
+      return { answers: { answer: { type: 'choice', choice: key, probabilities: { [key]: kindScore } } } };
+    }
+    const found = Object.entries(criteria).find(([, label]) => pick(label));
+    const key = found ? found[0] : 'nenhuma';
+    return { answers: { answer: { type: 'choice', choice: key, probabilities: { [key]: score } } } };
+  });
+}
+
 describe('ações do assistente', () => {
   let dir: string;
   let app: App;
@@ -126,11 +140,7 @@ describe('ações do assistente', () => {
     await value('accounts.create', { name: 'Nubank', type: 'CHECKING', initialBalanceCents: 0 });
     await value('ai.setKey', { provider: 'jev', key: 'jev' });
     await value('ai.acceptNotice', { provider: 'jev' });
-    setJevForTests(async (_key, _state, questions) => {
-      const criteria = questions.answer!.criteria;
-      const key = Object.entries(criteria).find(([, label]) => label === 'Nubank' || label === 'Mercado')![0];
-      return { answers: { answer: { type: 'choice', choice: key, probabilities: { [key]: 0.93 } } } };
-    });
+    fakeJev('money spent', 0.95, (label) => label === 'Nubank' || label === 'Mercado');
     const { proposal } = await ask({
       name: 'propor_lancamento',
       input: { tipo: 'gasto', valorCentavos: 3200, descricao: 'Mercado do bairro' },
@@ -139,6 +149,28 @@ describe('ações do assistente', () => {
     expect(app.handle.orm.select().from(transactions).where(isNull(transactions.deletedAt)).all()).toHaveLength(1);
     await value('ai.proposal.undo', { id: proposal.id });
     expect(app.handle.orm.select().from(transactions).where(isNull(transactions.deletedAt)).all()).toHaveLength(0);
+  });
+
+  it('com o Jev seguro, tarefa e evento novos também salvam sozinhos', async () => {
+    await value('ai.setKey', { provider: 'jev', key: 'jev' });
+    await value('ai.acceptNotice', { provider: 'jev' });
+    fakeJev('something to do', 0.92, () => false);
+    const task = await ask({ name: 'propor_tarefa', input: { titulo: 'Marcar exames', prazo: '2026-11-05' } });
+    expect(task.proposal).toMatchObject({ status: 'APPLIED', auto: true });
+    expect(openTasks().map((t) => t.title)).toEqual(['Marcar exames']);
+
+    fakeJev('a calendar appointment', 0.9, () => false);
+    const event = await ask({ name: 'propor_evento', input: { titulo: 'Dentista', dia: '2026-11-05', inicio: '10:00' } });
+    expect(event.proposal).toMatchObject({ status: 'APPLIED', auto: true });
+  });
+
+  it('Jev em dúvida sobre o tipo: a tarefa espera a confirmação', async () => {
+    await value('ai.setKey', { provider: 'jev', key: 'jev' });
+    await value('ai.acceptNotice', { provider: 'jev' });
+    fakeJev('something to do', 0.6, () => false);
+    const { proposal } = await ask({ name: 'propor_tarefa', input: { titulo: 'Talvez' } });
+    expect(proposal.status).toBe('PENDING');
+    expect(openTasks()).toHaveLength(0);
   });
 
   it('mudar lançamento mostra o antes, grava e desfaz para o antes', async () => {
@@ -199,11 +231,7 @@ describe('ações do assistente', () => {
     await value('accounts.create', { name: 'Nubank', type: 'CHECKING', initialBalanceCents: 0 });
     await value('ai.setKey', { provider: 'jev', key: 'jev' });
     await value('ai.acceptNotice', { provider: 'jev' });
-    setJevForTests(async (_key, _state, questions) => {
-      const criteria = questions.answer!.criteria;
-      const key = Object.entries(criteria).find(([, label]) => label === 'Nubank' || label === 'Mercado')![0];
-      return { answers: { answer: { type: 'choice', choice: key, probabilities: { [key]: 0.95 } } } };
-    });
+    fakeJev('money spent', 0.95, (label) => label === 'Nubank' || label === 'Mercado', 0.95);
     let step = 0;
     setModelForTests(
       new MockLanguageModelV4({

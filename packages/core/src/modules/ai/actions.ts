@@ -105,8 +105,10 @@ interface Ctx {
   allowed(): Area[];
   used(name: string, area: Area | null): void;
   proposed(id: string): void;
-  /** Lançamento que o Jev confirmou: salva depois que a resposta estiver guardada. */
+  /** O que o Jev confirmou: salva depois que a resposta estiver guardada. */
   autoApply(id: string): void;
+  /** O pedido da pessoa, como ela escreveu: é o que o Jev lê. */
+  request: string;
 }
 
 function save(
@@ -130,6 +132,50 @@ const pending = (id: string, card: ProposalCard) => ({
   resumo: `${card.kind}: ${card.title}`,
   situacao: 'aguardando a confirmação da pessoa no cartão',
 });
+
+const saving = (id: string, card: ProposalCard) => ({
+  proposta: id,
+  resumo: `${card.kind}: ${card.title}`,
+  situacao: 'será salvo sozinho (o Jev conferiu); a pessoa pode desfazer',
+});
+
+const KINDS = {
+  expense: 'Money spent: a purchase, a bill, a payment for something',
+  income: 'Money received: salary, a sale, a refund, a transfer from someone else',
+  transfer: "Money moved between the user's own accounts, a deposit into savings or paying a credit card bill",
+  event: 'A calendar appointment at a set day and time: a doctor visit, a meeting, a class, a trip, a birthday',
+  task: 'Something to do or to be reminded of, not an appointment: a to-do, an errand, a chore',
+};
+
+/**
+ * A chance de o pedido ser mesmo do tipo proposto, pelo Jev (as mesmas opções do Jotta). Sem o
+ * Jev usável, `null`: a proposta espera a pessoa.
+ */
+async function kindScore(ctx: Ctx, expected: keyof typeof KINDS) {
+  if (!jevUsable(ctx.app) || !ctx.request) return null;
+  const keys = Object.keys(KINDS) as (keyof typeof KINDS)[];
+  const scores = await askChoice(
+    ctx.app,
+    'assistant.jev',
+    { pedido: redact(ctx.request) },
+    'The user wrote this request (in Brazilian Portuguese) to an app for personal finance, calendar and to-dos. What does the user want to record?',
+    keys.map((k) => KINDS[k]),
+    'None of these'
+  );
+  return scores ? (scores[keys.indexOf(expected)] ?? 0) : null;
+}
+
+/**
+ * A lista em que a tarefa vai cai com o Jev? Com lista dita, ele precisa apontar a mesma; sem lista,
+ * a Entrada ou "não diz" (a chance de não dizer é a sobra das listas).
+ */
+function listAgreement(scores: number[], chosen: number, named: boolean) {
+  if (chosen < 0) return null;
+  const best = Math.max(...scores);
+  if (named) return scores[chosen] === best ? (scores[chosen] ?? 0) : 0;
+  const none = Math.max(0, 1 - scores.reduce((sum, p) => sum + p, 0));
+  return Math.max(none, scores[chosen] ?? 0);
+}
 
 export function buildActionTools(ctx: Ctx): ToolSet {
   const { app } = ctx;
@@ -170,6 +216,17 @@ export function buildActionTools(ctx: Ctx): ToolSet {
             };
             const row = save(ctx, 'task.create', 'tasks', payload, card);
             ctx.proposed(row.id);
+            // O Jev confere se é tarefa mesmo e em que lista; seguro nos dois, salva sozinho.
+            const listNames = lists.map((l) => l.project?.name ?? l.name);
+            const [kind, listScores] = await Promise.all([
+              kindScore(ctx, 'task'),
+              askChoice(app, 'assistant.jev', { pedido: redact(ctx.request) }, 'Which of the user to-do lists does this task belong to?', listNames, 'The request does not say which list'),
+            ]);
+            const listOk = listScores ? listAgreement(listScores, lists.indexOf(place ?? inbox!), Boolean(place)) : null;
+            if (kind !== null && listOk !== null && Math.min(kind, listOk) >= AUTO_SAVE_SCORE) {
+              ctx.autoApply(row.id);
+              return saving(row.id, card);
+            }
             return pending(row.id, card);
           },
         }),
@@ -261,6 +318,11 @@ export function buildActionTools(ctx: Ctx): ToolSet {
             };
             const row = save(ctx, 'event.create', 'agenda', payload, card);
             ctx.proposed(row.id);
+            const kind = await kindScore(ctx, 'event');
+            if (kind !== null && kind >= AUTO_SAVE_SCORE) {
+              ctx.autoApply(row.id);
+              return saving(row.id, card);
+            }
             return pending(row.id, card);
           },
         }),
@@ -300,7 +362,8 @@ export function buildActionTools(ctx: Ctx): ToolSet {
               };
               const acc = top(accScores);
               const cat = top(catScores);
-              if (acc && cat) {
+              const kindChance = await kindScore(ctx, kind === 'INCOME' ? 'income' : 'expense');
+              if (acc && cat && kindChance !== null && kindChance >= AUTO_SAVE_SCORE) {
                 account = account ?? (acc.score >= AUTO_SAVE_SCORE ? allAccounts[acc.index]! : null);
                 category = category ?? (cat.score >= AUTO_SAVE_SCORE ? allCategories[cat.index]! : null);
                 const agreed =
@@ -333,7 +396,7 @@ export function buildActionTools(ctx: Ctx): ToolSet {
             ctx.proposed(row.id);
             if (account && category && confidence !== null && confidence >= AUTO_SAVE_SCORE) {
               ctx.autoApply(row.id);
-              return { proposta: row.id, resumo: `${card.kind}: ${card.title}`, situacao: 'será salvo sozinho (o Jev conferiu); a pessoa pode desfazer' };
+              return saving(row.id, card);
             }
             return pending(row.id, card);
           },

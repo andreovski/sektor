@@ -166,6 +166,7 @@ export async function send(
       ...toolCtx,
       conversationId: conversation.id,
       modelId: config.id,
+      request: text,
       proposed: (id) => proposed.push(id),
       autoApply: (id) => autoApply.push(id),
     }),
