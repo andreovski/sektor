@@ -40,6 +40,7 @@ try {
     });
   await show();
   await panel.waitForTimeout(500);
+  check('capa de pixels no fundo', (await panel.locator('.quick-pixels canvas').count()) === 1);
   check('transparente', await panel.evaluate(() => getComputedStyle(document.body).backgroundColor === 'rgba(0, 0, 0, 0)'));
   check('abre na aba Tarefa', (await panel.getByRole('tab', { selected: true }).getAttribute('aria-label')) === 'Tarefa');
   const input = panel.getByLabel('Capturar tarefa');
@@ -61,10 +62,10 @@ try {
 
   await show();
   await panel.waitForTimeout(300);
-  await panel.keyboard.press('Meta+2');
-  check('⌘2 troca para Nota', (await panel.getByRole('tab', { selected: true }).getAttribute('aria-label')) === 'Nota');
-  await panel.keyboard.press('Meta+3');
-  check('⌘3 troca para Agente', (await panel.getByRole('tab', { selected: true }).getAttribute('aria-label')) === 'Agente');
+  await panel.keyboard.press('Alt+Digit2');
+  check('⌥2 troca para Nota', (await panel.getByRole('tab', { selected: true }).getAttribute('aria-label')) === 'Nota');
+  await panel.keyboard.press('Alt+ArrowRight');
+  check('⌥→ com o campo vazio vai para Agente', (await panel.getByRole('tab', { selected: true }).getAttribute('aria-label')) === 'Agente');
   if (shots) await panel.screenshot({ path: join(shots, 'captura-agente.png') });
 
   // Wallpaper e tema escolhidos na janela principal chegam à captura sem reabrir o app.
@@ -97,7 +98,14 @@ try {
   await panel.evaluate(() => document.getElementById('menu-de-teste').remove());
   await panel.waitForTimeout(200);
   check('menu aberto cabe na janela', opened >= before + 300 && (await height()) === before);
-  await panel.keyboard.press('Meta+1');
+  await panel.keyboard.press('Alt+Digit1');
+  await panel.waitForTimeout(100);
+  const task = panel.getByLabel('Capturar tarefa');
+  check('⌥1 volta para Tarefa com o cursor no campo', await task.evaluate((element) => element === document.activeElement));
+  await task.fill('Comprar café');
+  await panel.keyboard.press('Alt+ArrowRight');
+  check('⌥→ com texto não troca a aba', (await panel.getByRole('tab', { selected: true }).getAttribute('aria-label')) === 'Tarefa');
+  await task.fill('');
   await panel.keyboard.press('Escape');
   await panel.waitForTimeout(200);
   check(

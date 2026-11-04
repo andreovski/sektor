@@ -625,6 +625,27 @@ input[type='checkbox']:disabled {
   filter: blur(1px);
   mask-image: radial-gradient(105% 210% at 100% 0%, black 0, black 18%, transparent 78%);
 }
+/* A capa de pixels não precisa do desfoque da foto. */
+.quick-pixels {
+  filter: none;
+}
+/* Os botões ficam sobre a imagem: cada um ganha um fundo próprio, sólido e desfocado, que não
+   depende de a foto ser clara ou escura. O tom do botão (o verde do microfone) vem por cima. */
+[data-window='quick'] .capture-box button:not([role='tab']):not([type='submit']),
+[data-window='quick'] .quick-chip {
+  background-color: color-mix(in oklch, var(--surface-raised) 88%, transparent);
+  background-image: linear-gradient(
+    color-mix(in oklch, currentColor 14%, transparent),
+    color-mix(in oklch, currentColor 14%, transparent)
+  );
+  border: 1px solid var(--border-strong);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 1px 3px oklch(0% 0 0 / 0.25);
+}
+[data-window='quick'] .quick-chip {
+  border-radius: 999px;
+  padding: 1px 10px;
+}
 /* No claro, uma foto escura viraria uma mancha cinza atrás dos botões: entra mais apagada. */
 [data-theme='light'] .quick-wallpaper {
   opacity: 0.5;

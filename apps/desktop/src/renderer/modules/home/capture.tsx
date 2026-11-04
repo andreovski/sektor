@@ -74,18 +74,33 @@ export function HomeCapture({ assistant }: { assistant: HomeAssistant }) {
     setChosen(next);
     write(surface.modeKey, next);
   };
-  // Na captura rápida, ⌘1, ⌘2 e ⌘3 trocam de aba sem tirar a mão do teclado.
-  const shortcutModes = useRef(modes);
-  shortcutModes.current = modes;
+  // Na captura rápida, a mão fica no ⌥ do atalho: ⌥1, ⌥2 e ⌥3 trocam de aba, e ⌥← e ⌥→ também
+  // com o campo vazio (com texto, as setas seguem andando de palavra em palavra).
+  const shortcutModes = useRef({ modes, mode });
+  shortcutModes.current = { modes, mode };
   useEffect(() => {
     if (!surface.floating) return;
     const onKey = (event: KeyboardEvent) => {
-      const index = Number(event.key) - 1;
-      const next = shortcutModes.current[index];
-      if (!event.metaKey || !next) return;
+      if (!event.altKey || event.metaKey || event.ctrlKey) return;
+      const { modes: list, mode: current } = shortcutModes.current;
+      const digit = /^Digit([1-9])$/.exec(event.code);
+      const field = document.activeElement as HTMLInputElement | null;
+      const empty = !field || !('value' in field) || field.value === '';
+      const step = event.code === 'ArrowLeft' ? -1 : event.code === 'ArrowRight' ? 1 : 0;
+      const at = list.findIndex((m) => m.id === current);
+      const next = digit
+        ? list[Number(digit[1]) - 1]
+        : step && empty
+          ? list[(at + step + list.length) % list.length]
+          : undefined;
+      if (!next) return;
       event.preventDefault();
       setChosen(next.id);
       write(surface.modeKey, next.id);
+      // O campo da aba nova nasce agora: o cursor vai para ele.
+      requestAnimationFrame(() =>
+        document.querySelector<HTMLInputElement>('.capture-box input:not([type="file"]):not(:disabled)')?.focus()
+      );
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);

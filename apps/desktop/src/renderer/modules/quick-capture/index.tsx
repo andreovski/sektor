@@ -5,6 +5,7 @@ import { useWallpaper } from '../../lib/theme';
 import { AiText } from '../ai/shared';
 import { Dots, type HomeAssistant, ProposalCard, turnsOf, useHomeAssistant } from '../home/assistant';
 import { HomeCapture } from '../home/capture';
+import { PixelField } from '../home/cover';
 import { type CaptureSaved, CaptureSurface } from '../home/surface';
 
 // A captura rápida: o campo da Início numa janela solta, aberta pelo atalho global por cima de
@@ -61,12 +62,16 @@ function Backdrop({ wallpaper: show }: { wallpaper: boolean }) {
   const wallpaper = useWallpaper();
   return (
     <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 overflow-hidden rounded-[22px] bg-raised">
-      {show && 'src' in wallpaper && (
-        <>
+      {show &&
+        ('src' in wallpaper ? (
           <img src={wallpaper.src} alt="" className="quick-wallpaper absolute inset-0 size-full object-cover" />
-          <div className="quick-wallpaper-veil absolute inset-0" />
-        </>
-      )}
+        ) : (
+          // A capa de pixels, a mesma da Início, também entra pelo canto.
+          <div className="quick-wallpaper quick-pixels absolute inset-0">
+            <PixelField />
+          </div>
+        ))}
+      {show && <div className="quick-wallpaper-veil absolute inset-0" />}
     </div>
   );
 }
@@ -80,7 +85,7 @@ function Confirmed({ saved, onOpen }: { saved: CaptureSaved; onOpen(): void }) {
           <Check size={12} strokeWidth={3.5} />
         </span>
         <span className="min-w-0 flex-1 truncate">{saved.summary}</span>
-        <button type="button" onClick={onOpen} className="shrink-0 text-[13px] text-primary hover:underline">
+        <button type="button" onClick={onOpen} className="h-6 shrink-0 rounded-full px-2.5 text-[13px] text-primary">
           Abrir no Sektor ⌘↩
         </button>
       </div>
@@ -98,8 +103,8 @@ function QuickAnswer({ assistant, onOpen }: { assistant: HomeAssistant; onOpen()
   const hints = (
     <div className="flex items-center gap-3 pt-2 pb-1 text-xs text-subtle">
       <span>↩ pergunta</span>
-      <span>⌘1 ⌘2 ⌘3 trocam a aba</span>
-      <span className="ml-auto">Esc fecha</span>
+      <span>⌥1 ⌥2 ⌥3 trocam a aba</span>
+      <span className="quick-chip ml-auto">Esc fecha</span>
     </div>
   );
   if (!pending && !last?.answer) return hints;
@@ -133,7 +138,7 @@ function QuickAnswer({ assistant, onOpen }: { assistant: HomeAssistant; onOpen()
       )}
       <div className="flex items-center gap-3 text-xs text-subtle">
         <span>Esc fecha</span>
-        <button type="button" onClick={onOpen} className="ml-auto inline-flex items-center gap-1 text-primary hover:underline">
+        <button type="button" onClick={onOpen} className="ml-auto inline-flex h-6 items-center gap-1 rounded-full px-2.5 text-primary">
           Continuar no Sektor ⌘
           <CornerDownLeft size={11} />
         </button>

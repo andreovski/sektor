@@ -59,7 +59,7 @@ function draw(canvas: HTMLCanvasElement, time: number) {
 }
 
 /** Pixels que cintilam. Só anima à vista, e fica parado com movimento reduzido. */
-function PixelField() {
+export function PixelField() {
   const ref = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
