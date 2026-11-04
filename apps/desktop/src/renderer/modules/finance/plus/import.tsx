@@ -6,7 +6,7 @@ import { money, shortDate } from '../../../lib/format';
 import { call, useRpc, useRpcMutation } from '../../../lib/rpc';
 import { Button, cn, Dialog, EmptyState, Field, Input, Segmented, Select } from '../../../ui';
 import { decodeText, type Out } from './format';
-import { CategoryOptions } from './rules';
+import { categoryOptions } from './rules';
 
 type Preview = Out<'plus.import.preview'>;
 type Line = Preview['lines'][number];
@@ -253,7 +253,7 @@ function Review({
                       }
                     >
                       <option value="">Sem categoria</option>
-                      <CategoryOptions categories={categories} kind={line.kind} />
+                      {categoryOptions(categories, line.kind)}
                     </Select>
                   )}
                   {status && <span className={cn('text-xs', status.tone)}>{status.label}</span>}

@@ -19,7 +19,9 @@ import type { Out } from './format';
 type Rule = Out<'plus.rules.list'>[number];
 type Category = Out<'categories.list'>[number];
 
-export function CategoryOptions({ categories, kind }: { categories: Category[]; kind?: string }) {
+/** As opções de categoria para dentro de um `Select`. É função, não componente: o Select lê os
+ *  `<option>` direto dos filhos e não entra em componentes. */
+export function categoryOptions(categories: Category[], kind?: string) {
   const parents = new Map(categories.map((category) => [category.id, category.name]));
   const label = (category: Category) => {
     const parent = category.parentId ? parents.get(category.parentId) : null;
@@ -86,7 +88,7 @@ function RuleDialog({ rule, onClose }: { rule: Rule | null; onClose(): void }) {
         <Field label="Vira a categoria">
           <Select value={categoryId} onChange={(event) => setCategoryId(event.target.value)}>
             <option value="">Escolha</option>
-            <CategoryOptions categories={categories} />
+            {categoryOptions(categories)}
           </Select>
         </Field>
         <p className="text-xs text-muted">

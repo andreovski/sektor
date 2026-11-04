@@ -116,6 +116,8 @@ function collect(children: ReactNode, group?: string, out: Option[] = []) {
     else if (element.type === 'option') {
       const { value, children: label, disabled } = element.props;
       out.push({ value: String(value ?? textOf(label)), label, text: textOf(label), disabled, group });
+    } else if (import.meta.env.DEV) {
+      console.warn('Select: só <option>, <optgroup> e fragmentos entram na lista.', element.type);
     }
   });
   return out;
