@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { ArrowUp, Check, ChevronDown, Flag, History, ImagePlus, Mic, PenSquare, RotateCcw, Square, X } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useContext, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { money } from '../../lib/format';
@@ -13,6 +13,7 @@ import { CategorySelect, useAccounts, useCategories } from '../finance/parts';
 import { ModelMenu } from '../ai/model-menu';
 import { AiText } from '../ai/shared';
 
+import { CaptureSurface } from './surface';
 import { localDate } from './dates';
 import { MOODS } from './today-cards';
 
@@ -54,7 +55,7 @@ const dayLabel = (at: number) => {
   return new Intl.DateTimeFormat('pt-BR', { day: 'numeric', month: 'long' }).format(at).toUpperCase();
 };
 
-interface Turn {
+export interface Turn {
   id: string;
   question: string;
   askedAt: number;
@@ -70,7 +71,7 @@ const sourceLabel = (turn: Pick<Turn, 'images' | 'source'>) =>
 const MAX_IMAGES = 3;
 
 /** Pergunta e resposta juntas, que é como a linha do tempo mostra. */
-function turnsOf(messages: Message[]): Turn[] {
+export function turnsOf(messages: Message[]): Turn[] {
   const turns: Turn[] = [];
   for (const message of messages) {
     if (message.role === 'user') {
@@ -103,7 +104,7 @@ function Tag({ areas }: { areas: string[] }) {
   );
 }
 
-function Dots() {
+export function Dots() {
   return (
     <span className="flex gap-1" aria-hidden>
       {[0, 1, 2].map((i) => (
@@ -134,7 +135,7 @@ const LINKS: Record<string, string> = {
 };
 
 /** O cartão da proposta, como no Jotta: o que vai mudar, e salvar ou descartar. */
-function ProposalCard({
+export function ProposalCard({
   proposal,
   onChange,
   onReload,
@@ -535,6 +536,12 @@ export function useHomeAssistant() {
       setCurrentId(null);
       setHistory(false);
     },
+    /** Abre a conversa no Início, vinda de outra janela (a captura rápida). */
+    openConversation: (id: string) => {
+      setCurrentId(id);
+      setOpen(true);
+      setHistory(false);
+    },
     pick: (id: string) => {
       setCurrentId(id);
       setHistory(false);
@@ -621,6 +628,7 @@ export function AssistantInput({
   const input = useRef<HTMLInputElement>(null);
   const picker = useRef<HTMLInputElement>(null);
   const { model, models } = assistant;
+  const surface = useContext(CaptureSurface);
   const blocked = !model || Boolean(model.problem);
   const canSend = Boolean(text.trim() || images.length);
   const voice = useVoice(
@@ -701,7 +709,7 @@ export function AssistantInput({
         if (!blocked && !assistant.busy) void attach(event.dataTransfer.files);
       }}
       className={cn(
-        'rounded-[22px] border border-line-strong py-2 pr-2 pl-4 text-left shadow-popover focus-within:border-primary/50',
+        'capture-box rounded-[22px] border border-line-strong py-2 pr-2 pl-4 text-left shadow-popover focus-within:border-primary/50',
         docked ? 'bg-raised/85 backdrop-blur-xl' : 'bg-raised/90 backdrop-blur',
         dragging && 'border-primary'
       )}
@@ -817,7 +825,9 @@ export function AssistantInput({
           </button>
         )}
       </div>
-      {!docked && (
+      {surface.floating ? (
+        surface.agentFooter
+      ) : !docked && (
         <div className="flex items-center gap-1.5 pt-2 pb-1">
           {!models.length ? (
             <Link

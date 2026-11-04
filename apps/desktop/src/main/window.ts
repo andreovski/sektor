@@ -121,14 +121,19 @@ const BACKGROUNDS = { dark: '#0e120e', light: '#f5f6ef' };
 /** `system` deixa o macOS decidir, e a página lê o resultado pelo `prefers-color-scheme`. */
 export function applyWindowTheme(window: BrowserWindow, theme: 'dark' | 'light' | 'system') {
   nativeTheme.themeSource = theme;
+  // A captura rápida é transparente: o fundo dela é o próprio campo.
+  if (window === quickCapture) return;
   window.setBackgroundColor(BACKGROUNDS[nativeTheme.shouldUseDarkColors ? 'dark' : 'light']);
 }
 
 const noteWindows = new Map<string, BrowserWindow>();
+let quickCapture: BrowserWindow | null = null;
 
-/** A janela do app, sem contar as notas em pop-up. */
+/** A janela do app, sem contar as notas em pop-up nem a captura rápida. */
 export const appWindows = () =>
-  BrowserWindow.getAllWindows().filter((window) => ![...noteWindows.values()].includes(window));
+  BrowserWindow.getAllWindows().filter(
+    (window) => window !== quickCapture && ![...noteWindows.values()].includes(window)
+  );
 
 export function createWindow(onLoad: (window: BrowserWindow) => void, hidden = false) {
   return buildWindow(
@@ -177,6 +182,45 @@ export function openNoteWindow(noteId: string, onLoad: (window: BrowserWindow) =
   return window;
 }
 
+/**
+ * O campo da Início solto na tela, aberto pelo atalho global. É um painel do macOS: recebe o
+ * teclado sem ativar o app, então a janela principal não vem junto e o app de antes segue ativo.
+ * Nasce escondido e fica carregado; o atalho só mostra.
+ */
+export function createQuickCaptureWindow(onLoad: (window: BrowserWindow) => void) {
+  const window = buildWindow(
+    {
+      width: QUICK_CAPTURE_WIDTH,
+      height: 200,
+      type: 'panel',
+      frame: false,
+      transparent: true,
+      backgroundColor: '#00000000',
+      hasShadow: false,
+      resizable: false,
+      movable: false,
+      minimizable: false,
+      maximizable: false,
+      fullscreenable: false,
+      skipTaskbar: true,
+      alwaysOnTop: true,
+    },
+    onLoad,
+    true,
+    '/captura-rapida'
+  );
+  window.setAlwaysOnTop(true, 'floating');
+  window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  quickCapture = window;
+  window.on('closed', () => {
+    if (quickCapture === window) quickCapture = null;
+  });
+  return window;
+}
+
+/** Largura da janela: o campo de 760 px e a sombra dele. */
+export const QUICK_CAPTURE_WIDTH = 820;
+
 function buildWindow(
   options: Electron.BrowserWindowConstructorOptions,
   onLoad: (window: BrowserWindow) => void,
@@ -185,7 +229,7 @@ function buildWindow(
 ) {
   const window = new BrowserWindow({
     ...options,
-    backgroundColor: BACKGROUNDS[nativeTheme.shouldUseDarkColors ? 'dark' : 'light'],
+    backgroundColor: options.backgroundColor ?? BACKGROUNDS[nativeTheme.shouldUseDarkColors ? 'dark' : 'light'],
     show: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),

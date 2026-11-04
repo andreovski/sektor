@@ -21,6 +21,17 @@ export type GoogleLoginResult =
 
 export type ProjectFilesResult = { added: number; errors: string[] };
 
+export interface QuickCaptureSettings {
+  enabled: boolean;
+  /** No formato de acelerador do Electron, como `Alt+Space`. */
+  accelerator: string;
+  /** O atalho está registrado agora (falso se outro app ficou com ele). */
+  active: boolean;
+  openAtLogin: boolean;
+}
+
+export type QuickCaptureResult = { ok: true } | { ok: false; message: string };
+
 export interface SektorApi {
   info(): Promise<{ version: string; dataDir: string }>;
   failure(): Promise<CoreFailure | null>;
@@ -44,6 +55,23 @@ export interface SektorApi {
   popOutNote(noteId: string): Promise<void>;
   /** Fecha a janela de onde veio o pedido (o pop-up da nota, que não tem moldura). */
   closeWindow(): Promise<void>;
+  /** O campo da Início aberto pelo atalho global, por cima de qualquer app. */
+  quickCapture: {
+    settings(): Promise<QuickCaptureSettings>;
+    setEnabled(enabled: boolean): Promise<QuickCaptureResult>;
+    setShortcut(accelerator: string): Promise<QuickCaptureResult>;
+    /** Desliga o atalho atual enquanto Ajustes grava um novo. */
+    pause(paused: boolean): Promise<void>;
+    hide(): Promise<void>;
+    /** A altura do campo, para a janela acompanhar. */
+    resize(height: number): Promise<void>;
+    /** Fecha a captura e abre o app nessa rota. */
+    openInApp(route: string): Promise<void>;
+    onShown(listener: () => void): void;
+  };
+  setOpenAtLogin(open: boolean): Promise<void>;
+  /** O main pede para a janela principal ir a uma rota (vindo da captura rápida). */
+  onNavigate(listener: (route: string) => void): void;
   /** Abre o login do banco pedido pelo widget da Pluggy; devolve os parâmetros da volta, ou nulo. */
   pluggyOauth(url: string): Promise<Record<string, string> | null>;
   /** Abre no navegador o link que o widget pede (o site do Meu Pluggy, por exemplo). */

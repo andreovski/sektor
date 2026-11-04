@@ -170,6 +170,22 @@ if ('tones' in wallpaper && wallpaper.tones.inkLightness === undefined) {
   );
 }
 
+// Outra janela do app (a principal, a captura rápida) mudou a aparência: esta acompanha.
+window.addEventListener('storage', (event) => {
+  if (![THEME_KEY, PALETTE_KEY, COVER_KEY, WALLPAPER_KEY].includes(event.key ?? '')) return;
+  wallpaper = readWallpaper();
+  const stored = read(THEME_KEY);
+  choice = stored === 'light' || stored === 'system' ? stored : 'dark';
+  const storedPalette = read(PALETTE_KEY);
+  palette =
+    storedPalette === 'wallpaper' && 'tones' in wallpaper
+      ? 'wallpaper'
+      : (PALETTES.find(({ value }) => value === storedPalette)?.value ?? 'floresta');
+  coverEverywhere = read(COVER_KEY) !== 'off';
+  paint();
+  listeners.forEach((listener) => listener());
+});
+
 function subscribe(listener: () => void) {
   listeners.add(listener);
   return () => listeners.delete(listener);

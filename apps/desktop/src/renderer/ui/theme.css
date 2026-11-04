@@ -605,3 +605,51 @@ input[type='checkbox']:disabled {
     text-shadow: 0 1px 10px oklch(0% 0 0 / 0.35);
   }
 }
+
+/* Captura rápida: a janela é transparente e o fundo é o próprio campo, desenhado por baixo dele. */
+[data-window='quick'],
+[data-window='quick'] body {
+  background: transparent;
+  background-image: none;
+}
+[data-window='quick'] .window-drag {
+  display: none;
+}
+[data-window='quick'] .capture-box {
+  background: transparent;
+  backdrop-filter: none;
+}
+/* O wallpaper entra pelo canto de cima, à direita, e um véu leve fica onde se escreve. */
+.quick-wallpaper {
+  opacity: 0.85;
+  filter: blur(1px);
+  mask-image: radial-gradient(105% 210% at 100% 0%, black 0, black 18%, transparent 78%);
+}
+/* No claro, uma foto escura viraria uma mancha cinza atrás dos botões: entra mais apagada. */
+[data-theme='light'] .quick-wallpaper {
+  opacity: 0.5;
+}
+.quick-wallpaper-veil {
+  background: radial-gradient(
+    60% 80% at 25% 70%,
+    color-mix(in oklch, var(--surface-raised) 55%, transparent),
+    transparent
+  );
+}
+.quick-drain {
+  transform-origin: left;
+  animation: quick-drain linear forwards;
+}
+@keyframes quick-drain {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .quick-drain {
+    animation: none;
+  }
+}

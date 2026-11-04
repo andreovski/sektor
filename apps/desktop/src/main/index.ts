@@ -28,6 +28,15 @@ import { databaseKey, dbPath, loadSecrets, saveSecrets, seal, useTestVault } fro
 import { setAppMenu } from './menu';
 import { clearOpenedCopies, projectFileChannels, sweepProjectFiles } from './project-files';
 import { applyPendingRestore, filesPath, scheduleRestore, stagedFilesPath, stagePath } from './restore';
+import {
+  hideQuickCapture,
+  pauseQuickCapture,
+  quickCaptureSettings,
+  resizeQuickCapture,
+  setQuickCaptureEnabled,
+  setQuickCaptureShortcut,
+  startQuickCapture,
+} from './quick-capture';
 import { createTray, hasOpenWindow, notify } from './tray';
 import { appWindows, applyWindowTheme, createWindow, isAppUrl, logWindowOpen, openNoteWindow, openPluggyOauth } from './window';
 
@@ -91,6 +100,24 @@ function openWindow() {
   if (window!.isMinimized()) window!.restore();
   window!.show();
   window!.focus();
+}
+
+/** Abre o app numa tela, vindo da captura rápida: a tarefa, a nota ou a conversa. */
+function openAppAt(route: string) {
+  hideQuickCapture();
+  if (!hasOpenWindow()) {
+    let sent = false;
+    createWindow((window) => {
+      givePort(window);
+      if (!sent) window.webContents.send('app:navigate', route);
+      sent = true;
+    });
+  } else {
+    openWindow();
+    appWindows()[0]!.webContents.send('app:navigate', route);
+  }
+  // O painel não ativa o app; quem vai para a frente agora é a janela principal.
+  app.focus({ steal: true });
 }
 
 function restart() {
@@ -227,6 +254,22 @@ function registerIpc() {
     openNoteWindow(noteId, givePort);
   });
   handle('notes:close-window', (event) => BrowserWindow.fromWebContents(event.sender)?.close());
+  handle('quick-capture:settings', () => ({
+    ...quickCaptureSettings(),
+    openAtLogin: app.getLoginItemSettings().openAtLogin,
+  }));
+  handle('quick-capture:set-enabled', (_event, enabled: boolean) => setQuickCaptureEnabled(enabled === true));
+  handle('quick-capture:set-shortcut', (_event, accelerator: string) => setQuickCaptureShortcut(accelerator));
+  handle('quick-capture:pause', (_event, paused: boolean) => pauseQuickCapture(paused === true));
+  handle('quick-capture:hide', () => hideQuickCapture());
+  handle('quick-capture:resize', (_event, height: number) => resizeQuickCapture(Number(height)));
+  handle('quick-capture:open', (_event, route: string) => {
+    if (typeof route !== 'string' || !/^\/[\w\-/?=&%.]{0,200}$/.test(route)) throw new Error('Tela inválida.');
+    openAppAt(route);
+  });
+  handle('app:set-open-at-login', (_event, open: boolean) => {
+    app.setLoginItemSettings({ openAtLogin: open === true });
+  });
   handle('pluggy:log', (_event, text: string) => {
     if (typeof text === 'string') logWindowOpen(text.slice(0, 200), 'mensagem do widget');
   });
@@ -332,6 +375,13 @@ function boot() {
     }
   }
   openWindow();
+  // Depois que a principal carrega: ela continua sendo a primeira janela do app. Nos testes das
+  // telas só entra quando pedida, para não segurar o atalho nem mudar a conta das janelas.
+  if (!failure && (!TEST_DIR || process.env.SEKTOR_TEST_QUICK === '1')) {
+    const [main] = appWindows();
+    if (main) main.webContents.once('did-finish-load', () => startQuickCapture(givePort));
+    else startQuickCapture(givePort);
+  }
 }
 
 app.on('before-quit', () => {

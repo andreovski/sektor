@@ -10,7 +10,7 @@ import {
   Sparkles,
   StickyNote,
 } from 'lucide-react';
-import { type FormEvent, type ReactNode, useEffect, useRef, useState } from 'react';
+import { type FormEvent, type ReactNode, useContext, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { todayString } from '../../lib/format';
@@ -23,6 +23,7 @@ import { Chip, PriorityBars } from '../tasks/chips';
 import { ModelMenu } from '../ai/model-menu';
 
 import { AssistantInput, type HomeAssistant } from './assistant';
+import { CaptureSurface } from './surface';
 
 // A captura do Início: Tarefa, Nota e Agente em abas. A aba escolhida fica guardada e volta ao
 // abrir o Início de novo.
@@ -30,7 +31,7 @@ import { AssistantInput, type HomeAssistant } from './assistant';
 export const CAPTURE_INPUT_ID = 'inicio-captura';
 
 const BOX =
-  'relative w-[760px] max-w-full rounded-[22px] border border-line-strong bg-raised/90 px-4 pb-3 text-left shadow-popover backdrop-blur focus-within:border-primary/50';
+  'capture-box relative w-[760px] max-w-full rounded-[22px] border border-line-strong bg-raised/90 px-4 pb-3 text-left shadow-popover backdrop-blur focus-within:border-primary/50';
 
 type Mode = 'task' | 'note' | 'agent';
 const MODES: { id: Mode; label: string; icon: LucideIcon; module: ModuleId }[] = [
@@ -38,7 +39,6 @@ const MODES: { id: Mode; label: string; icon: LucideIcon; module: ModuleId }[] =
   { id: 'note', label: 'Nota', icon: StickyNote, module: 'projects' },
   { id: 'agent', label: 'Agente', icon: Sparkles, module: 'assistant' },
 ];
-const MODE_KEY = 'sektor.home.capture';
 const NOTE_PROJECT_KEY = 'sektor.home.noteProject';
 
 function read(key: string) {
@@ -59,8 +59,11 @@ function write(key: string, value: string) {
 
 export function HomeCapture({ assistant }: { assistant: HomeAssistant }) {
   const { isOn } = useModules();
+  const surface = useContext(CaptureSurface);
   const modes = MODES.filter((m) => isOn(m.module));
-  const [chosen, setChosen] = useState<Mode>(() => (read(MODE_KEY) as Mode | null) ?? 'agent');
+  const [chosen, setChosen] = useState<Mode>(
+    () => surface.startMode ?? (read(surface.modeKey) as Mode | null) ?? (surface.floating ? 'task' : 'agent')
+  );
   // Módulo desligado leva a aba: fica a primeira que sobrou.
   const mode = modes.some((m) => m.id === chosen) ? chosen : modes[0]?.id;
   if (!mode) return null;
@@ -69,8 +72,24 @@ export function HomeCapture({ assistant }: { assistant: HomeAssistant }) {
   const previous = useRef<Mode | undefined>(undefined);
   const pick = (next: Mode) => {
     setChosen(next);
-    write(MODE_KEY, next);
+    write(surface.modeKey, next);
   };
+  // Na captura rápida, ⌘1, ⌘2 e ⌘3 trocam de aba sem tirar a mão do teclado.
+  const shortcutModes = useRef(modes);
+  shortcutModes.current = modes;
+  useEffect(() => {
+    if (!surface.floating) return;
+    const onKey = (event: KeyboardEvent) => {
+      const index = Number(event.key) - 1;
+      const next = shortcutModes.current[index];
+      if (!event.metaKey || !next) return;
+      event.preventDefault();
+      setChosen(next.id);
+      write(surface.modeKey, next.id);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [surface.floating, surface.modeKey]);
   const tabs =
     modes.length > 1 ? (
       <CaptureTabs
@@ -171,6 +190,7 @@ function NoteBox({ tabs }: { tabs: ReactNode }) {
   const list = projects.data ?? [];
   const [projectId, setProjectId] = useState(() => read(NOTE_PROJECT_KEY) ?? '');
   const create = useRpcMutation('projectNotes.create');
+  const surface = useContext(CaptureSurface);
   const current = list.find((p) => p.id === projectId) ?? list[0];
   useEffect(() => {
     if (current && current.id !== projectId) setProjectId(current.id);
@@ -184,7 +204,13 @@ function NoteBox({ tabs }: { tabs: ReactNode }) {
       {
         onSuccess: () => {
           setText('');
-          toast.success(`Nota salva em ${current.name}.`);
+          if (surface.onSaved) {
+            surface.onSaved({
+              kind: 'note',
+              summary: `Nota salva em ${current.name}`,
+              route: `/projetos/${current.id}`,
+            });
+          } else toast.success(`Nota salva em ${current.name}.`);
         },
       }
     );
@@ -240,6 +266,7 @@ function NoteBox({ tabs }: { tabs: ReactNode }) {
 export function CaptureBox({ tabs }: { tabs?: ReactNode }) {
   const [text, setText] = useState('');
   const capture = useRpcMutation('tasks.capture');
+  const surface = useContext(CaptureSurface);
   const today = todayString();
   const parsed = parseCapture(text, today);
   const typed = text.trim() !== '';
@@ -252,7 +279,18 @@ export function CaptureBox({ tabs }: { tabs?: ReactNode }) {
       {
         onSuccess: () => {
           setText('');
-          toast.success(parsed.dueDate || parsed.place ? 'Tarefa criada.' : 'Tarefa criada na Entrada.');
+          if (surface.onSaved) {
+            const when = parsed.dueDate
+              ? `${relativeDay(parsed.dueDate, today)}${parsed.dueTime ? ` às ${parsed.dueTime}` : ''}`
+              : parsed.place
+                ? null
+                : 'na Entrada';
+            surface.onSaved({
+              kind: 'task',
+              summary: [parsed.title, when].filter(Boolean).join(' · '),
+              route: '/tarefas',
+            });
+          } else toast.success(parsed.dueDate || parsed.place ? 'Tarefa criada.' : 'Tarefa criada na Entrada.');
         },
       }
     );

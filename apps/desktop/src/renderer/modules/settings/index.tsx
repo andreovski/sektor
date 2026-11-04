@@ -6,6 +6,7 @@ import {
   DatabaseBackup,
   ImageIcon,
   Info,
+  Keyboard,
   LayoutGrid,
   type LucideIcon,
   Palette,
@@ -34,6 +35,7 @@ import { BanksPanel } from '../finance/banks';
 import { Appearance } from './appearance';
 import { GoogleSettings } from './google';
 import { ModulesSettings } from './modules';
+import { ShortcutsSettings } from './shortcuts';
 import { UnsplashSettings } from './unsplash';
 import { useRestore } from './restore';
 
@@ -270,6 +272,13 @@ const GROUPS: {
         icon: LayoutGrid,
         description: 'Os módulos que você usa. Desligar esconde, sem apagar nada.',
         panel: ModulesSettings,
+      },
+      {
+        value: 'atalhos',
+        label: 'Atalhos',
+        icon: Keyboard,
+        description: 'O atalho que abre a captura rápida por cima de qualquer app, e como ela abre.',
+        panel: ShortcutsSettings,
       },
     ],
   },

@@ -22,6 +22,7 @@ import { routes as health } from './modules/health';
 import { routes as focus } from './modules/focus';
 import { routes as review } from './modules/review';
 import { routes as settings } from './modules/settings';
+import { routes as quickCapture } from './modules/quick-capture';
 import { FatalScreen } from './modules/settings/fatal';
 import { useCoreFailure } from './lib/rpc';
 import { applyStoredTheme, useTheme } from './lib/theme';
@@ -43,6 +44,7 @@ const moduleRoutes = [
   ...focus,
   ...review,
   ...settings,
+  ...quickCapture,
 ];
 
 // Rotas por hash: o app abre de arquivo, sem servidor.
@@ -53,6 +55,9 @@ const router = createRouter({
     moduleRoutes.map((route) => createRoute({ getParentRoute: () => rootRoute, ...route }))
   ),
 });
+
+// Vindo da captura rápida: a tarefa, a nota ou a conversa que se quer ver no app.
+window.sektor.onNavigate((route) => void router.history.push(route));
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 5_000, retry: false, refetchOnWindowFocus: false } },

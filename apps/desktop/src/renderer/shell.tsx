@@ -145,8 +145,8 @@ export function Shell() {
   useLayoutEffect(() => {
     scroller.current?.scrollTo(0, 0);
   }, [path]);
-  // A nota em pop-up é uma janela à parte: sem dock e sem a moldura da página.
-  if (path.startsWith('/nota-fixa/')) return <Outlet />;
+  // A nota em pop-up e a captura rápida são janelas à parte: sem dock e sem a moldura da página.
+  if (path.startsWith('/nota-fixa/') || path === '/captura-rapida') return <Outlet />;
   return (
     <div ref={scroller} className="relative h-full overflow-x-hidden overflow-y-auto">
       <CoverTrail home={path === '/'} />

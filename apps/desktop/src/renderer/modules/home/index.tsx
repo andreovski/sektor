@@ -1,3 +1,4 @@
+import { useNavigate, useSearch } from '@tanstack/react-router';
 import { type ComponentType, useEffect, useState } from 'react';
 
 import { type ModuleId, useModules } from '../../lib/modules';
@@ -89,6 +90,15 @@ function HomePage() {
   const assistant = useHomeAssistant();
   const assistantOn = useModules().isOn('assistant');
   const open = assistant.open && assistantOn;
+  // "Continuar no Sektor", vindo da captura rápida: abre a conversa e limpa o endereço.
+  const { conversa } = useSearch({ strict: false }) as { conversa?: string };
+  const navigate = useNavigate();
+  const { openConversation } = assistant;
+  useEffect(() => {
+    if (!conversa) return;
+    openConversation(conversa);
+    void navigate({ to: '/', search: {} as never, replace: true });
+  }, [conversa, openConversation, navigate]);
   return (
     // O -mt-8 desfaz o respiro do `main`: a capa encosta no topo da janela.
     <div className="relative -mt-8">

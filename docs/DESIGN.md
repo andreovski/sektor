@@ -15,6 +15,10 @@ e em `e2e/theme-contrast.mjs`, que mede o contraste WCAG de cada combinação.
   com a Access Key de quem usa salva no próprio computador). Escolher um wallpaper gera a paleta
   "Do wallpaper" com os matizes da imagem (`lib/wallpaper.ts`) e sugere cores para a primária.
   A capa segue pelos outros módulos a 20% de opacidade, o que dá para desligar em Aparência.
+- Captura rápida: ⌥ Espaço (troca em Ajustes › Atalhos) abre o campo da Início numa janela solta,
+  por cima de qualquer app, sem trazer o Sektor para a frente. O wallpaper da capa entra pelo canto
+  de cima do campo. Tarefa e Nota confirmam no próprio campo e a janela fecha sozinha; o Agente
+  responde embaixo do campo, e ⌘↩ abre no app o que acabou de ser feito.
 - Cartões com borda fina, raio de 16 px, cabeçalho com ícone e link discreto.
 - Botão principal verde com brilho; secundário em contorno.
 - Modais com cabeçalho separado do conteúdo, que repete o ícone do módulo aberto.
