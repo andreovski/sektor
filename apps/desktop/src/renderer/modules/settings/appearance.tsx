@@ -1,5 +1,5 @@
-import { Check, ImagePlus, Layers, type LucideIcon, Monitor, Moon, Sun } from 'lucide-react';
-import { type CSSProperties, useState } from 'react';
+import { Check, HardDrive, ImagePlus, Layers, type LucideIcon, Monitor, Moon, Sun } from 'lucide-react';
+import { type CSSProperties, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import {
@@ -17,7 +17,7 @@ import {
   useWallpaper,
 } from '../../lib/theme';
 import { unsplashLink } from '../../lib/unsplash';
-import { extractTones, PRESETS, swatchColor } from '../../lib/wallpaper';
+import { extractTones, PRESETS, readLocalImage, swatchColor } from '../../lib/wallpaper';
 import { Card, cn } from '../../ui';
 
 import { UnsplashDialog } from './unsplash';
@@ -85,7 +85,9 @@ function Wallpapers() {
   const wallpaper = useWallpaper();
   const [loading, setLoading] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
+  const picker = useRef<HTMLInputElement>(null);
   const fromUnsplash = wallpaper.id.startsWith('unsplash-') && 'thumb' in wallpaper;
+  const fromComputer = wallpaper.id === 'local' && 'thumb' in wallpaper;
   const choose = async (id: string, src: string) => {
     setLoading(id);
     try {
@@ -96,10 +98,23 @@ function Wallpapers() {
       setLoading(null);
     }
   };
+  const chooseFile = async (file: File | undefined) => {
+    if (!file) return;
+    setLoading('local');
+    try {
+      const { src, thumb } = await readLocalImage(file);
+      setWallpaper({ id: 'local', src, thumb, tones: await extractTones(thumb) });
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setLoading(null);
+      if (picker.current) picker.current.value = '';
+    }
+  };
   return (
     <div className="flex flex-col gap-3">
       <span className="text-sm font-medium">Wallpaper da capa</span>
-      <div role="radiogroup" aria-label="Wallpaper" className="grid grid-cols-6 gap-3">
+      <div role="radiogroup" aria-label="Wallpaper" className="grid grid-cols-7 gap-2.5">
         <button
           type="button"
           role="radio"
@@ -111,7 +126,7 @@ function Wallpapers() {
           <span className="relative aspect-[16/10] overflow-hidden rounded-[0.375rem] bg-background">
             <span className="palette-preview-cover absolute inset-0" />
           </span>
-          <span className="px-0.5">Pixels</span>
+          <span className="truncate px-0.5">Pixels</span>
         </button>
         {PRESETS.map(({ id, label, src }) => (
           <button
@@ -130,9 +145,39 @@ function Wallpapers() {
               loading="lazy"
               className="aspect-[16/10] w-full rounded-[0.375rem] object-cover"
             />
-            <span className="px-0.5">{loading === id ? 'Lendo as cores…' : label}</span>
+            <span className="truncate px-0.5">{loading === id ? 'Lendo…' : label}</span>
           </button>
         ))}
+        <button
+          type="button"
+          role="radio"
+          aria-checked={fromComputer}
+          data-testid="wallpaper-local"
+          disabled={loading !== null}
+          onClick={() => picker.current?.click()}
+          className={tile(fromComputer)}
+        >
+          {fromComputer ? (
+            <img
+              src={wallpaper.thumb}
+              alt=""
+              className="aspect-[16/10] w-full rounded-[0.375rem] object-cover"
+            />
+          ) : (
+            <span className="grid aspect-[16/10] place-items-center rounded-[0.375rem] border border-dashed border-line-strong text-muted group-hover:text-primary">
+              <HardDrive size={18} />
+            </span>
+          )}
+          <span className="truncate px-0.5">{loading === 'local' ? 'Lendo…' : 'Arquivo'}</span>
+        </button>
+        <input
+          ref={picker}
+          type="file"
+          accept="image/*"
+          hidden
+          data-testid="wallpaper-file"
+          onChange={(event) => void chooseFile(event.target.files?.[0])}
+        />
         <button
           type="button"
           role="radio"
@@ -152,7 +197,7 @@ function Wallpapers() {
               <ImagePlus size={18} />
             </span>
           )}
-          <span className="px-0.5">{fromUnsplash ? 'Unsplash' : 'Buscar foto'}</span>
+          <span className="truncate px-0.5">Unsplash</span>
         </button>
       </div>
       {'tones' in wallpaper && <Suggestions swatches={wallpaper.tones.swatches} />}

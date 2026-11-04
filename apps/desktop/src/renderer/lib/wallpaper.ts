@@ -128,3 +128,34 @@ export async function extractTones(src: string): Promise<Tones> {
 /** A amostra de uma cor sugerida, na luz em que ela vira primária no tema escuro. */
 export const swatchColor = ({ c, h }: { c: number; h: number }) =>
   `oklch(0.8 ${clamp(c, 0.08, 0.17)} ${h})`;
+
+const LOCAL_SIDE = 1920;
+const LOCAL_THUMB = 320;
+
+function shrink(bitmap: ImageBitmap, side: number, quality: number) {
+  const scale = Math.min(1, side / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+  canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL('image/jpeg', quality);
+}
+
+/**
+ * Imagem do computador: reduzida e guardada em JPEG junto com a escolha, para o wallpaper não
+ * depender do arquivo continuar no lugar.
+ */
+export async function readLocalImage(file: Blob) {
+  if (!file.type.startsWith('image/')) throw new Error('Esse arquivo não é uma imagem.');
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+  } catch {
+    throw new Error('Não consegui abrir essa imagem. Tente JPEG, PNG ou WebP.');
+  }
+  try {
+    return { src: shrink(bitmap, LOCAL_SIDE, 0.8), thumb: shrink(bitmap, LOCAL_THUMB, 0.75) };
+  } finally {
+    bitmap.close();
+  }
+}

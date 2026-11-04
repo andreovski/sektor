@@ -110,6 +110,7 @@ function CoverTrail({ home }: { home: boolean }) {
   if (!on) return null;
   return (
     <Cover
+      trail
       className="transition-opacity duration-500 ease-[var(--ease-standard)] motion-reduce:transition-none"
       style={{ opacity: home ? 0 : TRAIL_OPACITY }}
     />
