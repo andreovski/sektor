@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import { flushSync } from 'react-dom';
 
-import type { Tones, Wallpaper } from './wallpaper';
+import { extractTones, type Tones, type Wallpaper } from './wallpaper';
 
 export type Theme = 'dark' | 'light';
 export type ThemeChoice = Theme | 'system';
@@ -89,6 +89,10 @@ function paint() {
     palette === 'wallpaper' && 'tones' in wallpaper ? toneVars(wallpaper.tones) : {};
   for (const name of TONE_VARS) root.style.removeProperty(name);
   for (const [name, value] of Object.entries(vars)) root.style.setProperty(name, value);
+  // Texto da saudação claro quando o miolo da foto é escuro; só o tema claro usa (theme.css).
+  const ink = 'tones' in wallpaper ? wallpaper.tones.inkLightness : undefined;
+  if (ink !== undefined && ink < 0.6) root.dataset.coverInk = 'light';
+  else delete root.dataset.coverInk;
   // A barra da janela e os diálogos do sistema seguem o mesmo tema.
   void window.sektor.setTheme(choice);
 }
@@ -149,6 +153,21 @@ export function setWallpaperAccent(swatch: { c: number; h: number }) {
     ...wallpaper,
     tones: { ...wallpaper.tones, accentH: swatch.h, accentC: Math.min(0.17, Math.max(0.08, swatch.c)) },
   });
+}
+
+// Wallpaper escolhido antes de existir a luz do miolo: mede de novo, mantendo a primária escolhida.
+if ('tones' in wallpaper && wallpaper.tones.inkLightness === undefined) {
+  const saved = wallpaper;
+  void extractTones(saved.thumb).then(
+    ({ inkLightness }) => {
+      if (wallpaper !== saved) return;
+      wallpaper = { ...saved, tones: { ...saved.tones, inkLightness } };
+      write(WALLPAPER_KEY, JSON.stringify(wallpaper));
+      paint();
+      listeners.forEach((listener) => listener());
+    },
+    () => {}
+  );
 }
 
 function subscribe(listener: () => void) {

@@ -14,8 +14,8 @@ export interface Tones {
   accentC: number;
   secondH: number;
   secondC: number;
-  /** Luz média da imagem (0 a 1); foto escura no tema claro pede um véu mais forte atrás do texto. */
-  lightness?: number;
+  /** Luz média (0 a 1) do miolo do topo, atrás da saudação: decide se o texto ali é claro ou escuro. */
+  inkLightness?: number;
   /** Cores marcantes da imagem, da mais forte para a mais fraca, para sugerir a primária. */
   swatches: { l: number; c: number; h: number }[];
 }
@@ -84,15 +84,25 @@ export async function extractTones(src: string): Promise<Tones> {
   let tintA = 0;
   let tintB = 0;
   let chroma = 0;
-  let light = 0;
+  let ink = 0;
+  let inkCount = 0;
   let count = 0;
+  const width = SAMPLE;
+  const rows = data.length / 4 / width;
   for (let index = 0; index < data.length; index += 4) {
     const color = oklch(data[index]!, data[index + 1]!, data[index + 2]!);
     tintA += color.a;
     tintB += color.b;
     chroma += color.c;
-    light += color.l;
     count++;
+    // A capa é uma faixa larga com a foto centrada (object-cover): a saudação cai perto do meio.
+    const pixel = index / 4;
+    const x = (pixel % width) / width;
+    const y = Math.floor(pixel / width) / rows;
+    if (x > 0.25 && x < 0.75 && y > 0.3 && y < 0.55) {
+      ink += color.l;
+      inkCount++;
+    }
     // Quase preto, quase branco ou cinza não dizem a cor da imagem.
     if (color.c < 0.035 || color.l < 0.22 || color.l > 0.95) continue;
     const bin = bins[Math.floor(hueOf(color.a, color.b) / (360 / BINS)) % BINS]!;
@@ -127,7 +137,7 @@ export async function extractTones(src: string): Promise<Tones> {
     accentC: round(clamp(accent.c, 0.08, 0.17)),
     secondH: second.h,
     secondC: round(clamp(second.c, 0.07, 0.15)),
-    lightness: round(light / count, 2),
+    inkLightness: round(ink / Math.max(1, inkCount), 2),
     swatches,
   };
 }

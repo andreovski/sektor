@@ -138,10 +138,7 @@ export function Cover({
         <>
           <img src={wallpaper.src} alt="" className="absolute inset-0 size-full object-cover" />
           {/* Véu na cor do fundo: a saudação e a captura leem bem em qualquer foto. */}
-          <div
-            className="cover-scrim absolute inset-0"
-            data-dark={(wallpaper.tones.lightness ?? 1) < 0.4 || undefined}
-          />
+          <div className="cover-scrim absolute inset-0" />
           {wallpaper.credit && !trail && (
             // O Unsplash pede o fotógrafo e o Unsplash, com link, onde a foto aparece.
             <p className="pointer-events-auto absolute top-9 right-6 text-[11px] text-foreground opacity-35 transition-opacity duration-200 [text-shadow:0_1px_2px_var(--background)] hover:opacity-100 focus-within:opacity-100">

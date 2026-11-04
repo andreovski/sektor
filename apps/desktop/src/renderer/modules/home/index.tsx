@@ -101,14 +101,14 @@ function HomePage() {
       >
         <h1
           className={cn(
-            'leading-tight font-semibold transition-all duration-500',
+            'cover-ink leading-tight font-semibold transition-all duration-500',
             open ? 'text-2xl' : 'text-[36px]'
           )}
         >
           {greeting(now.getHours())}
           {name ? `, ${name}` : ''}
         </h1>
-        <p className={cn('mt-1 text-muted first-letter:uppercase', !open && 'mb-8')}>{coverDate(now)}</p>
+        <p className={cn('cover-ink-muted mt-1 text-muted first-letter:uppercase', !open && 'mb-8')}>{coverDate(now)}</p>
         {!open && <HomeCapture assistant={assistant} />}
       </header>
       {open ? (

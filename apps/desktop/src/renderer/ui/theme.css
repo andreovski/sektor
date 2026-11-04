@@ -483,11 +483,22 @@ html:active-view-transition-type(page-back) {
     transparent
   );
 }
-/* Foto escura no claro: o texto escuro precisa de um fundo claro atrás, só no miolo. */
-:root[data-theme='light'] .cover-scrim[data-dark] {
-  background: radial-gradient(
-    42% 46% at 50% 40%,
-    color-mix(in oklch, var(--background) 72%, transparent),
-    transparent
-  );
+
+/* Foto escura atrás da saudação no tema claro: o texto vira claro em vez de ganhar um halo. */
+:root[data-theme='light'][data-cover-ink='light'] {
+  .cover-scrim {
+    background: radial-gradient(
+      45% 50% at 50% 40%,
+      oklch(0% 0 0 / 0.16),
+      transparent
+    );
+  }
+  .cover-ink {
+    color: oklch(98% calc(0.01 * var(--tint-c)) var(--tint-h));
+    text-shadow: 0 1px 14px oklch(0% 0 0 / 0.35);
+  }
+  .cover-ink-muted {
+    color: oklch(92% calc(0.015 * var(--tint-c)) var(--tint-h));
+    text-shadow: 0 1px 10px oklch(0% 0 0 / 0.35);
+  }
 }
