@@ -10,6 +10,7 @@ import { wallInstant } from '../agenda/view';
 import { events } from '../agenda/schema';
 import { habitChecks, habits } from '../habits/schema';
 import { getTask, listTaskLists } from '../tasks/service';
+import { type ModuleId, moduleOn } from '../toggles';
 
 import { askChoice, jevUsable } from './jev';
 import { redact } from './redact';
@@ -179,7 +180,7 @@ function listAgreement(scores: number[], chosen: number, named: boolean) {
 
 export function buildActionTools(ctx: Ctx): ToolSet {
   const { app } = ctx;
-  const defs: Record<string, { area: Area; make: () => unknown }> = {
+  const defs: Record<string, { area: Area; module?: ModuleId; make: () => unknown }> = {
     propor_tarefa: {
       area: 'tasks',
       make: () =>
@@ -487,6 +488,7 @@ export function buildActionTools(ctx: Ctx): ToolSet {
     },
     propor_lembrete: {
       area: 'tasks',
+      module: 'reminders',
       make: () =>
         tool({
           description: 'Propõe um lembrete único, que avisa no dia e na hora pedidos. Sem hora, às 09:00.',
@@ -532,6 +534,7 @@ export function buildActionTools(ctx: Ctx): ToolSet {
   for (const [name, def] of Object.entries(defs)) {
     // "Apagar" confere a área do que apaga lá dentro; as outras, a sua.
     if (name !== 'propor_apagar' && !allowed.includes(def.area)) continue;
+    if (def.module && !moduleOn(ctx.app, def.module)) continue;
     const base = def.make() as ToolSet[string];
     set[name] = {
       ...base,
@@ -687,7 +690,7 @@ function habitDone(app: AppCtx, habitId: string, date: string) {
 function assertAreaOpen(app: AppCtx, row: typeof aiProposals.$inferSelect) {
   const settings = readSettings(app);
   const config = settings.models.find((m) => m.id === row.modelId) ?? null;
-  if (!allowedAreas(settings, config).includes(row.area as Area)) {
+  if (!allowedAreas(app, settings, config).includes(row.area as Area)) {
     throw new AppError(403, 'Essa área está desligada para a IA em Ajustes › IA.');
   }
 }

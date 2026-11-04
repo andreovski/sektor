@@ -11,6 +11,7 @@ import { applyProposal, buildActionTools, proposalsOf } from './actions';
 import { aiCalls, aiConversations, aiMessages, aiProposals } from './schema';
 import { allowedAreas, type Area, isLocal, readSettings } from './settings';
 import { buildTools, TOOL_LABELS } from './tools';
+import { moduleOn } from '../toggles';
 
 // O assistente da 3b: responde perguntas pelas consultas de cada módulo, só leitura. Nada aqui
 // escreve fora das próprias conversas.
@@ -142,6 +143,7 @@ export async function send(
     source?: 'text' | 'voice';
   }
 ) {
+  if (!moduleOn(ctx, 'assistant')) throw new AppError(409, 'O Assistente está desligado em Ajustes › Módulos.');
   const text = input.text.trim();
   const images = input.images ?? [];
   if (!text && !images.length) throw new AppError(400, 'Escreva a pergunta.');
@@ -160,7 +162,7 @@ export async function send(
         .get();
   // Resposta que usou uma área que este modelo não pode ler (de um modelo local, por exemplo)
   // não vai no histórico para ele.
-  const readable = allowedAreas(settings, config);
+  const readable = allowedAreas(ctx, settings, config);
   const history = messagesOf(ctx, conversation.id)
     .filter((m) => m.role === 'user' || !m.areas || m.areas.split(',').every((a) => readable.includes(a as Area)))
     .slice(-HISTORY);
@@ -192,7 +194,7 @@ export async function send(
   const autoApply: string[] = [];
   const toolCtx = {
     app: ctx,
-    allowed: () => allowedAreas(readSettings(ctx), config),
+    allowed: () => allowedAreas(ctx, readSettings(ctx), config),
     used: (name: string, area: Area | null) => {
       used.push(name);
       if (area) areasUsed.add(area);
@@ -247,7 +249,7 @@ export async function send(
   try {
     const result = await generateText({
       model: languageModel(ctx, config),
-      system: SYSTEM(todayIn(ctx), allowedAreas(settings, config)),
+      system: SYSTEM(todayIn(ctx), allowedAreas(ctx, settings, config)),
       messages,
       tools,
       stopWhen: isStepCount(MAX_STEPS),

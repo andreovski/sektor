@@ -27,6 +27,7 @@ import { handlers as projects, jobs as projectsJobs } from './modules/projects';
 import { handlers as reminders, jobs as remindersJobs } from './modules/reminders';
 import { handlers as review, jobs as reviewJobs } from './modules/review';
 import { handlers as tasks, jobs as tasksJobs } from './modules/tasks';
+import { handlers as toggles } from './modules/toggles';
 import { ensureCategories } from './services/categories';
 import { AppError, type Ctx } from './services/context';
 
@@ -75,6 +76,7 @@ const buildHandlers = (ctx: AppCtx, store: DbStore, systemTimeZone: string) => (
   ...review(ctx),
   ...google(ctx),
   ...ai(ctx),
+  ...toggles(ctx),
   ...backup(ctx, store, systemTimeZone),
 });
 

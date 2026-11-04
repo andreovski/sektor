@@ -5,6 +5,7 @@ import {
   Landmark,
   DatabaseBackup,
   Info,
+  LayoutGrid,
   type LucideIcon,
   Palette,
   Settings,
@@ -31,6 +32,7 @@ import { AiSettings } from '../ai/settings';
 import { BanksPanel } from '../finance/banks';
 import { Appearance } from './appearance';
 import { GoogleSettings } from './google';
+import { ModulesSettings } from './modules';
 import { useRestore } from './restore';
 
 const size = (bytes: number) =>
@@ -259,6 +261,13 @@ const GROUPS: {
         icon: Palette,
         description: 'Modo claro, escuro ou o do sistema, e a paleta de cores.',
         panel: Appearance,
+      },
+      {
+        value: 'modulos',
+        label: 'Módulos',
+        icon: LayoutGrid,
+        description: 'Os módulos que você usa. Desligar esconde, sem apagar nada.',
+        panel: ModulesSettings,
       },
     ],
   },

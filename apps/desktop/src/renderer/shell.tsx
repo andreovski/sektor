@@ -1,4 +1,4 @@
-import { Link, Outlet, useRouterState } from '@tanstack/react-router';
+import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
 import { useLayoutEffect, useRef } from 'react';
 import {
   Bell,
@@ -16,20 +16,21 @@ import {
   Wallet,
 } from 'lucide-react';
 
-import { cn, ModuleIcon } from './ui';
+import { type ModuleId, useModules } from './lib/modules';
+import { Button, cn, EmptyState, ModuleIcon } from './ui';
 
-const ITEMS: { to: string; label: string; icon: LucideIcon }[] = [
+const ITEMS: { to: string; label: string; icon: LucideIcon; module?: ModuleId }[] = [
   { to: '/', label: 'Início', icon: LayoutGrid },
-  { to: '/tarefas', label: 'Tarefas', icon: CheckSquare },
-  { to: '/projetos', label: 'Projetos', icon: FolderKanban },
-  { to: '/agenda', label: 'Agenda', icon: CalendarDays },
-  { to: '/financas', label: 'Finanças', icon: Wallet },
-  { to: '/habitos', label: 'Hábitos', icon: Repeat2 },
-  { to: '/metas', label: 'Metas', icon: Target },
-  { to: '/saude', label: 'Saúde', icon: HeartPulse },
-  { to: '/foco', label: 'Foco', icon: Timer },
-  { to: '/revisao', label: 'Revisão', icon: CalendarCheck },
-  { to: '/lembretes', label: 'Lembretes', icon: Bell },
+  { to: '/tarefas', label: 'Tarefas', icon: CheckSquare, module: 'tasks' },
+  { to: '/projetos', label: 'Projetos', icon: FolderKanban, module: 'projects' },
+  { to: '/agenda', label: 'Agenda', icon: CalendarDays, module: 'agenda' },
+  { to: '/financas', label: 'Finanças', icon: Wallet, module: 'finance' },
+  { to: '/habitos', label: 'Hábitos', icon: Repeat2, module: 'habits' },
+  { to: '/metas', label: 'Metas', icon: Target, module: 'goals' },
+  { to: '/saude', label: 'Saúde', icon: HeartPulse, module: 'health' },
+  { to: '/foco', label: 'Foco', icon: Timer, module: 'focus' },
+  { to: '/revisao', label: 'Revisão', icon: CalendarCheck, module: 'review' },
+  { to: '/lembretes', label: 'Lembretes', icon: Bell, module: 'reminders' },
   { to: '/ajustes', label: 'Ajustes', icon: Settings },
 ];
 
@@ -58,12 +59,13 @@ export const pageTransition = {
 
 function Dock() {
   const path = useRouterState({ select: (state) => state.location.pathname });
+  const { isOn } = useModules();
   return (
     <nav
       aria-label="Navegação principal"
       className="dock fixed bottom-4 left-1/2 z-40 flex h-[52px] -translate-x-1/2 items-center gap-1 rounded-full border border-line-strong bg-raised/90 px-2 shadow-popover backdrop-blur"
     >
-      {ITEMS.map(({ to, label, icon: Icon }) => {
+      {ITEMS.filter((item) => isOn(item.module)).map(({ to, label, icon: Icon }) => {
         const active = isCurrent(to, path);
         return (
           <Link
@@ -94,9 +96,31 @@ function Dock() {
   );
 }
 
+/** Link antigo ou de outro módulo para um módulo desligado: diz onde religar em vez de abrir. */
+function ModuleOff({ label, icon }: { label: string; icon: LucideIcon }) {
+  const navigate = useNavigate();
+  return (
+    <EmptyState
+      icon={icon}
+      title={`${label} está desligado`}
+      text="Os dados continuam guardados. Ligue o módulo de novo para voltar a usá-lo."
+      action={
+        <Button
+          variant="primary"
+          onClick={() => void navigate({ to: '/ajustes', search: { secao: 'modulos' } as never })}
+        >
+          Abrir Ajustes › Módulos
+        </Button>
+      }
+    />
+  );
+}
+
 export function Shell() {
   const path = useRouterState({ select: (state) => state.location.pathname });
   const scroller = useRef<HTMLDivElement>(null);
+  const { isOn } = useModules();
+  const current = ITEMS[moduleIndex(path)];
   useLayoutEffect(() => {
     scroller.current?.scrollTo(0, 0);
   }, [path]);
@@ -105,8 +129,12 @@ export function Shell() {
   return (
     <div ref={scroller} className="h-full overflow-y-auto">
       <main className="page mx-auto max-w-[1180px] px-8 pt-8 pb-28">
-        <ModuleIcon.Provider value={ITEMS[moduleIndex(path)]?.icon ?? null}>
-          <Outlet />
+        <ModuleIcon.Provider value={current?.icon ?? null}>
+          {current && !isOn(current.module) ? (
+            <ModuleOff label={current.label} icon={current.icon} />
+          ) : (
+            <Outlet />
+          )}
         </ModuleIcon.Provider>
       </main>
       <Dock />

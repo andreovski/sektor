@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { type ComponentType, useEffect, useState } from 'react';
 
+import { type ModuleId, useModules } from '../../lib/modules';
 import { useRpc } from '../../lib/rpc';
 import { cn, SectionLabel } from '../../ui';
 
@@ -28,36 +29,55 @@ function useNow() {
   return now;
 }
 
+// Cada cartão mostra dados de um módulo; módulo desligado leva o cartão junto.
+const SECTIONS: { label: string; cards: { card: ComponentType; module: ModuleId }[] }[] = [
+  {
+    label: 'Hoje',
+    cards: [
+      { card: CheckinCard, module: 'health' },
+      { card: HabitsCard, module: 'habits' },
+      { card: TasksCard, module: 'tasks' },
+      { card: AgendaCard, module: 'agenda' },
+      { card: FocusCard, module: 'focus' },
+      { card: BillsCard, module: 'finance' },
+    ],
+  },
+  {
+    label: 'Progresso',
+    cards: [
+      { card: GoalsCard, module: 'goals' },
+      { card: ProjectsCard, module: 'projects' },
+      { card: FinanceCard, module: 'finance' },
+    ],
+  },
+  {
+    label: 'Ritmo',
+    cards: [
+      { card: StreakCard, module: 'habits' },
+      { card: MosaicCard, module: 'tasks' },
+      { card: WeekCard, module: 'focus' },
+    ],
+  },
+];
+
 function Sections() {
+  const { isOn } = useModules();
   return (
     <div className="flex flex-col gap-8">
-      <section>
-        <SectionLabel>Hoje</SectionLabel>
-        <div className={GRID}>
-          <CheckinCard />
-          <HabitsCard />
-          <TasksCard />
-          <AgendaCard />
-          <FocusCard />
-          <BillsCard />
-        </div>
-      </section>
-      <section>
-        <SectionLabel>Progresso</SectionLabel>
-        <div className={GRID}>
-          <GoalsCard />
-          <ProjectsCard />
-          <FinanceCard />
-        </div>
-      </section>
-      <section>
-        <SectionLabel>Ritmo</SectionLabel>
-        <div className={GRID}>
-          <StreakCard />
-          <MosaicCard />
-          <WeekCard />
-        </div>
-      </section>
+      {SECTIONS.map(({ label, cards }) => {
+        const shown = cards.filter((item) => isOn(item.module));
+        if (!shown.length) return null;
+        return (
+          <section key={label}>
+            <SectionLabel>{label}</SectionLabel>
+            <div className={GRID}>
+              {shown.map(({ card: Item, module }, index) => (
+                <Item key={`${module}-${index}`} />
+              ))}
+            </div>
+          </section>
+        );
+      })}
     </div>
   );
 }
@@ -66,7 +86,8 @@ function HomePage() {
   const now = useNow();
   const name = useRpc('settings.get').data?.name;
   const assistant = useHomeAssistant();
-  const open = assistant.open;
+  const assistantOn = useModules().isOn('assistant');
+  const open = assistant.open && assistantOn;
   return (
     // O -mt-8 desfaz o respiro do `main`: a capa encosta no topo da janela.
     <div className="relative -mt-8">
@@ -87,7 +108,7 @@ function HomePage() {
           {name ? `, ${name}` : ''}
         </h1>
         <p className={cn('mt-1 text-muted first-letter:uppercase', !open && 'mb-8')}>{coverDate(now)}</p>
-        {!open && <AssistantInput assistant={assistant} />}
+        {!open && assistantOn && <AssistantInput assistant={assistant} />}
       </header>
       {open ? (
         <AssistantChat assistant={assistant} />

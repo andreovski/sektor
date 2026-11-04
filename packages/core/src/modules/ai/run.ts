@@ -64,7 +64,7 @@ export async function ask<T = string>(ctx: AppCtx, request: AiRequest<T>): Promi
   const config = resolveModel(ctx, request.use, request.modelId);
   const settings = readSettings(ctx);
   // Lido a cada chamada: desligar uma área no meio de uma rodada para os envios seguintes.
-  const allowed = allowedAreas(settings, config);
+  const allowed = allowedAreas(ctx, settings, config);
   const blocked = request.areas.find((area) => !allowed.includes(area));
   if (blocked) throw new AppError(409, 'Essa área está desligada para a IA em Ajustes › IA.');
   const model = languageModel(ctx, config);

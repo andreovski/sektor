@@ -131,7 +131,7 @@ export function suggestCategories(ctx: AppCtx): Promise<number> {
 async function run(ctx: AppCtx): Promise<number> {
   const settings = readSettings(ctx);
   if (settings.bankCategory !== 'on' || !isReadyFor(ctx, 'bankCategory')) return 0;
-  if (!allowedAreas(settings, modelFor(settings, 'bankCategory')).includes('finance')) return 0;
+  if (!allowedAreas(ctx, settings, modelFor(settings, 'bankCategory')).includes('finance')) return 0;
 
   const since = Date.now() - 24 * 60 * 60 * 1000;
   const callsToday = ctx.db

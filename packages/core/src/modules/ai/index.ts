@@ -113,7 +113,7 @@ export function status(ctx: AppCtx) {
             modelId: config?.id ?? null,
             local: isLocal(config),
             ready: problemOf(ctx, settings, config) === null,
-            areas: allowedAreas(settings, config),
+            areas: allowedAreas(ctx, settings, config),
           },
         ];
       })

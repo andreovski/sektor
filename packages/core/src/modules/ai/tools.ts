@@ -17,6 +17,7 @@ import { listDiary } from '../health/service';
 import { healthDays } from '../health/schema';
 import { reviews } from '../review/schema';
 import { listProjects, listTasks } from '../tasks/service';
+import { type ModuleId, moduleOn } from '../toggles';
 
 import { redact } from './redact';
 import { type Area } from './settings';
@@ -126,7 +127,7 @@ export const TOOL_LABELS: Record<string, string> = {
 export function buildTools(ctx: Ctx): ToolSet {
   const { app } = ctx;
   // Cada `tool()` tem o tipo da sua entrada; aqui só importa que é uma ferramenta.
-  const defs: Record<string, { area: Area | null; make: () => unknown }> = {
+  const defs: Record<string, { area: Area | null; module?: ModuleId; make: () => unknown }> = {
     hoje: {
       area: null,
       make: () =>
@@ -343,6 +344,7 @@ export function buildTools(ctx: Ctx): ToolSet {
     },
     metas: {
       area: 'tasks',
+      module: 'goals',
       make: () =>
         tool({
           description: 'Metas, com prazo e o ritmo em relação a ele.',
@@ -508,6 +510,7 @@ export function buildTools(ctx: Ctx): ToolSet {
   const set: ToolSet = {};
   for (const [name, def] of Object.entries(defs)) {
     if (def.area && !allowed.includes(def.area)) continue;
+    if (def.module && !moduleOn(app, def.module)) continue;
     const base = def.make() as ToolSet[string];
     set[name] = {
       ...base,

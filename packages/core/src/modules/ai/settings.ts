@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import type { AppCtx } from '../../app';
 import { appMeta } from '../../db/schema';
 import type { Ctx } from '../../services/context';
+import { areaOn } from '../toggles';
 
 export const PROVIDERS = ['ollama', 'openrouter', 'anthropic', 'openai'] as const;
 export type Provider = (typeof PROVIDERS)[number];
@@ -112,10 +113,14 @@ export function isLocal(config: Pick<ModelConfig, 'provider' | 'baseUrl'> | null
   }
 }
 
-/** O modelo local lê tudo: nada sai da máquina. Na nuvem, valem as chaves de cada área. */
-export function allowedAreas(settings: AiSettings, config: ModelConfig | null): Area[] {
-  if (isLocal(config)) return [...AREAS];
-  return AREAS.filter((a) => settings.areas[a]);
+/**
+ * O modelo local lê tudo: nada sai da máquina. Na nuvem, valem as chaves de cada área. Módulo
+ * desligado em Ajustes › Módulos fica de fora nos dois.
+ */
+export function allowedAreas(ctx: Ctx, settings: AiSettings, config: ModelConfig | null): Area[] {
+  const on = AREAS.filter((a) => areaOn(ctx, a));
+  if (isLocal(config)) return on;
+  return on.filter((a) => settings.areas[a]);
 }
 
 /** O Ollama atende em `/v1`; quem digita o endereço quase sempre esquece. */

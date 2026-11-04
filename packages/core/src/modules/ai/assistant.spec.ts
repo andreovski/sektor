@@ -19,6 +19,7 @@ import { aiConversations, aiMessages } from './schema';
 import { createEvent } from '../agenda/service';
 import { createGoal } from '../goals/service';
 import { upsertBudget } from '../../services/reports';
+import { handlers as toggles } from '../toggles';
 
 // Quarta, 04/11/2026, 12h em São Paulo.
 const NOW = new Date('2026-11-04T15:00:00Z');
@@ -162,6 +163,33 @@ describe('assistente', () => {
     setModelForTests(again.model);
     await rpc['ai.chat.send']({ text: 'Como dormi?', modelId: local });
     expect(again.seen[0]!.tools).toEqual(expect.arrayContaining(['saude', 'diario']));
+  });
+
+  it('módulo desligado some das consultas, até para o modelo local', async () => {
+    const modules = toggles(ctx);
+    modules['modules.set']({ id: 'finance', enabled: false });
+    modules['modules.set']({ id: 'goals', enabled: false });
+    modules['modules.set']({ id: 'reminders', enabled: false });
+    expect(modules['modules.get']()).toEqual({ disabled: ['finance', 'goals', 'reminders'] });
+
+    const local = rpc['ai.models.add']({ provider: 'ollama', model: 'qwen3:8b' }).added;
+    const { model, seen } = scripted(null, () => 'ok');
+    setModelForTests(model);
+    await rpc['ai.chat.send']({ text: 'Oi', modelId: local });
+    expect(seen[0]!.tools).toContain('tarefas');
+    expect(seen[0]!.tools).not.toContain('gastos_por_categoria');
+    expect(seen[0]!.tools).not.toContain('metas');
+    expect(seen[0]!.tools).not.toContain('propor_lembrete');
+
+    modules['modules.set']({ id: 'finance', enabled: true });
+    expect(modules['modules.get']()).toEqual({ disabled: ['goals', 'reminders'] });
+  });
+
+  it('com o Assistente desligado, a pergunta é recusada', async () => {
+    useClaude();
+    toggles(ctx)['modules.set']({ id: 'assistant', enabled: false });
+    await expect(rpc['ai.chat.send']({ text: 'Oi' })).rejects.toThrow('O Assistente está desligado');
+    expect(ctx.db.select().from(aiConversations).all()).toHaveLength(0);
   });
 
   it('área desligada no meio não roda a consulta', async () => {

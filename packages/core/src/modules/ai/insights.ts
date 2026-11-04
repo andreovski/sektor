@@ -155,7 +155,7 @@ ${STYLE}`,
 
 function payloadOf(ctx: AppCtx, kind: InsightKind, period: string | undefined, modelId?: string | null) {
   const settings = readSettings(ctx);
-  const areas = allowedAreas(settings, modelFor(settings, kind, modelId));
+  const areas = allowedAreas(ctx, settings, modelFor(settings, kind, modelId));
   return kind === 'weekly' ? weeklyPayload(ctx, period, areas) : financePayload(ctx, period, areas);
 }
 
