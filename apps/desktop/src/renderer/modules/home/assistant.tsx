@@ -355,13 +355,24 @@ export function AssistantInput({ assistant, docked }: { assistant: HomeAssistant
   }, [docked]);
 
   return (
-    <div className={cn('flex w-[760px] max-w-full flex-col gap-2', docked && 'mx-auto shrink-0')}>
+    <div
+      className={cn(
+        'flex w-[760px] max-w-full flex-col gap-2',
+        // Preso embaixo, por cima da conversa, que passa por trás dele.
+        docked && 'absolute -bottom-3 left-1/2 z-10 -translate-x-1/2'
+      )}
+    >
       {models.length > 1 && (
         <div className="flex">
           <ModelMenu models={models} value={assistant.modelId} onChange={assistant.choose} />
         </div>
       )}
-    <div className="rounded-[22px] border border-line-strong bg-raised/90 py-2 pr-2 pl-4 text-left shadow-popover backdrop-blur focus-within:border-primary/50">
+    <div
+      className={cn(
+        'rounded-[22px] border border-line-strong py-2 pr-2 pl-4 text-left shadow-popover focus-within:border-primary/50',
+        docked ? 'bg-raised/85 backdrop-blur-xl' : 'bg-raised/90 backdrop-blur'
+      )}
+    >
       <div className="flex items-center gap-3">
         <span aria-hidden className="text-xl text-primary">›</span>
         <input
@@ -450,7 +461,7 @@ export function AssistantInput({ assistant, docked }: { assistant: HomeAssistant
 export function AssistantChat({ assistant }: { assistant: HomeAssistant }) {
   return (
     // A capa (150px) e o respiro do dock (112px do `main`) ficam de fora: a tela não rola.
-    <div className="tab-panel flex h-[calc(100vh-264px)] flex-col gap-4">
+    <div className="tab-panel relative flex h-[calc(100vh-264px)] flex-col">
       <AssistantConversation assistant={assistant} />
       <AssistantInput assistant={assistant} docked />
     </div>
@@ -500,7 +511,8 @@ export function AssistantConversation({ assistant }: { assistant: HomeAssistant 
         </div>
       )}
 
-      <div className="min-h-0 flex-1 overflow-y-auto border-t border-line pb-4">
+      {/* O respiro de baixo é a altura do campo: a última resposta não fica escondida atrás dele. */}
+      <div className="min-h-0 flex-1 overflow-y-auto border-t border-line">
         {turns.length === 0 ? (
           <p className="pt-10 pl-[84px] text-[15px] text-muted">
             Conversa nova. Pergunte sobre as contas, a agenda, as tarefas ou o seu dia.
@@ -508,7 +520,7 @@ export function AssistantConversation({ assistant }: { assistant: HomeAssistant 
         ) : (
           turns.map((turn) => <TurnView key={turn.id} turn={turn} devMode={assistant.devMode} />)
         )}
-        <div ref={end} />
+        <div ref={end} aria-hidden className="h-40" />
       </div>
     </div>
   );
