@@ -68,7 +68,7 @@ function Mark({ model, size = 'md' }: { model: string; size?: 'sm' | 'md' }) {
       aria-hidden
       className={cn(
         'grid shrink-0 place-items-center rounded-[7px] font-semibold',
-        size === 'sm' ? 'size-5 text-[11px]' : 'size-7 text-[13px]',
+        size === 'sm' ? 'size-4 rounded-[5px] text-[9px]' : 'size-7 text-[13px]',
         maker.tone
       )}
     >
@@ -81,10 +81,10 @@ function Badges({ model }: { model: MenuModel }) {
   return (
     <>
       {model.local && (
-        <span className="rounded-full bg-success/15 px-1.5 text-[10px] font-medium text-success">local</span>
+        <span className="rounded-full bg-success/15 px-1.5 text-[9px] font-medium text-success">local</span>
       )}
       {model.model.endsWith(':free') && (
-        <span className="rounded-full bg-info/15 px-1.5 text-[10px] font-medium text-info">grátis</span>
+        <span className="rounded-full bg-info/15 px-1.5 text-[9px] font-medium text-info">grátis</span>
       )}
     </>
   );
@@ -108,12 +108,12 @@ export function ModelMenu({
         <button
           type="button"
           aria-label={`Modelo: ${modelName(current.model)}`}
-          className="flex h-8 items-center gap-2 rounded-full border border-line bg-raised/80 py-0 pr-2.5 pl-1.5 text-[13px] text-muted transition-colors hover:bg-hover hover:text-foreground data-[state=open]:bg-hover"
+          className="flex h-6 items-center gap-1.5 rounded-full border border-line bg-raised/80 py-0 pr-2 pl-1 text-[11px] text-muted transition-colors hover:bg-hover hover:text-foreground data-[state=open]:bg-hover"
         >
           <Mark model={current.model} size="sm" />
           <span className="text-foreground">{modelName(current.model)}</span>
           <Badges model={current} />
-          <ChevronDown size={13} />
+          <ChevronDown size={11} />
         </button>
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>

@@ -449,7 +449,8 @@ export function AssistantInput({ assistant, docked }: { assistant: HomeAssistant
 /** A conversa e o campo preso embaixo, na altura da janela: só a conversa rola. */
 export function AssistantChat({ assistant }: { assistant: HomeAssistant }) {
   return (
-    <div className="tab-panel flex h-[calc(100vh-190px)] flex-col gap-4 pb-[104px]">
+    // A capa (150px) e o respiro do dock (112px do `main`) ficam de fora: a tela não rola.
+    <div className="tab-panel flex h-[calc(100vh-264px)] flex-col gap-4">
       <AssistantConversation assistant={assistant} />
       <AssistantInput assistant={assistant} docked />
     </div>
