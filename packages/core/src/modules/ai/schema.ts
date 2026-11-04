@@ -52,3 +52,31 @@ export const aiMessages = sqliteTable('ai_messages', {
   areas: text('areas').notNull().default(''),
   model: text('model'),
 });
+
+export interface ProposalCard {
+  /** "Tarefa", "Lançamento · Despesa", "Apagar evento". */
+  kind: string;
+  title: string;
+  /** Valor em destaque (dinheiro em centavos), quando há. */
+  amountCents?: number | null;
+  amountTone?: 'income' | 'expense' | null;
+  rows: { label: string; value: string; before?: string | null }[];
+}
+
+/** O que o assistente propõe fazer: só vira escrita quando a pessoa confirma (ou o Jev, seguro). */
+export const aiProposals = sqliteTable('ai_proposals', {
+  ...base,
+  conversationId: text('conversation_id').notNull(),
+  messageId: text('message_id'),
+  kind: text('kind').notNull(),
+  area: text('area').notNull(),
+  /** O modelo que propôs: as áreas que ele pode ler valem também para gravar. */
+  modelId: text('model_id'),
+  payload: text('payload', { mode: 'json' }).$type<Record<string, unknown>>().notNull(),
+  before: text('before', { mode: 'json' }).$type<Record<string, unknown> | null>(),
+  card: text('card', { mode: 'json' }).$type<ProposalCard>().notNull(),
+  status: text('status', { enum: ['PENDING', 'APPLYING', 'APPLIED', 'DISCARDED', 'UNDONE', 'FAILED'] }).notNull(),
+  result: text('result', { mode: 'json' }).$type<Record<string, unknown> | null>(),
+  auto: integer('auto', { mode: 'boolean' }).notNull().default(false),
+  error: text('error'),
+});

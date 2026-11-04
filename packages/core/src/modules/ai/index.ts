@@ -5,6 +5,7 @@ import type { AppCtx, Job } from '../../app';
 import { AppError, newId } from '../../services/context';
 import { parse } from '../finance';
 
+import * as actions from './actions';
 import * as assistant from './assistant';
 import { pendingForAi, suggestCategories } from './bank-category';
 import { generateInsight, getInsight, INSIGHTS, type InsightKind } from './insights';
@@ -287,6 +288,10 @@ export const handlers = (ctx: AppCtx) => ({
   'ai.chat.get': ({ id }: { id: string }) => assistant.getConversation(ctx, id),
   'ai.chat.send': (input: ChatInput) => assistant.send(ctx, parse<ChatInput>(chatSchema as never, input)),
   'ai.chat.delete': ({ id }: { id: string }) => assistant.deleteConversation(ctx, id),
+  'ai.proposal.apply': ({ id, accountId, categoryId }: { id: string; accountId?: string; categoryId?: string }) =>
+    actions.applyProposal(ctx, id, { overrides: { accountId, categoryId } }),
+  'ai.proposal.discard': ({ id }: { id: string }) => actions.discardProposal(ctx, id),
+  'ai.proposal.undo': ({ id }: { id: string }) => actions.undoProposal(ctx, id),
 });
 
 export const jobs: Job[] = [
