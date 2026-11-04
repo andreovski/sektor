@@ -251,7 +251,7 @@ export function EventFormDialog({
         )}
 
         <div className="flex flex-col gap-1 text-xs text-muted" role="group" aria-label="Alertas">
-          Alertas
+          <span className="font-mono text-[10px] tracking-[0.12em] text-subtle uppercase">Alertas</span>
           <div className="flex flex-wrap gap-1">
             {ALERT_OPTIONS.map((minutes) => {
               const active = form.reminders.includes(minutes);

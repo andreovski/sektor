@@ -147,37 +147,7 @@ export function Segmented<T extends string>({
   );
 }
 
-const fieldClass =
-  'h-8 w-full rounded-control border border-line bg-sunken px-2.5 text-sm placeholder:text-subtle';
-
-export function Input({ className, ...props }: ComponentProps<'input'>) {
-  return <input className={cn(fieldClass, className)} {...props} />;
-}
-
-export function Select({ className, ...props }: ComponentProps<'select'>) {
-  return <select className={cn(fieldClass, className)} {...props} />;
-}
-
-export function Textarea({ className, ...props }: ComponentProps<'textarea'>) {
-  return (
-    <textarea
-      className={clsx(
-        'w-full rounded-control border border-line bg-sunken p-2.5 text-sm placeholder:text-subtle',
-        className
-      )}
-      {...props}
-    />
-  );
-}
-
-export function Field({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <label className="flex flex-col gap-1 text-xs text-muted">
-      {label}
-      {children}
-    </label>
-  );
-}
+export { Field, fieldClass, Input, Select, Textarea } from './fields';
 
 /** O ícone do módulo aberto, que o cabeçalho dos modais repete. */
 export const ModuleIcon = createContext<LucideIcon | null>(null);

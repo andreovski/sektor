@@ -147,7 +147,7 @@ function MedForm({ med, onClose }: { med: Med | null; onClose(): void }) {
         )}
         {schedule !== 'AS_NEEDED' && (
           <div className="flex flex-col gap-1 text-xs text-muted">
-            Horários
+            <span className="font-mono text-[10px] tracking-[0.12em] text-subtle uppercase">Horários</span>
             <div className="flex flex-wrap items-center gap-1.5">
               {times.map((time, index) => (
                 <span key={index} className="flex items-center gap-0.5">

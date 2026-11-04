@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { _electron as electron } from 'playwright';
 
+import { choose } from './fields.mjs';
+
 const shots = resolve(process.argv[2] ?? 'notes-calendar-fotos');
 mkdirSync(shots, { recursive: true });
 const dir = mkdtempSync(join(tmpdir(), 'sektor-notas-'));
@@ -56,7 +58,7 @@ await page.getByLabel('Mostrar Obra').waitFor();
 await page.keyboard.press('Escape');
 await page.getByRole('button', { name: 'Novo evento' }).click();
 await page.getByLabel('Título').fill('Concretagem da laje');
-await page.getByRole('dialog').getByLabel('Calendário').selectOption({ label: 'Obra' });
+await choose(page, page.getByRole('dialog').getByLabel('Calendário'), 'Obra');
 await page.getByRole('button', { name: 'Salvar' }).click();
 await page.getByRole('dialog').waitFor({ state: 'detached' });
 await page.getByRole('button', { name: 'Calendários' }).click();
@@ -71,7 +73,7 @@ await page.getByRole('button', { name: 'Criar projeto' }).click();
 await page.getByRole('heading', { name: 'Casa da praia' }).waitFor();
 check('sem calendário, a agenda do projeto fica vazia', await page.getByText('Nenhum evento ligado a este projeto').isVisible());
 await page.getByRole('button', { name: 'Editar', exact: true }).click();
-await page.getByLabel('Calendário da Agenda').selectOption({ label: 'Obra' });
+await choose(page, page.getByLabel('Calendário da Agenda'), 'Obra');
 await page.getByRole('button', { name: 'Salvar' }).click();
 await page.getByRole('button', { name: /Concretagem da laje/ }).waitFor();
 check('com calendário, mostra os eventos dele mesmo desmarcado na Agenda', true);
@@ -79,7 +81,7 @@ await shot('1-agenda-do-projeto');
 await page.getByRole('button', { name: 'Novo evento no projeto' }).click();
 check(
   'evento novo vai para o calendário do projeto',
-  (await page.getByRole('dialog').getByLabel('Calendário').locator('option:checked').textContent()) === 'Obra'
+  (await page.getByRole('dialog').getByLabel('Calendário').textContent()) === 'Obra'
 );
 await page.keyboard.press('Escape');
 
@@ -149,7 +151,7 @@ const inFolder = await sql(
 );
 check('nota criada dentro da pasta', inFolder[0]?.folder === 'Reuniões');
 await page.getByRole('button', { name: 'Decisões' }).click();
-await page.getByLabel('Pasta da nota').selectOption({ label: 'Reuniões' });
+await choose(page, page.getByLabel('Pasta da nota'), 'Reuniões');
 await page.waitForTimeout(400);
 const nav = page.getByRole('navigation', { name: 'Notas do projeto' });
 check(

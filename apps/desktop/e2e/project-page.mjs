@@ -6,6 +6,8 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { _electron as electron } from 'playwright';
 
+import { choose, pickDate } from './fields.mjs';
+
 const shots = resolve(process.argv[2] ?? 'project-page-fotos');
 mkdirSync(shots, { recursive: true });
 const dir = mkdtempSync(join(tmpdir(), 'sektor-projeto-'));
@@ -56,9 +58,8 @@ const go = (route) => page.evaluate((r) => (location.hash = `#${r}`), route);
 await go('/projetos');
 await page.getByRole('button', { name: 'Novo projeto' }).click();
 await page.getByLabel('Nome').fill('Site da Oficina');
-await page.getByLabel('Tipo').selectOption('FREELANCE');
-await page.getByRole('textbox', { name: 'Início' }).fill('2026-10-20');
-await page.getByLabel('Entrega').fill('2026-12-15');
+await pickDate(page, page.getByRole('dialog').getByLabel('Início'), '2026-10-20');
+await pickDate(page, page.getByLabel('Entrega'), '2026-12-15');
 await page.getByLabel('Descrição').fill('Loja nova com catálogo e agenda online.');
 await page.getByRole('button', { name: 'Cor green' }).click();
 await page.getByRole('button', { name: 'Criar projeto' }).click();
@@ -80,7 +81,7 @@ for (const text of ['Aprovar layout amanhã !alta', 'Escrever textos sexta', 'Se
 await page.getByRole('button', { name: 'Nova tarefa' }).click();
 await page.getByLabel('Título').fill('Pagar domínio');
 await page.getByText('Prazo', { exact: true }).click();
-await page.getByLabel('Data do prazo').fill('2026-10-01');
+await pickDate(page, page.getByLabel('Data do prazo'), '2026-10-01');
 await page.getByRole('button', { name: 'Criar tarefa' }).click();
 await page.getByText('Pagar domínio').waitFor();
 await shot('2-tarefas');
@@ -93,7 +94,7 @@ await page.getByRole('button', { name: 'Novo evento no projeto' }).click();
 await page.getByLabel('Título').fill('Reunião com a Oficina');
 check(
   'evento novo já vem com o projeto',
-  (await page.getByRole('dialog').locator('label', { hasText: /^Projeto/ }).locator('option:checked').textContent()) === 'Site da Oficina'
+  (await page.getByRole('dialog').locator('label', { hasText: /^Projeto/ }).locator('button').textContent()) === 'Site da Oficina'
 );
 await page.getByRole('button', { name: 'Salvar' }).click();
 await page.getByRole('button', { name: /Reunião com a Oficina/ }).waitFor();
@@ -210,7 +211,7 @@ await go('/projetos');
 await page.getByRole('heading', { name: 'Site da Oficina' }).click();
 await page.getByRole('tablist').waitFor();
 check('clicar no projeto abre a página', /#\/projetos\/[0-9a-f-]{36}$/.test(await page.evaluate(() => location.hash)));
-await page.getByLabel('Status do projeto').selectOption('PAUSED');
+await choose(page, page.getByLabel('Status do projeto'), 'Pausado');
 await page.waitForTimeout(300);
 await go('/projetos');
 await page.getByText('Pausado').first().waitFor();

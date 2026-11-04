@@ -190,7 +190,7 @@ export function RichTextEditor({
       className={cn(
         'relative min-w-0',
         variant === 'field' &&
-          'rounded-control border border-line bg-sunken px-2.5 py-2 text-sm text-foreground focus-within:border-line-strong',
+          'field-line px-0.5 py-1.5 text-sm text-foreground',
         className
       )}
       style={variant === 'field' ? { minHeight: `calc(${rows} * 1.5em + 1rem + 2px)` } : undefined}
@@ -236,8 +236,10 @@ export function NoteField({
 }: Omit<RichTextEditorProps, 'variant' | 'aria-labelledby'> & { label: string }) {
   const labelId = useId();
   return (
-    <div className="flex flex-col gap-1 text-xs text-muted">
-      <span id={labelId}>{label}</span>
+    <div className="flex flex-col gap-1">
+      <span id={labelId} className="font-mono text-[10px] tracking-[0.12em] text-subtle uppercase">
+        {label}
+      </span>
       <RichTextEditor {...props} variant="field" aria-labelledby={labelId} />
     </div>
   );

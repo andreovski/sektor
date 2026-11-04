@@ -7,6 +7,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { _electron as electron } from 'playwright';
 
+import { choose } from './fields.mjs';
+
 const root = mkdtempSync(join(tmpdir(), 'sektor-hard-'));
 let count = 0;
 const newDir = () => {
@@ -230,7 +232,7 @@ await test('8/9. ajustes: nome no Início, backup com senha uma vez', async () =
   await page.getByTestId('data-dir').getByText(dir).waitFor();
   await go(page, '/ajustes');
   await page.getByLabel('Seu nome').fill('André');
-  await page.getByLabel('Fuso horário').selectOption('Asia/Tokyo');
+  await choose(page, page.getByLabel('Fuso horário'), 'Asia/Tokyo');
   await page.getByRole('button', { name: 'Salvar' }).click();
   await page.getByText('Ajustes salvos.').waitFor();
 

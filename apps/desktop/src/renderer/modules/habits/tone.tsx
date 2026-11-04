@@ -47,7 +47,7 @@ export function TonePicker({ value, onChange }: { value: Tone; onChange(tone: To
 export function Group({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div role="group" aria-label={label} className="flex flex-col gap-1 text-xs text-muted">
-      <span>{label}</span>
+      <span className="font-mono text-[10px] tracking-[0.12em] text-subtle uppercase">{label}</span>
       {children}
     </div>
   );
