@@ -489,9 +489,10 @@ export function buildActionTools(ctx: Ctx): ToolSet {
       area: 'tasks',
       make: () =>
         tool({
-          description: 'Propõe um lembrete único, que avisa no dia e na hora pedidos.',
-          inputSchema: z.object({ texto: z.string().min(1).max(200), dia: date, hora: clock }),
-          execute: async ({ texto, dia, hora }) => {
+          description: 'Propõe um lembrete único, que avisa no dia e na hora pedidos. Sem hora, às 09:00.',
+          inputSchema: z.object({ texto: z.string().min(1).max(200), dia: date, hora: clock.optional() }),
+          execute: async ({ texto, dia, hora: asked }) => {
+            const hora = asked ?? '09:00';
             const payload = { title: texto, schedule: 'ONCE', startDate: dia, time: hora };
             const card: ProposalCard = { kind: 'Lembrete', title: texto, rows: [{ label: 'Quando', value: `${day(dia)} às ${hora}` }] };
             const row = save(ctx, 'reminder.create', 'tasks', payload, card);
