@@ -103,10 +103,12 @@ function projectList(ctx: Ctx, projectId: string): string {
   return list.id;
 }
 
-/** A lista que o projeto quer usar: existe, não é a Entrada e não é de outro projeto. */
+/**
+ * A lista que o projeto quer usar: existe e não é de outro projeto. A Entrada pode ser de um
+ * projeto, e aí o que cai nela (captura, Google, IA) é desse projeto.
+ */
 function assertFreeList(ctx: Ctx, listId: string, projectId: string | null) {
   const list = getList(ctx, listId);
-  if (list.isInbox) throw new AppError(400, 'A Entrada não pode ser a lista de um projeto.');
   const owner = projectOfList(ctx, listId);
   if (owner && owner !== projectId) throw new AppError(400, 'Esta lista já é de outro projeto.');
   return list.id;

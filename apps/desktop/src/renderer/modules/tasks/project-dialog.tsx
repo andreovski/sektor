@@ -29,7 +29,7 @@ function Form({
   const [listId, setListId] = useState(project?.listId ?? '');
   const lists = useRpc('taskLists.list');
   const freeLists = (lists.data ?? []).filter(
-    (list) => !list.isInbox && (!list.project || list.project.id === project?.id)
+    (list) => !list.project || list.project.id === project?.id
   );
   const create = useRpcMutation('projects.create');
   const update = useRpcMutation('projects.update');

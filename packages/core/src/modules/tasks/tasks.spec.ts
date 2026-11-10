@@ -362,7 +362,20 @@ describe('tarefas', () => {
 
       expectStatus(() => svc.deleteTaskList(ctx, list.id), 400);
       expectStatus(() => svc.createProject(ctx, { name: 'Outro', listId: list.id }), 400);
-      expectStatus(() => svc.createProject(ctx, { name: 'Outro', listId: inbox.id }), 400);
+    });
+
+    it('a Entrada pode ser a lista de um projeto, e o que cai nela é dele', () => {
+      const inbox = svc.listTaskLists(ctx).find((l) => l.isInbox)!;
+      const loose = svc.createTask(ctx, { title: 'Já estava' });
+      const project = svc.createProject(ctx, { name: 'Me', listId: inbox.id });
+      expect(project.listId).toBe(inbox.id);
+      expect(svc.getTask(ctx, loose.id).projectId).toBe(project.id);
+      expect(svc.captureTask(ctx, { text: 'capturada' }).projectId).toBe(project.id);
+      expect(svc.listTaskLists(ctx).find((l) => l.isInbox)?.project?.id).toBe(project.id);
+
+      svc.deleteProject(ctx, project.id);
+      expect(svc.createTask(ctx, { title: 'Depois' }).projectId).toBeNull();
+      expect(svc.listTaskLists(ctx).find((l) => l.isInbox)?.id).toBe(inbox.id);
     });
 
     it('projeto pode usar uma lista que já existe, e trocar de lista', () => {
